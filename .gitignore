@@ -7,7 +7,6 @@ yarn-error.log*
 # Build output
 dist/
 dist_output/
-build/
 out/
 
 # OS files

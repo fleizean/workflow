@@ -1,6 +1,6 @@
 {
     "name": "workflow-timer",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "description": "Workflow Timer - Modern work tracking desktop application",
     "main": "main.js",
     "scripts": {
