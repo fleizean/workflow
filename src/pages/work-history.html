@@ -526,138 +526,127 @@
                 olderSection.style.display = 'none';
             }
 
-            // Group sessions by company
-            const groupedByCompany = {};
+            // Group sessions by date and company
+            const groupedByDateCompany = {};
             sessions.forEach(session => {
-                const companyId = session.company_id || 'none';
-                if (!groupedByCompany[companyId]) {
-                    groupedByCompany[companyId] = {
-                        name: companyMap[companyId] || 'No Company',
+                const key = `${session.date}_${session.company_id || 'none'}`;
+                if (!groupedByDateCompany[key]) {
+                    groupedByDateCompany[key] = {
+                        date: session.date,
+                        companyId: session.company_id,
+                        companyName: companyMap[session.company_id] || 'No Company',
                         sessions: [],
                         totalDuration: 0
                     };
                 }
-                groupedByCompany[companyId].sessions.push(session);
-                groupedByCompany[companyId].totalDuration += session.duration;
+                groupedByDateCompany[key].sessions.push(session);
+                groupedByDateCompany[key].totalDuration += session.duration;
             });
 
-            // Render each company group
-            Object.keys(groupedByCompany).forEach((companyId, index) => {
-                const group = groupedByCompany[companyId];
-                const groupId = `company-group-${companyId}`;
+            // Sort groups by date descending
+            const sortedGroups = Object.values(groupedByDateCompany).sort((a, b) => b.date.localeCompare(a.date));
 
-                const groupHtml = `
-                        <div class="mb-4">
-                            <div class="company-header flex items-center justify-between px-1 py-2 cursor-pointer hover:bg-white/5 rounded-lg transition-colors" data-group="${groupId}">
-                                <div class="flex items-center gap-2">
-                                    <span class="material-symbols-outlined text-primary text-lg collapse-icon transition-transform">expand_more</span>
-                                    <h3 class="text-slate-900 dark:text-white text-base font-bold">${group.name}</h3>
-                                    <span class="text-xs text-slate-500 dark:text-slate-400">(${group.sessions.length} sessions)</span>
-                                </div>
-                                <span class="text-sm font-bold text-primary">${formatTimeShort(group.totalDuration)}</span>
-                            </div>
-                            <div id="${groupId}" class="company-sessions flex flex-col gap-3 mt-2">
-                            </div>
-                        </div>
-                    `;
-                thisWeekContainer.innerHTML += groupHtml;
+            // Render each date+company group as a summary card
+            sortedGroups.forEach((group, index) => {
+                const { day, date: dateNum } = formatDateBadge(group.date);
+                const isGoal = group.totalDuration >= dailyTarget;
+                const sessionCount = group.sessions.length;
+                const groupId = `group-${index}`;
+                const hasMultipleSessions = sessionCount > 1;
+                const hasNotes = group.sessions.some(s => s.note && s.note.trim());
 
-                // Render sessions for this company
-                const sessionsContainer = thisWeekContainer.querySelector(`#${groupId}`);
-                group.sessions.forEach(session => renderSessionCard(session, sessionsContainer, dailyTarget, companyMap));
-            });
-
-            // Add collapse/expand handlers
-            thisWeekContainer.querySelectorAll('.company-header').forEach(header => {
-                header.addEventListener('click', function () {
-                    const groupId = this.dataset.group;
-                    const sessionsDiv = document.getElementById(groupId);
-                    const icon = this.querySelector('.collapse-icon');
-
-                    if (sessionsDiv.style.display === 'none') {
-                        sessionsDiv.style.display = 'flex';
-                        icon.style.transform = 'rotate(0deg)';
-                    } else {
-                        sessionsDiv.style.display = 'none';
-                        icon.style.transform = 'rotate(-90deg)';
-                    }
-                });
-            });
-        }
-
-        // Helper function to render a session card
-        function renderSessionCard(session, container, dailyTarget, companyMap = {}) {
-            const { day, date } = formatDateBadge(session.date);
-            const isGoal = session.duration >= dailyTarget;
-            const hasNote = session.note && session.note.trim();
-            const noteIcon = hasNote ? `<span class="material-symbols-outlined text-slate-400 text-sm ml-1">sticky_note_2</span>` : '';
-            const companyName = session.company_id && companyMap[session.company_id] ? companyMap[session.company_id] : null;
-            const companyBadge = companyName ? `<span class="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">${companyName}</span>` : '';
-
-            const cardHtml = `
-      <div class="session-card group flex flex-col rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50 cursor-pointer" data-session-id="${session.id}">
+                const cardHtml = `
+      <div class="session-group-card group flex flex-col rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50 ${hasMultipleSessions ? 'cursor-pointer' : ''}" data-group-id="${groupId}">
         <div class="flex items-center gap-4">
           <div class="flex shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 dark:bg-[#233c48] h-14 w-14">
             <span class="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">${day}</span>
-            <span class="text-xl font-bold text-slate-900 dark:text-white">${date}</span>
+            <span class="text-xl font-bold text-slate-900 dark:text-white">${dateNum}</span>
           </div>
           <div class="flex flex-1 flex-col justify-center overflow-hidden">
-            <div class="flex items-center gap-1">
-              <p class="truncate text-base font-semibold text-slate-900 dark:text-white">${session.name}</p>
-              ${noteIcon}
+            <div class="flex items-center gap-2">
+              <p class="truncate text-base font-semibold text-slate-900 dark:text-white">${group.companyName}</p>
+              ${hasNotes ? `<span class="material-symbols-outlined text-slate-400 text-sm">sticky_note_2</span>` : ''}
+              ${hasMultipleSessions ? `<span class="material-symbols-outlined text-primary text-sm expand-icon transition-transform">expand_more</span>` : ''}
             </div>
-            <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+            <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
               <span class="material-symbols-outlined text-[14px]">schedule</span>
-              <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Today'}</span>
+              <span>${sessionCount} session${sessionCount > 1 ? 's' : ''}</span>
+              ${sessionCount === 1 ? `<span class="text-slate-400">•</span><span>${group.sessions[0].name}</span>` : ''}
             </div>
           </div>
           <div class="flex shrink-0 flex-col items-end gap-1">
-            <div class="flex items-center gap-2">
-              <div class="flex flex-col items-end gap-1">
-                <p class="text-base font-bold ${isGoal ? 'text-primary' : 'text-slate-700 dark:text-slate-300'}">${formatTimeShort(session.duration)}</p>
-                ${isGoal ? `
-                  <div class="flex items-center gap-1 rounded-full bg-green-500/10 dark:bg-green-400/10 px-1.5 py-0.5">
-                    <span class="material-symbols-outlined text-[12px] text-green-600 dark:text-green-400 font-bold">check</span>
-                    <span class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Goal</span>
-                  </div>
-                ` : ''}
+            <p class="text-base font-bold ${isGoal ? 'text-primary' : 'text-slate-700 dark:text-slate-300'}">${formatTimeShort(group.totalDuration)}</p>
+            ${isGoal ? `
+              <div class="flex items-center gap-1 rounded-full bg-green-500/10 dark:bg-green-400/10 px-1.5 py-0.5">
+                <span class="material-symbols-outlined text-[12px] text-green-600 dark:text-green-400 font-bold">check</span>
+                <span class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Goal</span>
               </div>
-              <button 
-                onclick="event.stopPropagation(); editSession(${session.id})"
-                class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400">
-                <span class="material-symbols-outlined text-[18px]">edit</span>
-              </button>
-              <button 
-                onclick="event.stopPropagation(); deleteSessionWithConfirm(${session.id}, '${session.name.replace(/'/g, "\\'")}')"
-                class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 dark:bg-red-400/10 hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400">
-                <span class="material-symbols-outlined text-[18px]">delete</span>
-              </button>
-            </div>
+            ` : ''}
           </div>
         </div>
-        ${hasNote ? `
-        <div class="note-section hidden mt-3 pt-3 border-t border-slate-200 dark:border-white/5">
-          <div class="flex items-start gap-2">
-            <span class="material-symbols-outlined text-slate-400 text-lg mt-0.5">note</span>
-            <p class="text-sm text-slate-600 dark:text-slate-300 flex-1">${session.note}</p>
+        <!-- Expandable details section -->
+        <div id="${groupId}" class="sessions-detail hidden mt-4 pt-4 border-t border-slate-200 dark:border-white/10">
+          <div class="flex flex-col gap-3">
+            ${group.sessions.map(session => {
+                    const sessionHasNote = session.note && session.note.trim();
+                    return `
+              <div class="session-detail-item flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-white/5 border border-slate-100 dark:border-white/5">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <p class="text-sm font-semibold text-slate-900 dark:text-white">${session.name}</p>
+                    ${sessionHasNote ? `<span class="material-symbols-outlined text-slate-400 text-xs">sticky_note_2</span>` : ''}
+                  </div>
+                  <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <span class="material-symbols-outlined text-[12px]">schedule</span>
+                    <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Today'}</span>
+                    <span class="text-slate-400">•</span>
+                    <span class="font-medium text-primary">${formatTimeShort(session.duration)}</span>
+                  </div>
+                  ${sessionHasNote ? `
+                  <div class="mt-2 pt-2 border-t border-slate-200 dark:border-white/5">
+                    <p class="text-xs text-slate-500 dark:text-slate-400 italic">${session.note}</p>
+                  </div>
+                  ` : ''}
+                </div>
+                <div class="flex items-center gap-1">
+                  <button 
+                    onclick="event.stopPropagation(); editSession(${session.id})"
+                    class="flex items-center justify-center w-7 h-7 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400 transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">edit</span>
+                  </button>
+                  <button 
+                    onclick="event.stopPropagation(); deleteSessionWithConfirm(${session.id}, '${session.name.replace(/'/g, "\\'")}')"
+                    class="flex items-center justify-center w-7 h-7 rounded-lg bg-red-500/10 dark:bg-red-400/10 hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400 transition-colors">
+                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+              </div>
+            `;
+                }).join('')}
           </div>
         </div>
-        ` : ''}
       </div>
     `;
-            container.innerHTML += cardHtml;
+                thisWeekContainer.innerHTML += cardHtml;
+            });
 
-            // Add click handler after rendering
-            setTimeout(() => {
-                const lastCard = container.querySelector(`.session-card[data-session-id="${session.id}"]`);
-                if (lastCard) {
-                    lastCard.addEventListener('click', function (e) {
-                        if (e.target.closest('button')) return;
-                        const noteSection = this.querySelector('.note-section');
-                        if (noteSection) noteSection.classList.toggle('hidden');
-                    });
-                }
-            }, 0);
+            // Add expand/collapse handlers
+            thisWeekContainer.querySelectorAll('.session-group-card').forEach(card => {
+                card.addEventListener('click', function (e) {
+                    if (e.target.closest('button')) return;
+                    const groupId = this.dataset.groupId;
+                    const detailSection = document.getElementById(groupId);
+                    const expandIcon = this.querySelector('.expand-icon');
+
+                    if (detailSection) {
+                        const isHidden = detailSection.classList.contains('hidden');
+                        detailSection.classList.toggle('hidden');
+                        if (expandIcon) {
+                            expandIcon.style.transform = isHidden ? 'rotate(180deg)' : 'rotate(0deg)';
+                        }
+                    }
+                });
+            });
         }
 
         // Navigation - Back button
@@ -888,27 +877,58 @@
 
             // Date picker button click
             sessionDateBtn.addEventListener('click', () => {
-                const dateModal = document.createElement('div');
-                dateModal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
-
                 const today = new Date();
                 const isToday = selectedDate.toDateString() === today.toDateString();
+                const isYesterday = selectedDate.toDateString() === new Date(today.getTime() - 86400000).toDateString();
+                const is2DaysAgo = selectedDate.toDateString() === new Date(today.getTime() - 172800000).toDateString();
 
-                dateModal.innerHTML = `
-                    <div class="bg-white dark:bg-card-dark rounded-2xl p-6 w-80">
-                        <h3 class="text-xl font-bold mb-4 text-slate-900 dark:text-white">Select Date</h3>
-                        <div class="flex flex-col gap-3 mb-4">
-                            <button class="quick-date ${isToday ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'} rounded-xl py-3 font-semibold hover:bg-primary/90 transition" data-offset="0">Today</button>
-                            <button class="quick-date bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition" data-offset="-1">Yesterday</button>
-                            <button class="quick-date bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition" data-offset="-2">2 Days Ago</button>
+                const getButtonClass = (isActive) => isActive
+                    ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
+                    : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5';
+
+                const dateModal = createModernModal({
+                    icon: 'calendar_month',
+                    title: 'Select Date',
+                    description: 'Choose a date for this work session.',
+                    content: `
+                        <div class="px-6 pb-2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Quick Select</label>
+                            <div class="grid grid-cols-3 gap-3">
+                                <button class="quick-date flex flex-col items-center justify-center gap-1 py-4 ${getButtonClass(isToday)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="0">
+                                    <span class="material-symbols-outlined text-lg">today</span>
+                                    <span class="text-xs">Today</span>
+                                </button>
+                                <button class="quick-date flex flex-col items-center justify-center gap-1 py-4 ${getButtonClass(isYesterday)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="-1">
+                                    <span class="material-symbols-outlined text-lg">history</span>
+                                    <span class="text-xs">Yesterday</span>
+                                </button>
+                                <button class="quick-date flex flex-col items-center justify-center gap-1 py-4 ${getButtonClass(is2DaysAgo)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="-2">
+                                    <span class="material-symbols-outlined text-lg">event</span>
+                                    <span class="text-xs">2 Days Ago</span>
+                                </button>
+                            </div>
                         </div>
-                        <div class="border-t border-slate-200 dark:border-slate-700 pt-4 mb-4">
-                            <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Date</label>
-                            <input type="date" id="customDatePicker" value="${selectedDate.toISOString().split('T')[0]}" class="w-full rounded-xl border-none bg-slate-100 dark:bg-[#233c48] text-slate-900 dark:text-white dark:[color-scheme:dark] focus:ring-2 focus:ring-primary/50 px-4 py-3" />
+
+                        <div class="px-8 py-4">
+                            <div class="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent w-full"></div>
                         </div>
-                        <button class="close-date-picker w-full bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition">Close</button>
-                    </div>
-                `;
+
+                        <div class="px-6 pb-2">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Custom Date</label>
+                            <div class="relative group">
+                                <div class="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none">
+                                    <span class="material-symbols-outlined text-primary text-xl">edit_calendar</span>
+                                </div>
+                                <input type="date" id="customDatePicker" value="${selectedDate.toISOString().split('T')[0]}" 
+                                    class="w-full pl-14 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner cursor-pointer dark:[color-scheme:dark]" />
+                            </div>
+                        </div>
+
+                        <div class="p-6">
+                            <button class="close-date-picker w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5 tracking-wide">Close</button>
+                        </div>
+                    `
+                });
                 document.body.appendChild(dateModal);
 
                 dateModal.querySelectorAll('.quick-date').forEach(btn => {

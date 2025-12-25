@@ -686,28 +686,63 @@
 
         // Date picker button
         datePickerBtn.addEventListener('click', () => {
-            const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
-
             const today = new Date();
             const isToday = currentDate.toDateString() === today.toDateString();
+            const isYesterday = currentDate.toDateString() === new Date(today.getTime() - 86400000).toDateString();
+            const is2DaysAgo = currentDate.toDateString() === new Date(today.getTime() - 172800000).toDateString();
+            const is3DaysAgo = currentDate.toDateString() === new Date(today.getTime() - 259200000).toDateString();
 
-            modal.innerHTML = `
-                <div class="bg-white dark:bg-surface-dark rounded-2xl p-6 w-80 max-h-[80vh] overflow-y-auto">
-                    <h3 class="text-xl font-bold mb-4 text-slate-900 dark:text-white">Select Date</h3>
-                    <div class="flex flex-col gap-3 mb-4">
-                        <button class="date-opt ${isToday ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'} rounded-xl py-3 font-semibold hover:bg-primary/90 transition" data-offset="0">Today</button>
-                        <button class="date-opt bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition" data-offset="-1">Yesterday</button>
-                        <button class="date-opt bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition" data-offset="-2">2 Days Ago</button>
-                        <button class="date-opt bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition" data-offset="-3">3 Days Ago</button>
+            const getButtonClass = (isActive) => isActive
+                ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/20'
+                : 'bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/5';
+
+            const modal = createModernModal({
+                icon: 'calendar_month',
+                title: 'Select Date',
+                description: 'Choose a date to view or log work sessions.',
+                content: `
+                    <div class="px-6 pb-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Quick Select</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button class="date-opt flex items-center justify-center gap-2 py-4 ${getButtonClass(isToday)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="0">
+                                <span class="material-symbols-outlined text-lg">today</span>
+                                Today
+                            </button>
+                            <button class="date-opt flex items-center justify-center gap-2 py-4 ${getButtonClass(isYesterday)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="-1">
+                                <span class="material-symbols-outlined text-lg">history</span>
+                                Yesterday
+                            </button>
+                            <button class="date-opt flex items-center justify-center gap-2 py-4 ${getButtonClass(is2DaysAgo)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="-2">
+                                <span class="material-symbols-outlined text-lg">event</span>
+                                2 Days Ago
+                            </button>
+                            <button class="date-opt flex items-center justify-center gap-2 py-4 ${getButtonClass(is3DaysAgo)} font-semibold rounded-2xl active:scale-95 transition-all duration-200" data-offset="-3">
+                                <span class="material-symbols-outlined text-lg">event</span>
+                                3 Days Ago
+                            </button>
+                        </div>
                     </div>
-                    <div class="border-t border-slate-200 dark:border-slate-700 pt-4 mb-4">
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Date</label>
-                        <input type="date" id="customDate" value="${currentDate.toISOString().split('T')[0]}" class="w-full rounded-xl border-none bg-slate-100 dark:bg-[#233c48] text-slate-900 dark:text-white dark:[color-scheme:dark] focus:ring-2 focus:ring-primary/50 px-4 py-3" />
+
+                    <div class="px-8 py-4">
+                        <div class="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent w-full"></div>
                     </div>
-                    <button class="close-date-modal w-full bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition">Close</button>
-                </div>
-            `;
+
+                    <div class="px-6 pb-2">
+                        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Custom Date</label>
+                        <div class="relative group">
+                            <div class="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none">
+                                <span class="material-symbols-outlined text-primary text-xl">edit_calendar</span>
+                            </div>
+                            <input type="date" id="customDate" value="${currentDate.toISOString().split('T')[0]}" 
+                                class="w-full pl-14 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner cursor-pointer dark:[color-scheme:dark]" />
+                        </div>
+                    </div>
+
+                    <div class="p-6">
+                        <button class="close-date-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5 tracking-wide">Close</button>
+                    </div>
+                `
+            });
             document.body.appendChild(modal);
 
             // Quick date buttons
