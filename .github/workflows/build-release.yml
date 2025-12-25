@@ -3,17 +3,7 @@ name: Build and Release
 on:
   push:
     branches: [ main, master ]
-    # Sadece bu dosyalarda değişiklik olduğunda çalışır
-    paths:
-      - '*.js'
-      - 'src/**'
-      - 'database/**'
-      - 'package.json'
-      - 'package-lock.json'
-    # Tag push edildiğinde release oluşturulur
-    tags:
-      - 'v*'
-  workflow_dispatch:  # Manuel tetikleme
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -56,12 +46,9 @@ jobs:
         name: ${{ matrix.os }}-build
         path: ${{ matrix.artifact_path }}
 
-  # Release sadece tag push edildiğinde veya manuel tetiklendiğinde çalışır
   release:
     needs: build
     runs-on: ubuntu-latest
-    # Tag ile tetiklendiğinde veya manuel dispatch ile çalışır
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     
     steps:
     - name: Download Windows artifacts
@@ -76,34 +63,27 @@ jobs:
         name: macos-latest-build
         path: dist/
 
-    - name: Get version from tag
-      id: version
-      run: |
-        if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-        else
-          echo "version=v$(date +'%Y.%m.%d')-manual" >> $GITHUB_OUTPUT
-        fi
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+
+    - name: Get short SHA
+      id: sha
+      run: echo "sha=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ steps.version.outputs.version }}
-        name: Release ${{ steps.version.outputs.version }}
+        tag_name: v${{ steps.date.outputs.date }}-${{ steps.sha.outputs.sha }}
+        name: Release ${{ steps.date.outputs.date }}
         body: |
-          🚀 Workflow Timer ${{ steps.version.outputs.version }}
+          🚀 Automatic release from commit ${{ github.sha }}
           
-          ## What's New
-          See [CHANGELOG](https://github.com/fleizean/workflow-timer/commits/main) for details.
+          **Date:** ${{ steps.date.outputs.date }}
           
           ## Downloads
           - 🪟 **Windows:** `.exe` installer
           - 🍎 **macOS:** `.dmg` disk image
-          
-          ## Installation
-          1. Download the appropriate file for your platform
-          2. Run the installer
-          3. Start tracking your work! ⏱️
         draft: false
         prerelease: false
         files: |
