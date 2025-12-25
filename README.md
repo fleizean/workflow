@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Electron](https://img.shields.io/badge/Electron-28.0-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/yourusername/workflow-timer)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/fleizean/workflow-timer)
 
 [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Development](#development)
 
@@ -54,7 +54,7 @@ Workflow Timer is a beautiful, minimalist desktop application for tracking your 
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/workflow-timer.git
+   git clone https://github.com/fleizean/workflow-timer.git
    cd workflow-timer
    ```
 

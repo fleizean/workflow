@@ -1,0 +1,56 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build Electron app
+      run: npm run build
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get current date
+      id: date
+      run: echo "date=$(Get-Date -Format 'yyyy.MM.dd')" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
+    - name: Get short SHA
+      id: sha
+      run: echo "sha=$("${{ github.sha }}".Substring(0,7))" >> $env:GITHUB_OUTPUT
+      shell: pwsh
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.date.outputs.date }}-${{ steps.sha.outputs.sha }}
+        name: Release ${{ steps.date.outputs.date }}
+        body: |
+          🚀 Automatic release from commit ${{ github.sha }}
+          
+          **Date:** ${{ steps.date.outputs.date }}
+          **Commit:** ${{ github.event.head_commit.message }}
+        draft: false
+        prerelease: false
+        files: |
+          dist/*.exe
+          dist/*.msi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

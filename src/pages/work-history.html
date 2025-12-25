@@ -19,17 +19,34 @@
 
 <body
     class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased selection:bg-primary/30">
-    <div class="relative flex h-full min-h-screen w-full flex-col overflow-hidden mx-auto max-w-md shadow-2xl">
+    <div
+        class="app-container relative flex h-full min-h-screen w-full flex-col overflow-hidden mx-auto max-w-md shadow-2xl">
+        <!-- Custom Titlebar -->
+        <div
+            class="titlebar flex items-center justify-between px-4 pt-2 pb-0 bg-background-light dark:bg-background-dark">
+            <div class="flex-1"></div>
+            <div class="flex items-center gap-1">
+                <button onclick="window.api.minimizeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">minimize</span>
+                </button>
+                <button onclick="window.api.closeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
+            </div>
+        </div>
+
         <!-- Header -->
         <header
-            class="sticky top-0 z-20 flex items-center justify-between bg-background-light/95 dark:bg-background-dark/95 px-4 pt-6 pb-4 backdrop-blur-md transition-colors duration-300">
+            class="sticky top-0 z-20 flex items-center justify-between bg-background-light/95 dark:bg-background-dark/95 px-4 pt-4 pb-4 backdrop-blur-md transition-colors duration-300">
             <button
                 class="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                 id="backButton">
                 <span class="material-symbols-outlined text-[28px]">chevron_left</span>
             </button>
             <h2 class="text-2xl font-bold leading-tight tracking-tight flex-1 text-center">Work History</h2>
-            <div class="flex items-center justify-end gap-2 w-auto">
+            <div class="flex items-center justify-end gap-2">
                 <button id="companiesButton"
                     class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-slate-200 dark:bg-card-dark text-slate-900 dark:text-white transition hover:bg-slate-300 dark:hover:bg-[#233c48]">
                     <span class="material-symbols-outlined text-[24px]">business</span>
@@ -67,7 +84,7 @@
                     <h3 class="text-slate-900 dark:text-white text-lg font-bold leading-tight">This Week</h3>
                     <span class="text-xs font-medium text-slate-500 dark:text-slate-400">Oct 12 - 18</span>
                 </div>
-                <div class="flex flex-col gap-3">
+                <div id="thisWeekContainer" class="flex flex-col gap-3">
                     <!-- List Item 1: Over Target -->
                     <div
                         class="group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50">
@@ -148,12 +165,12 @@
                 </div>
             </section>
             <!-- Last Week Section -->
-            <section class="mb-6">
+            <section id="lastWeekSection" class="mb-6">
                 <div class="mb-3 flex items-end justify-between px-1">
                     <h3 class="text-slate-900 dark:text-white text-lg font-bold leading-tight">Last Week</h3>
                     <span class="text-xs font-medium text-slate-500 dark:text-slate-400">Oct 05 - 11</span>
                 </div>
-                <div class="flex flex-col gap-3">
+                <div id="lastWeekContainer" class="flex flex-col gap-3">
                     <!-- List Item 4 -->
                     <div
                         class="group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50 opacity-80 hover:opacity-100">
@@ -192,6 +209,14 @@
                             <p class="text-base font-bold text-slate-700 dark:text-slate-300">6h 30m</p>
                         </div>
                     </div>
+                </div>
+            </section>
+            <!-- Older Section -->
+            <section id="olderSection" class="mb-6">
+                <div class="mb-3 flex items-end justify-between px-1">
+                    <h3 class="text-slate-900 dark:text-white text-lg font-bold leading-tight">Older</h3>
+                </div>
+                <div id="olderContainer" class="flex flex-col gap-3">
                 </div>
             </section>
         </main>
@@ -394,22 +419,67 @@
 
             let sessions = result.sessions;
 
-            // Apply filter
-            const now = new Date();
-            if (currentFilter === 'thisWeek') {
-                const { thisWeek } = groupSessionsByWeek(sessions);
-                sessions = thisWeek;
-            } else if (currentFilter === 'lastWeek') {
-                const { lastWeek } = groupSessionsByWeek(sessions);
-                sessions = lastWeek;
-            } else if (currentFilter === 'thisMonth') {
-                const thisMonth = now.getMonth();
-                const thisYear = now.getFullYear();
-                sessions = sessions.filter(s => {
-                    const d = new Date(s.date);
-                    return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
-                });
+            // Get companies for name lookup
+            const companiesRes = await window.api.getCompanies();
+            const companies = companiesRes.success ? companiesRes.companies : [];
+            const companyMap = {};
+            companies.forEach(c => companyMap[c.id] = c.name);
+
+            // Apply advanced filters
+            const savedFilters = JSON.parse(localStorage.getItem('sessionFilters') || '{}');
+
+            // Filter by company
+            if (savedFilters.companies && savedFilters.companies.length > 0) {
+                sessions = sessions.filter(s => savedFilters.companies.includes(s.company_id));
             }
+
+            // Filter by date range
+            if (savedFilters.startDate) {
+                sessions = sessions.filter(s => s.date >= savedFilters.startDate);
+            }
+            if (savedFilters.endDate) {
+                sessions = sessions.filter(s => s.date <= savedFilters.endDate);
+            }
+
+            // Filter by duration range
+            if (savedFilters.minDuration !== null && savedFilters.minDuration !== undefined) {
+                const minSeconds = savedFilters.minDuration * 3600;
+                sessions = sessions.filter(s => s.duration >= minSeconds);
+            }
+            if (savedFilters.maxDuration !== null && savedFilters.maxDuration !== undefined) {
+                const maxSeconds = savedFilters.maxDuration * 3600;
+                sessions = sessions.filter(s => s.duration <= maxSeconds);
+            }
+
+            // Filter by goal achievement
+            if (savedFilters.goalFilter && savedFilters.goalFilter !== 'all') {
+                const targetRes = await window.api.getSetting({ key: 'daily_target' });
+                const dailyTarget = targetRes.success ? parseInt(targetRes.value) : 28800;
+
+                if (savedFilters.goalFilter === 'achieved') {
+                    sessions = sessions.filter(s => s.duration >= dailyTarget);
+                } else if (savedFilters.goalFilter === 'not-achieved') {
+                    sessions = sessions.filter(s => s.duration < dailyTarget);
+                }
+            }
+
+            // Apply sorting
+            const sortBy = savedFilters.sortBy || 'date';
+            const sortOrder = savedFilters.sortOrder || 'desc';
+
+            sessions.sort((a, b) => {
+                let comparison = 0;
+
+                if (sortBy === 'date') {
+                    comparison = a.date.localeCompare(b.date);
+                } else if (sortBy === 'duration') {
+                    comparison = a.duration - b.duration;
+                } else if (sortBy === 'name') {
+                    comparison = a.name.localeCompare(b.name);
+                }
+
+                return sortOrder === 'desc' ? -comparison : comparison;
+            });
 
             // Update week totals
             const weekResult = await window.api.getWeekTotal();
@@ -421,99 +491,173 @@
                     ? Math.round(((weekResult.thisWeek - weekResult.lastWeek) / weekResult.lastWeek) * 100)
                     : 0;
                 const changeText = change >= 0 ? `+${change}%` : `${change}%`;
-                document.querySelector('.flex.items-center.gap-1.rounded-full span:nth-child(2)').textContent = changeText;
+                const changeEl = document.querySelector('.flex.items-center.gap-1.rounded-full span:nth-child(2)');
+                if (changeEl) changeEl.textContent = changeText;
             }
 
-            // Group sessions by week for display
-            const { thisWeek, lastWeek } = groupSessionsByWeek(sessions);
+            // Determine if filters are active
+            const hasActiveFilters = savedFilters.companies?.length > 0 ||
+                savedFilters.startDate ||
+                savedFilters.endDate ||
+                savedFilters.minDuration ||
+                savedFilters.maxDuration ||
+                (savedFilters.goalFilter && savedFilters.goalFilter !== 'all');
+
+            // Get containers by ID for reliable selection
+            const thisWeekContainer = document.getElementById('thisWeekContainer');
+            const lastWeekContainer = document.getElementById('lastWeekContainer');
+            const lastWeekSection = document.getElementById('lastWeekSection');
+            const olderContainer = document.getElementById('olderContainer');
+            const olderSection = document.getElementById('olderSection');
             const dailyTarget = 28800; // 8 hours
 
-            // Render this week
-            const thisWeekContainer = document.querySelector('.mb-6:nth-of-type(2) .flex.flex-col.gap-3');
+            // Show sessions grouped by company with collapsible headers
             thisWeekContainer.innerHTML = '';
+            if (lastWeekContainer) {
+                lastWeekContainer.innerHTML = '';
+            }
+            if (lastWeekSection) {
+                lastWeekSection.style.display = 'none';
+            }
+            if (olderContainer) {
+                olderContainer.innerHTML = '';
+            }
+            if (olderSection) {
+                olderSection.style.display = 'none';
+            }
 
-            thisWeek.forEach(session => {
-                const { day, date } = formatDateBadge(session.date);
-                const isGoal = session.duration >= dailyTarget;
+            // Group sessions by company
+            const groupedByCompany = {};
+            sessions.forEach(session => {
+                const companyId = session.company_id || 'none';
+                if (!groupedByCompany[companyId]) {
+                    groupedByCompany[companyId] = {
+                        name: companyMap[companyId] || 'No Company',
+                        sessions: [],
+                        totalDuration: 0
+                    };
+                }
+                groupedByCompany[companyId].sessions.push(session);
+                groupedByCompany[companyId].totalDuration += session.duration;
+            });
 
-                thisWeekContainer.innerHTML += `
-      <div class="group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50">
-        <div class="flex shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 dark:bg-[#233c48] h-14 w-14">
-          <span class="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">${day}</span>
-          <span class="text-xl font-bold text-slate-900 dark:text-white">${date}</span>
-        </div>
-        <div class="flex flex-1 flex-col justify-center overflow-hidden">
-          <p class="truncate text-base font-semibold text-slate-900 dark:text-white">${session.name}</p>
-          <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-            <span class="material-symbols-outlined text-[14px]">schedule</span>
-            <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Today'}</span>
+            // Render each company group
+            Object.keys(groupedByCompany).forEach((companyId, index) => {
+                const group = groupedByCompany[companyId];
+                const groupId = `company-group-${companyId}`;
+
+                const groupHtml = `
+                        <div class="mb-4">
+                            <div class="company-header flex items-center justify-between px-1 py-2 cursor-pointer hover:bg-white/5 rounded-lg transition-colors" data-group="${groupId}">
+                                <div class="flex items-center gap-2">
+                                    <span class="material-symbols-outlined text-primary text-lg collapse-icon transition-transform">expand_more</span>
+                                    <h3 class="text-slate-900 dark:text-white text-base font-bold">${group.name}</h3>
+                                    <span class="text-xs text-slate-500 dark:text-slate-400">(${group.sessions.length} sessions)</span>
+                                </div>
+                                <span class="text-sm font-bold text-primary">${formatTimeShort(group.totalDuration)}</span>
+                            </div>
+                            <div id="${groupId}" class="company-sessions flex flex-col gap-3 mt-2">
+                            </div>
+                        </div>
+                    `;
+                thisWeekContainer.innerHTML += groupHtml;
+
+                // Render sessions for this company
+                const sessionsContainer = thisWeekContainer.querySelector(`#${groupId}`);
+                group.sessions.forEach(session => renderSessionCard(session, sessionsContainer, dailyTarget, companyMap));
+            });
+
+            // Add collapse/expand handlers
+            thisWeekContainer.querySelectorAll('.company-header').forEach(header => {
+                header.addEventListener('click', function () {
+                    const groupId = this.dataset.group;
+                    const sessionsDiv = document.getElementById(groupId);
+                    const icon = this.querySelector('.collapse-icon');
+
+                    if (sessionsDiv.style.display === 'none') {
+                        sessionsDiv.style.display = 'flex';
+                        icon.style.transform = 'rotate(0deg)';
+                    } else {
+                        sessionsDiv.style.display = 'none';
+                        icon.style.transform = 'rotate(-90deg)';
+                    }
+                });
+            });
+        }
+
+        // Helper function to render a session card
+        function renderSessionCard(session, container, dailyTarget, companyMap = {}) {
+            const { day, date } = formatDateBadge(session.date);
+            const isGoal = session.duration >= dailyTarget;
+            const hasNote = session.note && session.note.trim();
+            const noteIcon = hasNote ? `<span class="material-symbols-outlined text-slate-400 text-sm ml-1">sticky_note_2</span>` : '';
+            const companyName = session.company_id && companyMap[session.company_id] ? companyMap[session.company_id] : null;
+            const companyBadge = companyName ? `<span class="text-[10px] font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">${companyName}</span>` : '';
+
+            const cardHtml = `
+      <div class="session-card group flex flex-col rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50 cursor-pointer" data-session-id="${session.id}">
+        <div class="flex items-center gap-4">
+          <div class="flex shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 dark:bg-[#233c48] h-14 w-14">
+            <span class="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">${day}</span>
+            <span class="text-xl font-bold text-slate-900 dark:text-white">${date}</span>
           </div>
-        </div>
-        <div class="flex shrink-0 flex-col items-end gap-1">
-          <div class="flex items-center gap-2">
-            <div class="flex flex-col items-end gap-1">
-              <p class="text-base font-bold ${isGoal ? 'text-primary' : 'text-slate-700 dark:text-slate-300'}">${formatTimeShort(session.duration)}</p>
-              ${isGoal ? `
-                <div class="flex items-center gap-1 rounded-full bg-green-500/10 dark:bg-green-400/10 px-1.5 py-0.5">
-                  <span class="material-symbols-outlined text-[12px] text-green-600 dark:text-green-400 font-bold">check</span>
-                  <span class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Goal</span>
-                </div>
-              ` : ''}
+          <div class="flex flex-1 flex-col justify-center overflow-hidden">
+            <div class="flex items-center gap-1">
+              <p class="truncate text-base font-semibold text-slate-900 dark:text-white">${session.name}</p>
+              ${noteIcon}
             </div>
-            <button 
-              onclick="editSession(${session.id})"
-              class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400">
-              <span class="material-symbols-outlined text-[18px]">edit</span>
-            </button>
-            <button 
-              onclick="deleteSessionWithConfirm(${session.id}, '${session.name.replace(/'/g, "\\'")}')"
-              class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 dark:bg-red-400/10 hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400">
-              <span class="material-symbols-outlined text-[18px]">delete</span>
-            </button>
+            <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+              <span class="material-symbols-outlined text-[14px]">schedule</span>
+              <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Today'}</span>
+            </div>
+          </div>
+          <div class="flex shrink-0 flex-col items-end gap-1">
+            <div class="flex items-center gap-2">
+              <div class="flex flex-col items-end gap-1">
+                <p class="text-base font-bold ${isGoal ? 'text-primary' : 'text-slate-700 dark:text-slate-300'}">${formatTimeShort(session.duration)}</p>
+                ${isGoal ? `
+                  <div class="flex items-center gap-1 rounded-full bg-green-500/10 dark:bg-green-400/10 px-1.5 py-0.5">
+                    <span class="material-symbols-outlined text-[12px] text-green-600 dark:text-green-400 font-bold">check</span>
+                    <span class="text-[10px] font-bold text-green-600 dark:text-green-400 uppercase tracking-wider">Goal</span>
+                  </div>
+                ` : ''}
+              </div>
+              <button 
+                onclick="event.stopPropagation(); editSession(${session.id})"
+                class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400">
+                <span class="material-symbols-outlined text-[18px]">edit</span>
+              </button>
+              <button 
+                onclick="event.stopPropagation(); deleteSessionWithConfirm(${session.id}, '${session.name.replace(/'/g, "\\'")}')"
+                class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 dark:bg-red-400/10 hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400">
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+              </button>
+            </div>
           </div>
         </div>
+        ${hasNote ? `
+        <div class="note-section hidden mt-3 pt-3 border-t border-slate-200 dark:border-white/5">
+          <div class="flex items-start gap-2">
+            <span class="material-symbols-outlined text-slate-400 text-lg mt-0.5">note</span>
+            <p class="text-sm text-slate-600 dark:text-slate-300 flex-1">${session.note}</p>
+          </div>
+        </div>
+        ` : ''}
       </div>
     `;
-            });
+            container.innerHTML += cardHtml;
 
-            // Render last week
-            const lastWeekContainer = document.querySelector('.mb-6:nth-of-type(3) .flex.flex-col.gap-3');
-            lastWeekContainer.innerHTML = '';
-
-            lastWeek.slice(0, 5).forEach(session => {
-                const { day, date } = formatDateBadge(session.date);
-
-                lastWeekContainer.innerHTML += `
-      <div class="group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all hover:shadow-md border border-transparent dark:border-slate-800/50 opacity-80 hover:opacity-100">
-        <div class="flex shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 dark:bg-[#233c48] h-14 w-14">
-          <span class="text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">${day}</span>
-          <span class="text-xl font-bold text-slate-900 dark:text-white">${date}</span>
-        </div>
-        <div class="flex flex-1 flex-col justify-center overflow-hidden">
-          <p class="truncate text-base font-semibold text-slate-900 dark:text-white">${session.name}</p>
-          <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
-            <span class="material-symbols-outlined text-[14px]">schedule</span>
-            <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-          </div>
-        </div>
-        <div class="flex shrink-0 flex-col items-end gap-1">
-          <div class="flex items-center gap-2">
-            <p class="text-base font-bold text-slate-700 dark:text-slate-300">${formatTimeShort(session.duration)}</p>
-            <button 
-              onclick="editSession(${session.id})"
-              class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400">
-              <span class="material-symbols-outlined text-[18px]">edit</span>
-            </button>
-            <button 
-              onclick="deleteSessionWithConfirm(${session.id}, '${session.name.replace(/'/g, "\\'")}')"
-              class="opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center w-8 h-8 rounded-lg bg-red-500/10 dark:bg-red-400/10 hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400">
-              <span class="material-symbols-outlined text-[18px]">delete</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    `;
-            });
+            // Add click handler after rendering
+            setTimeout(() => {
+                const lastCard = container.querySelector(`.session-card[data-session-id="${session.id}"]`);
+                if (lastCard) {
+                    lastCard.addEventListener('click', function (e) {
+                        if (e.target.closest('button')) return;
+                        const noteSection = this.querySelector('.note-section');
+                        if (noteSection) noteSection.classList.toggle('hidden');
+                    });
+                }
+            }, 0);
         }
 
         // Navigation - Back button
@@ -530,43 +674,169 @@
         let currentFilter = localStorage.getItem('sessionFilter') || 'all';
 
         // Filter button modal
-        document.getElementById('filterButton').addEventListener('click', () => {
-            const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+        document.getElementById('filterButton').addEventListener('click', async () => {
+            // Get companies for filter
+            const companiesRes = await window.api.getCompanies();
+            const companies = companiesRes.success ? companiesRes.companies : [];
 
-            const filters = [
-                { id: 'all', label: 'All Time' },
-                { id: 'thisWeek', label: 'This Week' },
-                { id: 'lastWeek', label: 'Last Week' },
-                { id: 'thisMonth', label: 'This Month' }
-            ];
+            // Get current filters from localStorage
+            const savedFilters = JSON.parse(localStorage.getItem('sessionFilters') || '{}');
+            const selectedCompanies = savedFilters.companies || [];
+            const startDate = savedFilters.startDate || '';
+            const endDate = savedFilters.endDate || '';
+            const minDuration = savedFilters.minDuration || '';
+            const maxDuration = savedFilters.maxDuration || '';
+            const goalFilter = savedFilters.goalFilter || 'all';
+            const sortBy = savedFilters.sortBy || 'date';
+            const sortOrder = savedFilters.sortOrder || 'desc';
 
-            const buttonsHTML = filters.map(f => {
-                const isActive = currentFilter === f.id;
-                const classes = isActive
-                    ? 'filter-opt bg-primary text-white rounded-xl py-3 font-semibold hover:bg-primary/90 transition'
-                    : 'filter-opt bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition';
-                return `<button class="${classes}" data-filter="${f.id}">${f.label}</button>`;
-            }).join('');
+            // Create company checkboxes
+            const companyCheckboxes = companies.map(company => `
+                <label class="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition-colors border border-white/5">
+                    <input type="checkbox" value="${company.id}" ${selectedCompanies.includes(company.id) ? 'checked' : ''} 
+                        class="company-filter w-4 h-4 rounded border-gray-600 text-primary focus:ring-primary/50 focus:ring-2 bg-[#27272a]">
+                    <span class="text-sm text-white font-medium">${company.name}</span>
+                </label>
+            `).join('');
 
-            modal.innerHTML = `
-                <div class="bg-white dark:bg-card-dark rounded-2xl p-6 w-80 max-h-[80vh] overflow-y-auto">
-                    <h3 class="text-xl font-bold mb-4 text-slate-900 dark:text-white">Filter Sessions</h3>
-                    <div class="grid grid-cols-2 gap-3 mb-4">
-                        ${buttonsHTML}
+            const modal = createModernModal({
+                icon: 'filter_alt',
+                title: 'Advanced Filters',
+                description: 'Filter and sort your work sessions.',
+                iconColor: 'from-purple-900/50 to-purple-500/20',
+                content: `
+                    <div class="px-6 pb-6 max-h-[70vh] overflow-y-auto no-scrollbar">
+                        ${companies.length > 0 ? `
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Companies</label>
+                            <div class="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-2">
+                                ${companyCheckboxes}
+                            </div>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Date Range</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">From</label>
+                                    <input type="date" id="filterStartDate" value="${startDate}" 
+                                        class="w-full px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">To</label>
+                                    <input type="date" id="filterEndDate" value="${endDate}" 
+                                        class="w-full px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Duration (hours)</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">Min</label>
+                                    <input type="number" id="filterMinDuration" value="${minDuration}" min="0" step="0.5" placeholder="0"
+                                        class="w-full px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">Max</label>
+                                    <input type="number" id="filterMaxDuration" value="${maxDuration}" min="0" step="0.5" placeholder="24"
+                                        class="w-full px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Goal Achievement</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label class="goal-radio-label flex items-center justify-center gap-2 p-3 rounded-xl ${goalFilter === 'all' ? 'bg-primary/20 border-primary/50' : 'bg-white/5 border-white/5'} border cursor-pointer transition-all">
+                                    <input type="radio" name="goalFilter" value="all" ${goalFilter === 'all' ? 'checked' : ''} class="sr-only">
+                                    <span class="text-sm font-medium ${goalFilter === 'all' ? 'text-primary' : 'text-gray-300'}">All</span>
+                                </label>
+                                <label class="goal-radio-label flex items-center justify-center gap-2 p-3 rounded-xl ${goalFilter === 'achieved' ? 'bg-primary/20 border-primary/50' : 'bg-white/5 border-white/5'} border cursor-pointer transition-all">
+                                    <input type="radio" name="goalFilter" value="achieved" ${goalFilter === 'achieved' ? 'checked' : ''} class="sr-only">
+                                    <span class="text-sm font-medium ${goalFilter === 'achieved' ? 'text-primary' : 'text-gray-300'}">Achieved</span>
+                                </label>
+                                <label class="goal-radio-label flex items-center justify-center gap-2 p-3 rounded-xl ${goalFilter === 'not-achieved' ? 'bg-primary/20 border-primary/50' : 'bg-white/5 border-white/5'} border cursor-pointer transition-all">
+                                    <input type="radio" name="goalFilter" value="not-achieved" ${goalFilter === 'not-achieved' ? 'checked' : ''} class="sr-only">
+                                    <span class="text-sm font-medium ${goalFilter === 'not-achieved' ? 'text-primary' : 'text-gray-300'}">Not Yet</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-6">
+                            <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">Sort By</label>
+                            <div class="grid grid-cols-2 gap-3">
+                                <select id="filterSortBy" class="px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                    <option value="date" ${sortBy === 'date' ? 'selected' : ''}>Date</option>
+                                    <option value="duration" ${sortBy === 'duration' ? 'selected' : ''}>Duration</option>
+                                    <option value="name" ${sortBy === 'name' ? 'selected' : ''}>Name</option>
+                                </select>
+                                <select id="filterSortOrder" class="px-4 py-3 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-sm">
+                                    <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Newest First</option>
+                                    <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Oldest First</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <button id="applyFilters" class="py-4 bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-purple-500/20">
+                                Apply Filters
+                            </button>
+                            <button id="clearFilters" class="py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">
+                                Clear All
+                            </button>
+                        </div>
+                        <button class="close-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">
+                            Cancel
+                        </button>
                     </div>
-                    <button class="close-modal w-full bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition">Close</button>
-                </div>
-            `;
+                `
+            });
+
             document.body.appendChild(modal);
 
-            // Filter option click handlers
-            modal.querySelectorAll('.filter-opt').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    currentFilter = btn.dataset.filter;
-                    localStorage.setItem('sessionFilter', currentFilter);
-                    modal.remove();
-                    loadHistory();
+            // Apply filters
+            modal.querySelector('#applyFilters').addEventListener('click', () => {
+                const selectedCompanyCheckboxes = Array.from(modal.querySelectorAll('.company-filter:checked'));
+                const filters = {
+                    companies: selectedCompanyCheckboxes.map(cb => parseInt(cb.value)),
+                    startDate: modal.querySelector('#filterStartDate').value,
+                    endDate: modal.querySelector('#filterEndDate').value,
+                    minDuration: parseFloat(modal.querySelector('#filterMinDuration').value) || null,
+                    maxDuration: parseFloat(modal.querySelector('#filterMaxDuration').value) || null,
+                    goalFilter: modal.querySelector('input[name="goalFilter"]:checked').value,
+                    sortBy: modal.querySelector('#filterSortBy').value,
+                    sortOrder: modal.querySelector('#filterSortOrder').value
+                };
+
+                localStorage.setItem('sessionFilters', JSON.stringify(filters));
+                modal.remove();
+                loadHistory();
+            });
+
+            // Clear filters
+            modal.querySelector('#clearFilters').addEventListener('click', () => {
+                localStorage.removeItem('sessionFilters');
+                modal.remove();
+                loadHistory();
+            });
+
+            // Radio button styling
+            modal.querySelectorAll('input[name="goalFilter"]').forEach(radio => {
+                radio.addEventListener('change', function () {
+                    modal.querySelectorAll('.goal-radio-label').forEach(label => {
+                        const input = label.querySelector('input');
+                        const span = label.querySelector('span');
+                        if (input.checked) {
+                            label.className = 'goal-radio-label flex items-center justify-center gap-2 p-3 rounded-xl bg-primary/20 border-primary/50 border cursor-pointer transition-all';
+                            span.className = 'text-sm font-medium text-primary';
+                        } else {
+                            label.className = 'goal-radio-label flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border-white/5 border cursor-pointer transition-all';
+                            span.className = 'text-sm font-medium text-gray-300';
+                        }
+                    });
                 });
             });
 

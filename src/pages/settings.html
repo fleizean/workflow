@@ -19,7 +19,24 @@
 
 <body
     class="bg-background-light dark:bg-background-dark font-display antialiased text-slate-900 dark:text-white overflow-x-hidden selection:bg-primary/30">
-    <div class="relative flex min-h-screen w-full flex-col max-w-md mx-auto border-x border-white/5 shadow-2xl">
+    <div
+        class="app-container relative flex min-h-screen w-full flex-col max-w-md mx-auto border-x border-white/5 shadow-2xl">
+        <!-- Custom Titlebar -->
+        <div
+            class="titlebar flex items-center justify-between px-4 pt-2 pb-0 bg-background-light dark:bg-background-dark">
+            <div class="flex-1"></div>
+            <div class="flex items-center gap-1">
+                <button onclick="window.api.minimizeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">minimize</span>
+                </button>
+                <button onclick="window.api.closeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
+            </div>
+        </div>
+
         <!-- Header -->
         <header
             class="sticky top-0 z-50 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-black/5 dark:border-white/5 px-4 pb-4 pt-2 transition-all duration-300">
@@ -28,6 +45,7 @@
                     class="flex items-center justify-center w-10 h-10 -ml-2 rounded-full text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                     <span class="material-symbols-outlined text-[28px]">chevron_left</span>
                 </button>
+                <div class="w-10"></div>
             </div>
         </header>
         <!-- Content Scroll Area -->
@@ -250,7 +268,7 @@
         // Time picker modal
         document.getElementById('dailyTargetBtn').addEventListener('click', () => {
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm px-4';
 
             const currentValue = document.getElementById('dailyTargetInput').value;
             const [currentHours, currentMinutes] = currentValue.split(':').map(Number);
@@ -258,28 +276,42 @@
             const commonHours = [6, 7, 8, 9, 10, 12];
 
             modal.innerHTML = `
-                <div class="bg-white dark:bg-surface-dark rounded-2xl p-6 w-80 max-h-[80vh] overflow-y-auto">
-                    <h3 class="text-xl font-bold mb-4 text-slate-900 dark:text-white">Select Daily Target</h3>
-                    <div class="grid grid-cols-2 gap-3 mb-4">
-                        ${commonHours.map(h => `
-                            <button class="quick-hour ${h === currentHours && currentMinutes === 0 ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white'} rounded-xl py-3 font-semibold hover:bg-primary/90 transition" data-hours="${h}">${h} hours</button>
-                        `).join('')}
-                    </div>
-                    <div class="border-t border-slate-200 dark:border-slate-700 pt-4 mb-4">
-                        <label class="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Custom Time (24h format)</label>
-                        <div class="flex gap-2">
-                            <div class="flex-1">
-                                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Hours</label>
-                                <input type="number" id="customHours" min="0" max="23" value="${currentHours}" class="w-full rounded-xl border-none bg-slate-100 dark:bg-[#233c48] text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 px-4 py-3" />
-                            </div>
-                            <div class="flex-1">
-                                <label class="block text-xs text-slate-500 dark:text-slate-400 mb-1">Minutes</label>
-                                <input type="number" id="customMinutes" min="0" max="59" value="${currentMinutes}" class="w-full rounded-xl border-none bg-slate-100 dark:bg-[#233c48] text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/50 px-4 py-3" />
-                            </div>
+                <div class="relative w-full max-w-sm bg-surface-dark rounded-3xl shadow-2xl border border-white/10 overflow-hidden transform transition-all">
+                    <div class="px-6 pt-8 pb-4 flex flex-col items-center justify-center text-center">
+                        <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-900/50 to-primary/20 flex items-center justify-center mb-4 shadow-inner ring-1 ring-white/10">
+                            <span class="material-symbols-outlined text-primary text-3xl">flag</span>
                         </div>
-                        <button id="applyCustomTime" class="w-full mt-3 bg-emerald-500 text-white rounded-xl py-3 font-semibold hover:bg-emerald-600 transition">Apply</button>
+                        <h2 class="text-2xl font-bold text-white tracking-tight">Daily Target</h2>
+                        <p class="text-sm text-gray-400 mt-2 font-medium">Set your daily work hour goal.</p>
                     </div>
-                    <button class="close-time-modal w-full bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl py-3 font-semibold hover:bg-slate-300 dark:hover:bg-slate-600 transition">Close</button>
+                    <div class="px-6 pb-6">
+                        <div class="grid grid-cols-2 gap-3 mb-4">
+                            ${commonHours.map(h => `
+                                <button class="quick-hour flex items-center justify-center py-4 ${h === currentHours && currentMinutes === 0 ? 'bg-primary/20 text-primary border-primary/50' : 'bg-white/5 text-gray-300 border-white/5'} rounded-2xl font-semibold hover:bg-primary/20 hover:border-primary/50 hover:text-primary transition-all border active:scale-95" data-hours="${h}">
+                                    <span class="material-symbols-outlined mr-1.5 text-lg">schedule</span>
+                                    ${h}h
+                                </button>
+                            `).join('')}
+                        </div>
+                        <div class="px-8 py-6">
+                            <div class="h-px bg-gradient-to-r from-transparent via-white/10 to-transparent w-full"></div>
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Custom Time</label>
+                            <div class="flex gap-3">
+                                <div class="flex-1">
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">Hours</label>
+                                    <input type="number" id="customHours" min="0" max="23" value="${currentHours}" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-xs text-gray-500 mb-1.5 ml-1">Minutes</label>
+                                    <input type="number" id="customMinutes" min="0" max="59" value="${currentMinutes}" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
+                                </div>
+                            </div>
+                            <button id="applyCustomTime" class="w-full mt-3 py-4 bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-emerald-500/20">Apply Custom</button>
+                        </div>
+                        <button class="close-time-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">Close</button>
+                    </div>
                 </div>
             `;
             document.body.appendChild(modal);
@@ -315,7 +347,7 @@
         });
 
         document.getElementById('aboutButton').addEventListener('click', () => {
-            window.open('https://www.fleizean.dev', '_blank');
+            window.open('https://github.com/fleizean/workflow-timer', '_blank');
         });
 
         document.querySelector('.fixed.bottom-0 button').addEventListener('click', saveSettings);

@@ -36,18 +36,23 @@
 
 <body
     class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-white antialiased selection:bg-primary selection:text-white">
-    <!-- Custom Title Bar -->
-    <div class="title-bar">
-        <div></div>
-        <div style="-webkit-app-region: no-drag; display: flex; gap: 0;">
-            <button onclick="window.api && window.api.minimizeWindow && window.api.minimizeWindow()"
-                title="Minimize">−</button>
-            <button onclick="window.api && window.api.closeWindow && window.api.closeWindow()" class="close"
-                title="Close">×</button>
+    <div
+        class="app-container relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl">
+        <!-- Custom Titlebar -->
+        <div
+            class="titlebar flex items-center justify-between px-4 pt-2 pb-0 bg-background-light dark:bg-background-dark">
+            <div class="flex-1"></div>
+            <div class="flex items-center gap-1">
+                <button onclick="window.api.minimizeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">minimize</span>
+                </button>
+                <button onclick="window.api.closeWindow()"
+                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">close</span>
+                </button>
+            </div>
         </div>
-    </div>
-    <div class="relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl"
-        style="padding-top: 32px;">
         <!-- TopAppBar -->
         <header class="flex items-center p-6 justify-between z-10">
             <button id="datePickerBtn"
@@ -98,12 +103,14 @@
                         class="absolute inset-0 bg-orange-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out rounded-2xl">
                     </div>
                     <div class="flex items-center gap-1.5 mb-1 relative z-10">
-                        <span class="text-lg">🔥</span>
+                        <span class="material-symbols-outlined streak-fire-icon text-orange-500 text-lg animate-pulse"
+                            style="font-variation-settings: 'FILL' 1; filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6));">local_fire_department</span>
                         <p class="text-slate-500 dark:text-slate-400 text-[10px] font-bold uppercase tracking-wider">
                             Streak
                         </p>
                     </div>
-                    <p id="streakDisplay" class="text-xl font-bold leading-none tracking-tight relative z-10">0 days</p>
+                    <p id="streakDisplay"
+                        class="text-xl font-bold leading-none tracking-tight relative z-10 whitespace-nowrap">0 days</p>
                 </div>
             </div>
             <!-- Main Timer Display -->
@@ -357,10 +364,15 @@
                 const hours = String(finish.getHours()).padStart(2, '0');
                 const minutes = String(finish.getMinutes()).padStart(2, '0');
                 finishTimeText.textContent = `${hours}:${minutes}`;
-            } else if (isExceeded && !timer.goalReached) {
-                // Play notification sound when goal is reached
-                timer.goalReached = true;
-                playNotification();
+            } else if (isExceeded) {
+                // Play notification sound when goal is reached (only once per day)
+                const today = getCurrentDate();
+                const lastNotificationDate = localStorage.getItem('lastGoalNotificationDate');
+
+                if (lastNotificationDate !== today) {
+                    localStorage.setItem('lastGoalNotificationDate', today);
+                    playNotification();
+                }
                 finishTimeText.textContent = 'Goal Exceeded!';
             } else {
                 finishTimeText.textContent = isExceeded ? 'Goal Exceeded!' : 'Not running';
@@ -378,13 +390,24 @@
 
             // Show congratulations modal
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+            modal.className = 'fixed inset-0 bg-black/60 flex items-center justify-center z-50 backdrop-blur-md px-4';
             modal.innerHTML = `
-                <div class="bg-white dark:bg-surface-dark rounded-2xl p-8 w-80 text-center animate-bounce-in">
-                    <div class="text-6xl mb-4">🎉</div>
-                    <h3 class="text-2xl font-bold mb-2 text-slate-900 dark:text-white">Tebrikler!</h3>
-                    <p class="text-slate-600 dark:text-slate-400 mb-6">Günlük hedefinize ulaştınız!</p>
-                    <button class="close-goal-alert w-full bg-primary text-white rounded-xl py-3 font-semibold hover:bg-primary/90 transition">Harika! 🔥</button>
+                <div class="relative w-full max-w-sm bg-gradient-to-br from-emerald-900/90 to-emerald-700/80 rounded-3xl shadow-2xl border border-emerald-400/30 overflow-hidden">
+                    <div class="absolute inset-0 bg-gradient-to-r from-emerald-400/20 via-green-400/20 to-emerald-400/20 animate-pulse"></div>
+                    
+                    <div class="relative px-6 pt-8 pb-4 flex flex-col items-center justify-center text-center">
+                        <div class="w-20 h-20 rounded-full bg-gradient-to-tr from-yellow-400 to-yellow-200 flex items-center justify-center mb-4 shadow-2xl shadow-yellow-500/50 animate-bounce" style="animation-duration: 2s;">
+                            <span class="material-symbols-outlined text-yellow-900 text-5xl" style="font-variation-settings: 'FILL' 1;">emoji_events</span>
+                        </div>
+                        <h2 class="text-3xl font-bold text-white tracking-tight mb-2">Tebrikler!</h2>
+                        <p class="text-lg text-emerald-100 font-medium">Günlük hedefinize ulaştınız!</p>
+                    </div>
+                    
+                    <div class="relative px-6 pb-6">
+                        <button class="close-goal-alert w-full py-4 bg-gradient-to-br from-yellow-400 to-yellow-500 hover:from-yellow-300 hover:to-yellow-400 text-yellow-900 font-bold text-lg rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-yellow-500/30">
+                            Harika!
+                        </button>
+                    </div>
                 </div>
             `;
             document.body.appendChild(modal);
@@ -394,7 +417,7 @@
             // Auto-close after 5 seconds
             setTimeout(() => {
                 if (modal.parentElement) modal.remove();
-            }, 5000);
+            }, 6000);
         }
 
         // Timer update callback

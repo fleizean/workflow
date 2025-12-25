@@ -1,35 +1,9 @@
-/* Custom Title Bar CSS */
-.title-bar {
-  -webkit-app-region: drag;
-  height: 32px;
-  background: transparent;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0 10px;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 9999;
+/* Custom Titlebar Styles */
+.titlebar {
+    -webkit-app-region: drag;
+    user-select: none;
 }
 
-.title-bar button {
-  -webkit-app-region: no-drag;
-  background: transparent;
-  border: none;
-  color: #b0b3c7;
-  cursor: pointer;
-  padding: 4px 12px;
-  font-size: 14px;
-  transition: background 0.2s;
-}
-
-.title-bar button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.title-bar button.close:hover {
-  background: #e81123;
-  color: white;
+.titlebar button {
+    -webkit-app-region: no-drag;
 }
