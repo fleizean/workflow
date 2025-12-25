@@ -344,12 +344,9 @@
                                     <div class="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none">
                                         <span class="material-symbols-outlined text-primary text-xl">business</span>
                                     </div>
-                                    <select id="editSessionCompany" class="w-full pl-14 pr-12 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner appearance-none cursor-pointer">
+                                    <select id="editSessionCompany" class="w-full pl-14 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner cursor-pointer">
                                         ${companyOptions}
                                     </select>
-                                    <div class="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none">
-                                        <span class="material-symbols-outlined text-gray-400 text-xl">expand_more</span>
-                                    </div>
                                 </div>
                             </div>
                             <div>
@@ -845,7 +842,12 @@
         });
 
         // Add session FAB
-        document.getElementById('addSessionFAB').addEventListener('click', () => {
+        document.getElementById('addSessionFAB').addEventListener('click', async () => {
+            // Load companies for select
+            const companiesRes = await window.api.getCompanies();
+            const companies = companiesRes.success ? companiesRes.companies : [];
+            const companyOptions = companies.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
             const modal = createModernModal({
                 icon: 'add_circle',
                 title: 'Add Work Session',
@@ -856,6 +858,17 @@
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Session Name</label>
                                 <input type="text" id="sessionName" placeholder="Work Session" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Company</label>
+                                <div class="relative group">
+                                    <div class="absolute left-5 top-1/2 -translate-y-1/2 pointer-events-none">
+                                        <span class="material-symbols-outlined text-primary text-xl">business</span>
+                                    </div>
+                                    <select id="sessionCompany" class="w-full pl-14 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner cursor-pointer">
+                                        ${companyOptions}
+                                    </select>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Duration (hours)</label>
@@ -936,6 +949,7 @@
 
             modal.querySelector('#saveNewSession').addEventListener('click', async () => {
                 const name = modal.querySelector('#sessionName').value.trim() || 'Work Session';
+                const companyId = parseInt(modal.querySelector('#sessionCompany').value);
                 const hours = parseFloat(modal.querySelector('#sessionHours').value) || 0;
                 const date = modal.querySelector('#sessionDate').value;
 
@@ -947,7 +961,8 @@
                 const result = await window.api.saveSession({
                     name,
                     duration: Math.floor(hours * 3600),
-                    date
+                    date,
+                    companyId
                 });
 
                 if (result.success) {
