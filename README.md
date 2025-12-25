@@ -2,7 +2,7 @@
 
 <div align="center">
 
-![Workflow Timer Logo](src/assets/workflow-timer.png)
+![Workflow Timer Logo](assets/workflow-timer.png)
 
 **Modern work time tracking desktop application**
 
