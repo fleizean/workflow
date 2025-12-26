@@ -188,7 +188,7 @@
                             <div class="flex flex-col sm:flex-row gap-4">
                                 <a href="https://github.com/fleizean/workflow-timer/releases/latest"
                                     class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-primary hover:bg-primary-hover transition-colors text-white text-base font-bold leading-normal tracking-[0.015em] shadow-lg shadow-primary/20">
-                                    <span class="truncate">Download v1.1.0</span>
+                                    <span class="truncate">Download v1.2.0</span>
                                 </a>
                                 <a href="https://github.com/fleizean/workflow-timer" target="_blank"
                                     class="flex min-w-[84px] cursor-pointer items-center justify-center overflow-hidden rounded-lg h-12 px-6 bg-surface-light dark:bg-surface-dark border border-border-light dark:border-border-dark hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-text-main-light dark:text-text-main-dark text-base font-medium leading-normal">
@@ -365,6 +365,398 @@
                 </div>
             </div>
         </section>
+
+        <!-- Integration Section -->
+        <section
+            class="flex flex-col items-center justify-center px-4 py-12 md:px-10 lg:px-40 lg:py-20 border-t border-[#3d2a5e] bg-gradient-to-b from-[#1a0a2e] to-[#120820]">
+            <div class="layout-content-container flex flex-col max-w-[1200px] w-full gap-12">
+                <div class="flex flex-col gap-4 text-center items-center">
+                    <div
+                        class="px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm font-medium w-fit mb-2">
+                        New in v1.2.0
+                    </div>
+                    <h2
+                        class="text-text-main-light dark:text-text-main-dark text-3xl md:text-4xl font-bold leading-tight">
+                        Seamless Google Sheets Integration
+                    </h2>
+                    <p
+                        class="text-text-sub-light dark:text-text-sub-dark text-lg font-normal leading-relaxed max-w-[720px]">
+                        Automate your timesheet reporting. Connect Workflow directly to your Google Sheets and export
+                        your daily progress with a single click.
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    <!-- Workflow Steps -->
+                    <div class="flex flex-col gap-6 order-2 md:order-1">
+                        <div
+                            class="flex gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:border-primary/30 transition-colors">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                                1</div>
+                            <div>
+                                <h3 class="text-white font-bold text-lg mb-1">Connect Your Sheet</h3>
+                                <p class="text-text-sub-dark text-sm mb-3">Deploy the provided Apps Script and paste the
+                                    URL into Workflow settings. No complex API keys required.</p>
+                                <button onclick="document.getElementById('setupModal').classList.remove('hidden')"
+                                    class="text-primary text-sm font-bold hover:text-white transition-colors flex items-center gap-1 group">
+                                    View Setup Guide
+                                    <span
+                                        class="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">arrow_forward</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div
+                            class="flex gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:border-primary/30 transition-colors">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                                2</div>
+                            <div>
+                                <h3 class="text-white font-bold text-lg mb-1">Track & Categorize</h3>
+                                <p class="text-text-sub-dark text-sm">Log work sessions under different companies. Each
+                                    company maps to specific columns in your Excel/Sheet.</p>
+                            </div>
+                        </div>
+                        <div
+                            class="flex gap-4 p-4 rounded-xl bg-white/5 border border-white/10 hover:border-primary/30 transition-colors">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold">
+                                3</div>
+                            <div>
+                                <h3 class="text-white font-bold text-lg mb-1">Review & Export</h3>
+                                <p class="text-text-sub-dark text-sm">Hit "Day End" to see a summary modal. Verify hours
+                                    and notes before confirming the export to your cloud sheet.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Visual Representation -->
+                    <div class="relative order-1 md:order-2">
+                        <div
+                            class="absolute inset-0 bg-gradient-to-tr from-emerald-500/20 to-primary/20 blur-3xl rounded-full">
+                        </div>
+                        <div class="relative rounded-3xl border border-white/10 bg-[#1c242c] shadow-2xl overflow-hidden max-w-sm mx-auto"
+                            id="mockModal">
+                            <!-- Modal Content -->
+                            <div class="px-6 pt-8 pb-4 flex flex-col items-center justify-center text-center">
+                                <div
+                                    class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-900/50 to-primary/20 flex items-center justify-center mb-4 shadow-inner ring-1 ring-white/10">
+                                    <span class="material-symbols-outlined text-primary text-3xl">summarize</span>
+                                </div>
+                                <h2 class="text-2xl font-bold text-white tracking-tight">Day End Summary</h2>
+                                <p class="text-sm text-gray-400 mt-2 font-medium">Today • Row 28</p>
+                                <p class="text-xs text-gray-500 mt-1">Review data before exporting to Google Sheets</p>
+                            </div>
+                            <div class="px-6 pb-6">
+                                <div class="flex flex-col gap-2 mb-6">
+                                    <!-- Item 1 -->
+                                    <div
+                                        class="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                                        <div class="text-left">
+                                            <p class="text-sm font-semibold text-white">Acme Corp</p>
+                                            <p class="text-xs text-gray-400">Col E / F • Row 28</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-sm font-bold text-primary">4.5h</p>
+                                            <p class="text-xs text-gray-400">Feature dev</p>
+                                        </div>
+                                    </div>
+                                    <!-- Item 2 -->
+                                    <div
+                                        class="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                                        <div class="text-left">
+                                            <p class="text-sm font-semibold text-white">Global Tech</p>
+                                            <p class="text-xs text-gray-400">Col G / H • Row 28</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="text-sm font-bold text-primary">3.5h</p>
+                                            <p class="text-xs text-gray-400">Bug fixes</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Toast Overlay -->
+                                <div id="mockToast"
+                                    class="absolute inset-0 z-20 flex items-center justify-center bg-black/60 backdrop-blur-[1px] opacity-0 pointer-events-none transition-all duration-300">
+                                    <div class="bg-[#1c242c] border border-emerald-500/30 rounded-2xl p-4 shadow-2xl transform scale-95 opacity-0 transition-all duration-300 w-[90%] max-w-[300px]"
+                                        id="mockToastContent">
+                                        <div class="flex flex-col items-center text-center gap-3">
+                                            <div
+                                                class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-500 flex items-center justify-center">
+                                                <span class="material-symbols-outlined">check_circle</span>
+                                            </div>
+                                            <div>
+                                                <p class="text-white font-bold text-base">Export Successful!</p>
+                                                <p class="text-xs text-gray-400 mt-1">Data written to Row 28</p>
+                                            </div>
+                                            <button onclick="closeMockToast()"
+                                                class="mt-2 w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg transition-colors">
+                                                Close
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="flex gap-3" id="mockActionButtons">
+                                    <button
+                                        class="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-2xl transition-all duration-200 border border-white/5 text-sm">Cancel</button>
+                                    <button onclick="simulateExport()" id="mockConfirmBtn"
+                                        class="flex-1 py-3 bg-gradient-to-br from-primary to-blue-600 hover:from-blue-500 hover:to-blue-600 text-white font-semibold rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all duration-200 text-sm">
+                                        Confirm & Export
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <script>
+                            function simulateExport() {
+                                const btn = document.getElementById('mockConfirmBtn');
+                                const toast = document.getElementById('mockToast');
+                                const toastContent = document.getElementById('mockToastContent');
+
+                                // Loading State
+                                btn.innerHTML = `
+                                    <div class="flex items-center justify-center gap-2">
+                                        <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                        <span>Sending...</span>
+                                    </div>
+                                `;
+                                btn.disabled = true;
+
+                                // Success State after delay
+                                setTimeout(() => {
+                                    // Reset button
+                                    btn.innerHTML = 'Confirm & Export';
+                                    btn.disabled = false;
+
+                                    // Show Toast
+                                    toast.classList.remove('opacity-0', 'pointer-events-none');
+                                    toastContent.classList.remove('scale-95', 'opacity-0');
+                                    toastContent.classList.add('scale-100', 'opacity-100');
+                                }, 1500);
+                            }
+
+                            function closeMockToast() {
+                                const toast = document.getElementById('mockToast');
+                                const toastContent = document.getElementById('mockToastContent');
+
+                                toast.classList.add('opacity-0', 'pointer-events-none');
+                                toastContent.classList.remove('scale-100', 'opacity-100');
+                                toastContent.classList.add('scale-95', 'opacity-0');
+                            }
+                        </script>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Setup Guide Modal -->
+        <div id="setupModal"
+            class="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] hidden items-center justify-center p-4 transition-all duration-300">
+            <div
+                class="bg-[#120820] w-full max-w-5xl rounded-3xl border border-[#3d2a5e] shadow-2xl flex flex-col max-h-[90vh] relative overflow-hidden ring-1 ring-white/10">
+                <!-- Modal Header -->
+                <div class="flex items-center justify-between p-6 md:p-8 border-b border-white/5 bg-white/5">
+                    <div>
+                        <h3 class="text-2xl font-bold text-white tracking-tight">Setup Integration</h3>
+                        <p class="text-sm text-gray-400 mt-1">Connect Workflow to Google Sheets in 3 steps</p>
+                    </div>
+                    <button onclick="document.getElementById('setupModal').classList.add('hidden')"
+                        class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-all duration-200">
+                        <span class="material-symbols-outlined text-lg">close</span>
+                    </button>
+                </div>
+
+                <!-- Modal Content -->
+                <div class="p-6 md:p-8 overflow-y-auto custom-scrollbar bg-[#120820]">
+                    <div class="space-y-10 relative">
+                        <!-- Connecting Line -->
+                        <div
+                            class="absolute left-[19px] top-4 bottom-4 w-0.5 bg-gradient-to-b from-primary via-primary/50 to-transparent opacity-30 pointer-events-none">
+                        </div>
+
+                        <!-- Step 1 -->
+                        <div class="flex gap-6 relative">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-xl bg-primary shadow-lg shadow-primary/30 flex items-center justify-center text-white font-bold z-10 ring-4 ring-[#120820]">
+                                1</div>
+                            <div class="flex-1 pt-1">
+                                <h4 class="text-white font-bold text-lg mb-2">Create Apps Script</h4>
+                                <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                                    Open your Google Sheet, go to <span
+                                        class="text-white font-mono bg-white/10 px-1.5 py-0.5 rounded text-xs border border-white/5">Extensions
+                                        > Apps Script</span>. Delete any existing code and replace it with this script:
+                                </p>
+                                <div
+                                    class="relative group rounded-xl overflow-hidden border border-white/10 bg-[#0d1117]">
+                                    <div
+                                        class="absolute top-0 right-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-gradient-to-l from-[#0d1117] pl-8">
+                                        <button
+                                            onclick="navigator.clipboard.writeText(document.getElementById('scriptCode').innerText); const btn = this; btn.innerHTML = '<span class=\'material-symbols-outlined text-sm\'>check</span> Copied!'; setTimeout(() => btn.innerHTML = '<span class=\'material-symbols-outlined text-sm\'>content_copy</span> Copy Code', 2000);"
+                                            class="flex items-center gap-1.5 px-3 py-1.5 bg-primary hover:bg-primary-hover rounded-lg text-xs font-bold text-white transition-all shadow-lg">
+                                            <span class="material-symbols-outlined text-sm">content_copy</span> Copy
+                                            Code
+                                        </button>
+                                    </div>
+                                    <pre
+                                        class="p-4 text-[13px] leading-relaxed text-gray-300 font-mono overflow-x-auto custom-scrollbar max-h-[400px] selection:bg-primary/30"><code id="scriptCode">function doPost(e) {
+    try {
+        const data = JSON.parse(e.postData.contents);
+        const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+
+        // Calculate row: use provided row from client (local time based) or fallback to server time
+        let row;
+        if (data.row) {
+            row = data.row;
+        } else {
+            // Fallback
+            const today = new Date();
+            const dayOfMonth = today.getDate();
+            row = dayOfMonth + 1;
+        }
+
+        // Process each company's data
+        const results = [];
+
+        data.entries.forEach(entry => {
+            const { column, value, type } = entry;
+
+            if (column && value !== undefined) {
+                // Convert column letter to number (A=1, B=2, etc.)
+                const colNum = columnLetterToNumber(column.toUpperCase());
+
+                // Set the cell value
+                sheet.getRange(row, colNum).setValue(value);
+
+                results.push({
+                    cell: `${column.toUpperCase()}${row}`,
+                    value: value,
+                    status: 'success'
+                });
+            }
+        });
+
+        return ContentService
+            .createTextOutput(JSON.stringify({ success: true, results, row }))
+            .setMimeType(ContentService.MimeType.JSON);
+
+    } catch (error) {
+        return ContentService
+            .createTextOutput(JSON.stringify({ success: false, error: error.message }))
+            .setMimeType(ContentService.MimeType.JSON);
+    }
+}
+
+function doGet(e) {
+    // Test endpoint to verify the script is working
+    return ContentService
+        .createTextOutput(JSON.stringify({
+            success: true,
+            message: 'Workflow Timer script is active!',
+            timestamp: new Date().toISOString()
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+}
+
+function columnLetterToNumber(letter) {
+    let result = 0;
+    for (let i = 0; i < letter.length; i++) {
+        result = result * 26 + (letter.charCodeAt(i) - 64);
+    }
+    return result;
+}</code></pre>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2 -->
+                        <div class="flex gap-6 relative">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-xl bg-[#1c242c] border border-white/10 flex items-center justify-center text-gray-400 font-bold z-10 ring-4 ring-[#120820]">
+                                2</div>
+                            <div class="flex-1 pt-1">
+                                <h4 class="text-white font-bold text-lg mb-2">Deploy as Web App</h4>
+                                <p class="text-gray-400 text-sm mb-4 leading-relaxed">
+                                    Click <span class="text-blue-400 font-bold">Deploy</span> (top right) → <span
+                                        class="text-white">New deployment</span>. Ensure these exact settings:
+                                </p>
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                    <div
+                                        class="p-3 rounded-xl bg-white/5 border border-white/5 flex flex-col items-center text-center gap-2">
+                                        <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">Select
+                                            type</span>
+                                        <span class="text-sm font-bold text-white flex items-center gap-1"><span
+                                                class="material-symbols-outlined text-sm text-primary">settings</span>
+                                            Web App</span>
+                                    </div>
+                                    <div
+                                        class="p-3 rounded-xl bg-white/5 border border-white/5 flex flex-col items-center text-center gap-2">
+                                        <span class="text-xs text-gray-500 uppercase tracking-wider font-bold">Execute
+                                            as</span>
+                                        <span class="text-sm font-bold text-white flex items-center gap-1"><span
+                                                class="material-symbols-outlined text-sm text-primary">person</span>
+                                            Me</span>
+                                    </div>
+                                    <div
+                                        class="p-3 rounded-xl bg-gradient-to-br from-yellow-500/10 to-transparent border border-yellow-500/20 flex flex-col items-center text-center gap-2 relative overflow-hidden">
+                                        <div class="absolute inset-0 bg-yellow-500/5 animate-pulse"></div>
+                                        <span
+                                            class="text-xs text-yellow-500/80 uppercase tracking-wider font-bold relative z-10">Who
+                                            has access</span>
+                                        <span
+                                            class="text-sm font-bold text-yellow-200 flex items-center gap-1 relative z-10"><span
+                                                class="material-symbols-outlined text-sm">public</span> Anyone</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 3 -->
+                        <div class="flex gap-6 relative">
+                            <div
+                                class="flex-shrink-0 w-10 h-10 rounded-xl bg-[#1c242c] border border-white/10 flex items-center justify-center text-gray-400 font-bold z-10 ring-4 ring-[#120820]">
+                                3</div>
+                            <div class="flex-1 pt-1">
+                                <h4 class="text-white font-bold text-lg mb-2">Connect to Workflow</h4>
+                                <p class="text-gray-400 text-sm leading-relaxed">
+                                    Copy the <span
+                                        class="text-white font-mono bg-white/10 px-1.5 py-0.5 rounded text-xs border border-white/5">Web
+                                        App URL</span> (ends with <code class="text-primary">/exec</code>) and paste it
+                                    into the <strong>Script URL</strong> field in the application settings.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Footer -->
+                <div class="p-6 border-t border-white/5 bg-white/5 flex justify-end">
+                    <button onclick="document.getElementById('setupModal').classList.add('hidden')"
+                        class="px-8 py-3 bg-gradient-to-r from-primary to-[#6b2bc9] hover:from-[#9044ff] hover:to-[#8135f3] text-white font-bold rounded-xl shadow-lg shadow-primary/25 hover:shadow-primary/40 active:scale-95 transition-all duration-200 flex items-center gap-2">
+                        <span>Done</span>
+                        <span class="material-symbols-outlined text-xl">check</span>
+                    </button>
+                </div>
+            </div>
+            <style>
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 6px;
+                    height: 6px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background: rgba(255, 255, 255, 0.1);
+                    border-radius: 3px;
+                }
+
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                }
+            </style>
+        </div>
 
         <!-- Footer -->
         <footer

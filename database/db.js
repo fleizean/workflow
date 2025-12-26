@@ -12,6 +12,11 @@ const db = new Database(dbPath);
 // Enable WAL mode for better performance
 db.pragma('journal_mode = WAL');
 
+// Helper function to format date as YYYY-MM-DD in local timezone
+function formatLocalDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Initialize database tables
  */
@@ -48,6 +53,19 @@ function initDatabase() {
 
     if (!hasNote) {
         db.exec('ALTER TABLE work_sessions ADD COLUMN note TEXT');
+    }
+
+    // Migration: Add excel_column and note_column to companies table
+    const companyTableInfo = db.prepare("PRAGMA table_info(companies)").all();
+    const hasExcelColumn = companyTableInfo.some(col => col.name === 'excel_column');
+    const hasNoteColumn = companyTableInfo.some(col => col.name === 'note_column');
+
+    if (!hasExcelColumn) {
+        db.exec('ALTER TABLE companies ADD COLUMN excel_column TEXT');
+    }
+
+    if (!hasNoteColumn) {
+        db.exec('ALTER TABLE companies ADD COLUMN note_column TEXT');
     }
 
     // Create default "Unassigned" company if it doesn't exist
@@ -164,10 +182,71 @@ function getCompany(id) {
 /**
  * Update a company
  */
-function updateCompany(id, name) {
-    const stmt = db.prepare('UPDATE companies SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-    const result = stmt.run(name, id);
+function updateCompany(id, name, excelColumn = null, noteColumn = null) {
+    const stmt = db.prepare('UPDATE companies SET name = ?, excel_column = ?, note_column = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    const result = stmt.run(name, excelColumn, noteColumn, id);
     return result.changes > 0;
+}
+
+/**
+ * Update company Excel configuration only
+ */
+function updateCompanyExcelConfig(id, excelColumn, noteColumn) {
+    const stmt = db.prepare('UPDATE companies SET excel_column = ?, note_column = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    const result = stmt.run(excelColumn, noteColumn, id);
+    return result.changes > 0;
+}
+
+/**
+ * Get today's sessions grouped by company
+ */
+function getTodaySessions() {
+    // Use local date instead of UTC
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const stmt = db.prepare(`
+        SELECT 
+            ws.id,
+            ws.name,
+            ws.duration,
+            ws.date,
+            ws.note,
+            ws.company_id,
+            c.name as company_name,
+            c.excel_column,
+            c.note_column
+        FROM work_sessions ws
+        LEFT JOIN companies c ON ws.company_id = c.id
+        WHERE ws.date = ?
+        ORDER BY c.name ASC, ws.created_at ASC
+    `);
+    return stmt.all(today);
+}
+
+/**
+ * Get today's sessions summary for export (grouped by company)
+ */
+function getTodaysSessionsSummary() {
+    // Use local date instead of UTC
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+    const stmt = db.prepare(`
+        SELECT 
+            c.id as company_id,
+            c.name as company_name,
+            c.excel_column,
+            c.note_column,
+            SUM(ws.duration) as total_duration,
+            GROUP_CONCAT(ws.note, ' | ') as combined_notes
+        FROM work_sessions ws
+        LEFT JOIN companies c ON ws.company_id = c.id
+        WHERE ws.date = ?
+        GROUP BY ws.company_id
+        ORDER BY c.name ASC
+    `);
+    return stmt.all(today);
 }
 
 /**
@@ -249,8 +328,8 @@ function getThisWeekTotal() {
     sunday.setDate(monday.getDate() + 6);
     sunday.setHours(23, 59, 59, 999);
 
-    const startDate = monday.toISOString().split('T')[0];
-    const endDate = sunday.toISOString().split('T')[0];
+    const startDate = formatLocalDate(monday);
+    const endDate = formatLocalDate(sunday);
 
     const stmt = db.prepare('SELECT SUM(duration) as total FROM work_sessions WHERE date BETWEEN ? AND ?');
     const result = stmt.get(startDate, endDate);
@@ -274,8 +353,8 @@ function getLastWeekTotal() {
     lastSunday.setDate(lastMonday.getDate() + 6);
     lastSunday.setHours(23, 59, 59, 999);
 
-    const startDate = lastMonday.toISOString().split('T')[0];
-    const endDate = lastSunday.toISOString().split('T')[0];
+    const startDate = formatLocalDate(lastMonday);
+    const endDate = formatLocalDate(lastSunday);
 
     const stmt = db.prepare('SELECT SUM(duration) as total FROM work_sessions WHERE date BETWEEN ? AND ?');
     const result = stmt.get(startDate, endDate);
@@ -306,7 +385,7 @@ function calculateCurrentStreak() {
     today.setHours(0, 0, 0, 0);
 
     // Check if today has reached the target
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = formatLocalDate(today);
     const todayData = dailyTotals.find(d => d.date === todayStr);
     const todayReachedTarget = todayData && todayData.total_duration >= dailyTarget;
 
@@ -318,7 +397,7 @@ function calculateCurrentStreak() {
 
     // Count backwards to find consecutive days with target reached
     while (true) {
-        const dateStr = checkDate.toISOString().split('T')[0];
+        const dateStr = formatLocalDate(checkDate);
         const dayData = dailyTotals.find(d => d.date === dateStr);
 
         if (dayData && dayData.total_duration >= dailyTarget) {
@@ -357,7 +436,11 @@ module.exports = {
     getCompanies,
     getCompany,
     updateCompany,
+    updateCompanyExcelConfig,
     deleteCompany,
     getSessionsGroupedByDateAndCompany,
-    getSessionsByDateAndCompany
+    getSessionsByDateAndCompany,
+    // Export functions
+    getTodaySessions,
+    getTodaysSessionsSummary
 };

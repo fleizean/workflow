@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('api', {
     getCompanies: () => ipcRenderer.invoke('get-companies'),
     getCompany: (data) => ipcRenderer.invoke('get-company', data),
     updateCompany: (data) => ipcRenderer.invoke('update-company', data),
+    updateCompanyExcelConfig: (data) => ipcRenderer.invoke('update-company-excel-config', data),
     deleteCompany: (data) => ipcRenderer.invoke('delete-company', data),
     getSessionsGrouped: () => ipcRenderer.invoke('get-sessions-grouped'),
     getSessionsByDateCompany: (data) => ipcRenderer.invoke('get-sessions-by-date-company', data),
@@ -32,6 +33,12 @@ contextBridge.exposeInMainWorld('api', {
     // Stats operations
     getWeekTotal: () => ipcRenderer.invoke('get-week-total'),
     getCurrentStreak: () => ipcRenderer.invoke('get-current-streak'),
+
+    // Export operations
+    getTodaySessions: () => ipcRenderer.invoke('get-today-sessions'),
+    getTodaysSessionsSummary: () => ipcRenderer.invoke('get-todays-sessions-summary'),
+    previewDayEnd: () => ipcRenderer.invoke('preview-day-end'),
+    exportDayEnd: () => ipcRenderer.invoke('export-day-end'),
 
     // Navigation
     navigateTo: (data) => ipcRenderer.invoke('navigate', data),

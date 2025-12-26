@@ -113,7 +113,8 @@ function calculateProgress(elapsed, target) {
  */
 function getCurrentDate() {
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    // Use local date instead of UTC
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
 /**
@@ -132,9 +133,8 @@ function calculateFinishTime(remainingSeconds) {
     const finish = new Date(now.getTime() + remainingSeconds * 1000);
     const hours = finish.getHours();
     const minutes = finish.getMinutes();
-    const ampm = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    return `${String(displayHours).padStart(2, '0')}:${String(minutes).padStart(2, '0')} ${ampm}`;
+    // 24-hour format
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
 /**

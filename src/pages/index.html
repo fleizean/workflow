@@ -38,21 +38,6 @@
     class="font-display bg-background-light dark:bg-background-dark text-slate-900 dark:text-white antialiased selection:bg-primary selection:text-white">
     <div
         class="app-container relative flex h-full min-h-screen w-full flex-col overflow-x-hidden max-w-md mx-auto shadow-2xl">
-        <!-- Custom Titlebar -->
-        <div
-            class="titlebar flex items-center justify-between px-4 pt-2 pb-0 bg-background-light dark:bg-background-dark">
-            <div class="flex-1"></div>
-            <div class="flex items-center gap-1">
-                <button onclick="window.api.minimizeWindow()"
-                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <span class="material-symbols-outlined text-[18px]">minimize</span>
-                </button>
-                <button onclick="window.api.closeWindow()"
-                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors">
-                    <span class="material-symbols-outlined text-[18px]">close</span>
-                </button>
-            </div>
-        </div>
         <!-- TopAppBar -->
         <header class="flex items-center p-6 justify-between z-10">
             <button id="datePickerBtn"
@@ -199,9 +184,9 @@
         </main>
     </div>
 
-    <!-- Timer JavaScript -->
     <!-- Scripts -->
     <script src="../renderer/shared.js"></script>
+    <script src="../renderer/titlebar.js"></script>
     <script src="../renderer/timer.js"></script>
     <script>
         // Initialize timer
@@ -261,7 +246,7 @@
         // Load data for selected date
         async function loadDateData() {
             // Load today's logged time for the selected date
-            const dateStr = currentDate.toISOString().split('T')[0];
+            const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
             const sessionsRes = await window.api.getSessionsByDate({ startDate: dateStr, endDate: dateStr });
             if (sessionsRes.success) {
                 todayLogged = sessionsRes.sessions.reduce((sum, s) => sum + s.duration, 0);
@@ -587,8 +572,8 @@
                             </div>
                         </div>
                         <div class="mb-4">
-                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Note (Optional)</label>
-                            <textarea id="saveSessionNote" rows="3" placeholder="Add notes about this session..." class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner resize-none"></textarea>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Note <span class="text-red-400">*</span></label>
+                            <textarea id="saveSessionNote" rows="3" placeholder="Bu oturum hakkında not ekleyin..." class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner resize-none"></textarea>
                         </div>
                         <button id="confirmSave" class="w-full py-4 mb-3 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-blue-500/20">Save Session</button>
                         <button class="close-save-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">Cancel</button>
@@ -606,7 +591,12 @@
             modal.querySelector('#confirmSave').addEventListener('click', async () => {
                 const name = nameInput.value.trim() || 'Work Session';
                 const companyId = parseInt(modal.querySelector('#saveSessionCompany').value);
-                const note = modal.querySelector('#saveSessionNote').value.trim() || null;
+                const note = modal.querySelector('#saveSessionNote').value.trim();
+
+                if (!note) {
+                    showAlert('Lütfen not alanını doldurun!', 'warning');
+                    return;
+                }
 
                 const result = await window.api.saveSession({
                     name,

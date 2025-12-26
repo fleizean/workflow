@@ -21,21 +21,7 @@
     class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased selection:bg-primary/30">
     <div
         class="app-container relative flex h-full min-h-screen w-full flex-col overflow-hidden mx-auto max-w-md shadow-2xl">
-        <!-- Custom Titlebar -->
-        <div
-            class="titlebar flex items-center justify-between px-4 pt-2 pb-0 bg-background-light dark:bg-background-dark">
-            <div class="flex-1"></div>
-            <div class="flex items-center gap-1">
-                <button onclick="window.api.minimizeWindow()"
-                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                    <span class="material-symbols-outlined text-[18px]">minimize</span>
-                </button>
-                <button onclick="window.api.closeWindow()"
-                    class="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors">
-                    <span class="material-symbols-outlined text-[18px]">close</span>
-                </button>
-            </div>
-        </div>
+
 
         <!-- Header -->
         <header
@@ -47,10 +33,6 @@
             </button>
             <h2 class="text-2xl font-bold leading-tight tracking-tight flex-1 text-center">Work History</h2>
             <div class="flex items-center justify-end gap-2">
-                <button id="companiesButton"
-                    class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-slate-200 dark:bg-card-dark text-slate-900 dark:text-white transition hover:bg-slate-300 dark:hover:bg-[#233c48]">
-                    <span class="material-symbols-outlined text-[24px]">business</span>
-                </button>
                 <button id="filterButton"
                     class="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-slate-200 dark:bg-card-dark text-slate-900 dark:text-white transition hover:bg-slate-300 dark:hover:bg-[#233c48]">
                     <span class="material-symbols-outlined text-[24px]">filter_list</span>
@@ -76,6 +58,44 @@
                             <span class="material-symbols-outlined text-[28px]">trending_up</span>
                         </div>
                     </div>
+                </div>
+            </section>
+
+            <!-- Quick Actions -->
+            <section class="mb-6">
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- Gün Sonu Al Button -->
+                    <button id="exportDayEndButton"
+                        class="group relative flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all duration-300 active:scale-95 overflow-hidden">
+                        <div
+                            class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out rounded-2xl">
+                        </div>
+                        <div
+                            class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm z-10">
+                            <span class="material-symbols-outlined text-[22px]"
+                                style="font-variation-settings: 'FILL' 1;">export_notes</span>
+                        </div>
+                        <div class="relative text-left z-10">
+                            <p class="text-sm font-bold">Day End</p>
+                            <p class="text-[10px] text-white/70 font-medium">Export report</p>
+                        </div>
+                    </button>
+                    <!-- Companies Button -->
+                    <button id="companiesButton"
+                        class="group relative flex items-center gap-3 p-4 rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/20 transition-all duration-300 active:scale-95 overflow-hidden">
+                        <div
+                            class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out rounded-2xl">
+                        </div>
+                        <div
+                            class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm z-10">
+                            <span class="material-symbols-outlined text-[22px]"
+                                style="font-variation-settings: 'FILL' 1;">corporate_fare</span>
+                        </div>
+                        <div class="relative text-left z-10">
+                            <p class="text-sm font-bold">Companies</p>
+                            <p class="text-[10px] text-white/70 font-medium">Manage & edit</p>
+                        </div>
+                    </button>
                 </div>
             </section>
             <!-- This Week Section -->
@@ -128,7 +148,7 @@
                             </p>
                             <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                                 <span class="material-symbols-outlined text-[14px]">schedule</span>
-                                <span>09:00 AM - 11:00 AM</span>
+                                <span>09:00 - 11:00</span>
                             </div>
                         </div>
                         <div class="flex shrink-0 flex-col items-end gap-1">
@@ -183,7 +203,7 @@
                             <p class="truncate text-base font-semibold text-slate-900 dark:text-white">Final Review</p>
                             <div class="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                                 <span class="material-symbols-outlined text-[14px]">schedule</span>
-                                <span>02:00 PM - 05:00 PM</span>
+                                <span>14:30 - 15:45</span>
                             </div>
                         </div>
                         <div class="flex shrink-0 flex-col items-end gap-1">
@@ -229,6 +249,7 @@
 
     <!-- Scripts -->
     <script src="../renderer/shared.js"></script>
+    <script src="../renderer/titlebar.js"></script>
     <script src="../renderer/timer.js"></script>
     <script>
         // Show alert modal
@@ -598,7 +619,7 @@
                   </div>
                   <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                     <span class="material-symbols-outlined text-[12px]">schedule</span>
-                    <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Today'}</span>
+                    <span>${session.created_at ? new Date(session.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', hour12: false }) : 'Today'}</span>
                     <span class="text-slate-400">•</span>
                     <span class="font-medium text-primary">${formatTimeShort(session.duration)}</span>
                   </div>
@@ -659,6 +680,139 @@
             navigateWithLoading('companies.html');
         });
 
+        // Export Day End button
+        document.getElementById('exportDayEndButton').addEventListener('click', async () => {
+            // First preview the data
+            const result = await window.api.previewDayEnd();
+
+            if (!result.success) {
+                showToast('Error loading preview: ' + result.error, 'error');
+                return;
+            }
+
+            const exportData = result.exportData;
+            const today = result.date;
+            const row = new Date().getDate() + 1; // Row calculation for preview
+
+            if (exportData.length === 0) {
+                showToast('No sessions found for today.', 'warning');
+                return;
+            }
+
+            // Create modal to show export summary
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm px-4';
+
+            const summaryRows = exportData.map(item => `
+                <div class="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                    <div class="flex-1">
+                        <p class="text-sm font-semibold text-white">${item.companyName}</p>
+                        <p class="text-xs text-gray-400">Col ${item.excelColumn || '-'} / ${item.noteColumn || '-'} • Row ${row}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm font-bold text-primary">${item.durationHours}h</p>
+                        <p class="text-xs text-gray-400 truncate max-w-[120px]">${item.notes || '-'}</p>
+                    </div>
+                </div>
+            `).join('');
+
+            modal.innerHTML = `
+                <div class="relative w-full max-w-sm bg-surface-dark rounded-3xl shadow-2xl border border-white/10 overflow-hidden transform transition-all">
+                    <div class="px-6 pt-8 pb-4 flex flex-col items-center justify-center text-center">
+                        <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-blue-900/50 to-primary/20 flex items-center justify-center mb-4 shadow-inner ring-1 ring-white/10">
+                            <span class="material-symbols-outlined text-primary text-3xl">summarize</span>
+                        </div>
+                        <h2 class="text-2xl font-bold text-white tracking-tight">Day End Summary</h2>
+                        <p class="text-sm text-gray-400 mt-2 font-medium">${today} • Row ${row}</p>
+                        <p class="text-xs text-gray-500 mt-1">Review data before exporting to Google Sheets</p>
+                    </div>
+                    <div class="px-6 pb-6">
+                        <div class="flex flex-col gap-2 max-h-60 overflow-y-auto mb-6 scrollbar-hide">
+                            ${summaryRows}
+                        </div>
+                        
+                        <div id="exportStatusArea"></div>
+
+                        <div class="flex gap-3" id="actionButtons">
+                            <button class="close-modal flex-1 py-3.5 bg-white/5 hover:bg-white/10 text-white font-semibold rounded-2xl transition-all duration-200 border border-white/5">Cancel</button>
+                            <button id="confirmExportBtn" class="flex-1 py-3.5 bg-gradient-to-br from-primary to-blue-600 hover:from-blue-500 hover:to-blue-600 text-white font-semibold rounded-2xl shadow-lg shadow-blue-500/20 active:scale-95 transition-all duration-200">
+                                Confirm & Export
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const confirmBtn = modal.querySelector('#confirmExportBtn');
+            const cancelBtn = modal.querySelector('.close-modal');
+            const statusArea = modal.querySelector('#exportStatusArea');
+            const actionButtons = modal.querySelector('#actionButtons');
+
+            // Handle Cancel
+            cancelBtn.addEventListener('click', () => modal.remove());
+            modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+            // Handle Confirm
+            confirmBtn.addEventListener('click', async () => {
+                // Change button state
+                confirmBtn.innerHTML = `
+                    <div class="flex items-center justify-center gap-2">
+                        <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        <span>Sending...</span>
+                    </div>
+                `;
+                confirmBtn.disabled = true;
+                cancelBtn.disabled = true;
+
+                // Call export API
+                const result = await window.api.exportDayEnd();
+
+                // Process result
+                const googleSheets = result.googleSheets;
+                const finalRow = result.row || row;
+
+                let statusHtml = '';
+                if (googleSheets && googleSheets.success) {
+                    statusHtml = `
+                        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 mb-4 animate-in fade-in zoom-in duration-300">
+                            <p class="text-xs text-emerald-400 flex items-center gap-2 font-bold">
+                                <span class="material-symbols-outlined text-lg">check_circle</span>
+                                Successfully exported!
+                            </p>
+                            <p class="text-[10px] text-emerald-500/70 ml-6 mt-0.5">Data written to Row ${finalRow}</p>
+                        </div>
+                    `;
+                    // Change buttons to single 'Done' button
+                    actionButtons.innerHTML = `
+                        <button class="close-modal w-full py-3.5 bg-gradient-to-br from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/20 transition-all duration-200">Done</button>
+                    `;
+                    // Re-attach close handler to new button
+                    actionButtons.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+
+                } else if (googleSheets && googleSheets.error) {
+                    const isConfigError = googleSheets.error === 'Script URL not configured';
+                    statusHtml = `
+                        <div class="p-3 rounded-xl ${isConfigError ? 'bg-yellow-500/10 border-yellow-500/20' : 'bg-red-500/10 border-red-500/20'} border mb-4 animate-in fade-in zoom-in duration-300">
+                            <p class="text-xs ${isConfigError ? 'text-yellow-400' : 'text-red-400'} flex items-center gap-2 font-bold">
+                                <span class="material-symbols-outlined text-lg">${isConfigError ? 'settings' : 'error'}</span>
+                                ${isConfigError ? 'Configuration Missing' : 'Export Failed'}
+                            </p>
+                            <p class="text-[10px] ${isConfigError ? 'text-yellow-500/70' : 'text-red-500/70'} ml-6 mt-0.5">
+                                ${isConfigError ? 'Please set Script URL in Settings' : googleSheets.error}
+                            </p>
+                        </div>
+                    `;
+                    // Reset buttons
+                    confirmBtn.innerHTML = 'Retry';
+                    confirmBtn.disabled = false;
+                    cancelBtn.disabled = false;
+                }
+
+                statusArea.innerHTML = statusHtml;
+            });
+        });
+
         // Get current filter from localStorage
         let currentFilter = localStorage.getItem('sessionFilter') || 'all';
 
@@ -682,7 +836,7 @@
             // Create company checkboxes
             const companyCheckboxes = companies.map(company => `
                 <label class="flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer transition-colors border border-white/5">
-                    <input type="checkbox" value="${company.id}" ${selectedCompanies.includes(company.id) ? 'checked' : ''} 
+                    <input type="checkbox" value="${company.id}" ${selectedCompanies.includes(company.id) ? 'checked' : ''}
                         class="company-filter w-4 h-4 rounded border-gray-600 text-primary focus:ring-primary/50 focus:ring-2 bg-[#27272a]">
                     <span class="text-sm text-white font-medium">${company.name}</span>
                 </label>
@@ -773,7 +927,7 @@
                             <button id="applyFilters" class="py-4 bg-gradient-to-br from-purple-500 to-purple-600 hover:from-purple-400 hover:to-purple-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-purple-500/20">
                                 Apply Filters
                             </button>
-                            <button id="clearFilters" class="py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">
+                            <button id="clearFilters" class="py-4 bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-red-500/20">
                                 Clear All
                             </button>
                         </div>
@@ -840,28 +994,28 @@
                 title: 'Add Work Session',
                 description: 'Create a new work session entry.',
                 content: `
-                    <div class="px-6 pb-6">
-                        <div class="flex flex-col gap-4">
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Session Name</label>
-                                <input type="text" id="sessionName" placeholder="Work Session" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Duration (hours)</label>
-                                <input type="number" id="sessionHours" placeholder="8" min="0" step="0.5" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
-                            </div>
-                            <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Date</label>
-                                <button type="button" id="sessionDateBtn" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner text-left flex items-center justify-between">
-                                    <span id="sessionDateDisplay">Select date</span>
-                                    <span class="material-symbols-outlined text-gray-400">calendar_today</span>
-                                </button>
-                                <input type="hidden" id="sessionDate" />
-                            </div>
-                            <button id="saveNewSession" class="w-full py-4 mt-2 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-blue-500/20">Save Session</button>
-                            <button class="close-add-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">Cancel</button>
+                <div class="px-6 pb-6">
+                    <div class="flex flex-col gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Session Name</label>
+                            <input type="text" id="sessionName" placeholder="Work Session" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
                         </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Duration (hours)</label>
+                            <input type="number" id="sessionHours" placeholder="8" min="0" step="0.5" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white placeholder-gray-600 rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner" />
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2.5 ml-1">Date</label>
+                            <button type="button" id="sessionDateBtn" class="w-full pl-5 pr-5 py-4 bg-[#27272a] border border-transparent focus:border-primary/50 text-white rounded-2xl focus:ring-4 focus:ring-primary/10 transition-all outline-none text-base font-medium shadow-inner text-left flex items-center justify-between">
+                                <span id="sessionDateDisplay">Select date</span>
+                                <span class="material-symbols-outlined text-gray-400">calendar_today</span>
+                            </button>
+                            <input type="hidden" id="sessionDate" />
+                        </div>
+                        <button id="saveNewSession" class="w-full py-4 mt-2 bg-gradient-to-br from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 shadow-lg shadow-blue-500/20">Save Session</button>
+                        <button class="close-add-modal w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5">Cancel</button>
                     </div>
+                </div>
                 `
             });
             document.body.appendChild(modal);
@@ -927,7 +1081,7 @@
                         <div class="p-6">
                             <button class="close-date-picker w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 border border-white/5 tracking-wide">Close</button>
                         </div>
-                    `
+                `
                 });
                 document.body.appendChild(dateModal);
 
