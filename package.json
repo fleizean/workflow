@@ -5,6 +5,7 @@
     "main": "main.js",
     "scripts": {
         "start": "electron . --no-sandbox",
+        "rebuild": "electron-rebuild",
         "lint": "eslint .",
         "build": "electron-builder --win --publish never",
         "build:mac": "electron-builder --mac --publish never",
@@ -17,7 +18,7 @@
         "work",
         "tracker"
     ],
-    "author": "Krono Team",
+    "author": "Workflow Team",
     "license": "MIT",
     "repository": {
         "type": "git",

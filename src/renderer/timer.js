@@ -94,15 +94,6 @@ function formatTime(seconds) {
 }
 
 /**
- * Format seconds to HHh MMm
- */
-function formatTimeShort(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${String(h).padStart(2, '0')}h ${String(m).padStart(2, '0')}m`;
-}
-
-/**
  * Calculate progress percentage
  */
 function calculateProgress(elapsed, target) {
@@ -138,46 +129,4 @@ function calculateFinishTime(remainingSeconds) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-/**
- * Get day of week and date
- */
-function formatDateBadge(dateStr) {
-    const date = new Date(dateStr);
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return {
-        day: days[date.getDay()],
-        date: date.getDate()
-    };
-}
 
-/**
- * Group sessions by week
- */
-function groupSessionsByWeek(sessions) {
-    const thisWeek = [];
-    const lastWeek = [];
-
-    const today = new Date();
-    const dayOfWeek = today.getDay();
-    const thisMonday = new Date(today);
-    thisMonday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-    thisMonday.setHours(0, 0, 0, 0);
-
-    const lastMonday = new Date(thisMonday);
-    lastMonday.setDate(thisMonday.getDate() - 7);
-
-    const nextMonday = new Date(thisMonday);
-    nextMonday.setDate(thisMonday.getDate() + 7);
-
-    sessions.forEach(session => {
-        const sessionDate = new Date(session.date);
-
-        if (sessionDate >= thisMonday && sessionDate < nextMonday) {
-            thisWeek.push(session);
-        } else if (sessionDate >= lastMonday && sessionDate < thisMonday) {
-            lastWeek.push(session);
-        }
-    });
-
-    return { thisWeek, lastWeek };
-}
