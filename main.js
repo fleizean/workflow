@@ -19,10 +19,12 @@ let mainWindow;
  * Create the main application window
  */
 function createWindow() {
+    const isMac = process.platform === 'darwin';
+
     mainWindow = new BrowserWindow({
         width: 430,
-        height: 932,
-        resizable: false,
+        height: isMac ? 800 : 932,
+        resizable: true,
         frame: false, // Frameless window for modern look
         autoHideMenuBar: true,
         backgroundColor: '#101c22',
@@ -58,6 +60,7 @@ function createWindow() {
 
     // Open DevTools in development (disabled for production)
     // mainWindow.webContents.openDevTools();
+    mainWindow.webContents.closeDevTools();
 }
 
 /**

@@ -749,10 +749,8 @@
                 const dateObj = new Date(displayDate + 'T00:00:00');
                 const row = dateObj.getDate() + 1;
 
-                if (exportData.length === 0) {
-                    showToast(`No sessions found for ${displayDate}.`, 'warning');
-                    return;
-                }
+                // Don't return early - let user see the modal and try different dates
+                // We'll show a warning and disable export if no data
 
                 // Create modal to show export summary
                 const modal = document.createElement('div');
@@ -900,9 +898,20 @@
                 const statusArea = modal.querySelector('#exportStatusArea');
                 const actionButtons = modal.querySelector('#actionButtons');
 
-                // Validate columns
+                // Validate data and columns
+                const hasNoData = exportData.length === 0;
                 const missingColumns = exportData.filter(item => !item.excelColumn);
-                if (missingColumns.length > 0) {
+
+                if (hasNoData) {
+                    statusArea.innerHTML = `
+                        <div class="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                            <p class="text-xs text-red-300 font-medium">❌ No work sessions found for this date.</p>
+                            <p class="text-xs text-red-400/70 mt-1">Please select a different date or add sessions first.</p>
+                        </div>
+                    `;
+                    confirmBtn.disabled = true;
+                    confirmBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                } else if (missingColumns.length > 0) {
                     statusArea.innerHTML = `
                         <div class="mb-4 p-3 rounded-xl bg-orange-500/10 border border-orange-500/20">
                             <p class="text-xs text-orange-300 font-medium">⚠️ Some companies are missing Excel column configuration.</p>
@@ -911,10 +920,17 @@
                 }
 
                 confirmBtn.addEventListener('click', async () => {
+                    // Final validation before export
+                    if (exportData.length === 0) {
+                        showToast('Cannot export: No sessions found for this date.', 'error');
+                        return;
+                    }
+
                     confirmBtn.disabled = true;
                     confirmBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span>';
 
-                    const exportResult = await window.api.exportDayEnd({ date: dateStr });
+                    // Use selectedDateStr (the current selected date) instead of dateStr (the parameter)
+                    const exportResult = await window.api.exportDayEnd({ date: selectedDateStr });
 
                     if (exportResult.success) {
                         statusArea.innerHTML = `

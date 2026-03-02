@@ -622,35 +622,52 @@
                                     </button>
                                 </div>
                                 <pre
-                                    class="p-4 text-[13px] leading-relaxed text-gray-300 font-mono overflow-x-auto custom-scrollbar max-h-[400px] selection:bg-primary/30"><code id="scriptCode">function doPost(e) {
+                                    class="p-4 text-[13px] leading-relaxed text-gray-300 font-mono overflow-x-auto custom-scrollbar max-h-[400px] selection:bg-primary/30"><code id="scriptCode">// Turkish month names
+const MONTH_NAMES_TR = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                        "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
+
+// English month names (fallback)
+const MONTH_NAMES_EN = ["January", "February", "March", "April", "May", "June",
+                        "July", "August", "September", "October", "November", "December"];
+
+// Get the appropriate sheet for a given date
+function getSheetForDate(spreadsheet, date) {
+    const month = date.getMonth();
+    const year = date.getFullYear();
+    
+    // Try Turkish format: "Şubat 2026"
+    let sheetName = `${MONTH_NAMES_TR[month]} ${year}`;
+    let sheet = spreadsheet.getSheetByName(sheetName);
+    
+    // Try English format: "February 2026"
+    if (!sheet) {
+        sheetName = `${MONTH_NAMES_EN[month]} ${year}`;
+        sheet = spreadsheet.getSheetByName(sheetName);
+    }
+    
+    // Fallback to active sheet
+    return sheet || spreadsheet.getActiveSheet();
+}
+
+function doPost(e) {
     try {
         const data = JSON.parse(e.postData.contents);
-        const sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+        const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+        
+        // Use client date if provided, otherwise use current date
+        let targetDate = data.date ? new Date(data.date) : new Date();
+        const sheet = getSheetForDate(spreadsheet, targetDate);
+        
+        // Calculate row
+        let row = data.row || (targetDate.getDate() + 1);
 
-        // Calculate row: use provided row from client (local time based) or fallback to server time
-        let row;
-        if (data.row) {
-            row = data.row;
-        } else {
-            // Fallback
-            const today = new Date();
-            const dayOfMonth = today.getDate();
-            row = dayOfMonth + 1;
-        }
-
-        // Process each company's data
+        // Process entries
         const results = [];
-
         data.entries.forEach(entry => {
             const { column, value, type } = entry;
-
             if (column && value !== undefined) {
-                // Convert column letter to number (A=1, B=2, etc.)
                 const colNum = columnLetterToNumber(column.toUpperCase());
-
-                // Set the cell value
                 sheet.getRange(row, colNum).setValue(value);
-
                 results.push({
                     cell: `${column.toUpperCase()}${row}`,
                     value: value,
@@ -660,7 +677,12 @@
         });
 
         return ContentService
-            .createTextOutput(JSON.stringify({ success: true, results, row }))
+            .createTextOutput(JSON.stringify({ 
+                success: true, 
+                results, 
+                row,
+                sheetName: sheet.getName()
+            }))
             .setMimeType(ContentService.MimeType.JSON);
 
     } catch (error) {
@@ -671,11 +693,10 @@
 }
 
 function doGet(e) {
-    // Test endpoint to verify the script is working
     return ContentService
         .createTextOutput(JSON.stringify({
             success: true,
-            message: 'Workflow Timer script is active!',
+            message: 'Workflow Timer script v2.0 is active!',
             timestamp: new Date().toISOString()
         }))
         .setMimeType(ContentService.MimeType.JSON);

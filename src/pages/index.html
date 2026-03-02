@@ -802,7 +802,8 @@
                 running: timer.isRunning(),
                 pomodoroMode: timer.pomodoroMode,
                 pomodoroState: timer.pomodoroState,
-                pomodoroSessionCount: timer.pomodoroSessionCount
+                pomodoroSessionCount: timer.pomodoroSessionCount,
+                lastUpdated: Date.now()
             };
             localStorage.setItem('timerState', JSON.stringify(state));
         }
@@ -811,7 +812,18 @@
             const saved = localStorage.getItem('timerState');
             if (saved) {
                 const state = JSON.parse(saved);
-                timer.elapsedSeconds = state.elapsed;
+                let elapsed = state.elapsed;
+
+                // Calculate time passed if timer was running
+                if (state.running && state.lastUpdated) {
+                    const now = Date.now();
+                    const diffSeconds = Math.floor((now - state.lastUpdated) / 1000);
+                    if (diffSeconds > 0) {
+                        elapsed += diffSeconds;
+                    }
+                }
+
+                timer.elapsedSeconds = elapsed;
 
                 // Restore Pomodoro mode if it was active
                 if (state.pomodoroMode) {
@@ -827,9 +839,19 @@
                     updatePomodoroUI();
                 }
 
-                // Don't auto-start timer on page load, user must manually start it
-                // Just restore the elapsed time
-                updateTimer(state.elapsed);
+                // Update display immediately
+                updateTimer(elapsed);
+
+                // Resume timer if it was running
+                if (state.running) {
+                    timer.start();
+                    // Update UI to show pause button
+                    playButton.querySelector('.material-symbols-outlined').textContent = 'pause';
+                    // Show status badge if in normal mode or update if needed
+                    if (!timer.pomodoroMode) {
+                        if (statusBadge) statusBadge.style.display = 'flex';
+                    }
+                }
             } else {
                 // No saved state, initialize with 0
                 updateTimer(0);
@@ -1011,15 +1033,16 @@
         };
 
         // Play/Pause button
+        // Play/Pause button
         playButton.addEventListener('click', () => {
             if (timer.isRunning()) {
                 timer.pause();
                 playButton.querySelector('.material-symbols-outlined').textContent = 'play_arrow';
-                focusedBadge.style.display = 'none';
+                statusBadge.style.display = 'none';
             } else {
                 timer.start();
                 playButton.querySelector('.material-symbols-outlined').textContent = 'pause';
-                focusedBadge.style.display = 'flex';
+                statusBadge.style.display = 'flex';
             }
             saveTimerState();
         });
