@@ -341,11 +341,15 @@ function prepareExportData(date = null) {
     // Use provided date or default to today
     const targetDate = date || getLocalDate();
     const summary = db.getSessionsSummaryByDate(targetDate);
+    const halfHourPrecision = db.getSetting('export_half_hour_precision') === 'true';
 
     // Format duration as decimal hours
     const formatDecimalHours = (seconds) => {
         if (!seconds) return 0;
         const hours = seconds / 3600;
+        if (halfHourPrecision) {
+            return Math.round(hours * 2) / 2;
+        }
         return Math.round(hours * 100) / 100;
     };
 

@@ -268,6 +268,34 @@
                 <h3 class="text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider px-1 mb-2">
                     Timesheet Integration</h3>
                 <div class="flex flex-col gap-3">
+                    <!-- Export Half-Hour Precision Toggle -->
+                    <div
+                        class="bg-white dark:bg-surface-dark rounded-2xl p-4 shadow-sm border border-black/5 dark:border-white/5">
+                        <div class="flex items-center gap-4 justify-between">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="flex items-center justify-center w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400">
+                                    <span class="material-symbols-outlined text-[20px]">precision_manufacturing</span>
+                                </div>
+                                <div class="flex flex-col justify-center">
+                                    <p class="text-slate-900 dark:text-white text-base font-medium leading-normal">
+                                        Export in 0.5h Increments</p>
+                                    <p class="text-slate-500 dark:text-[#92b7c9] text-xs">Round times to nearest half
+                                        hour
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="shrink-0">
+                                <label
+                                    class="relative flex h-[31px] w-[51px] cursor-pointer items-center rounded-full border-none bg-slate-200 dark:bg-[#233c48] p-0.5 has-[:checked]:justify-end has-[:checked]:bg-primary transition-colors duration-200">
+                                    <div
+                                        class="h-[27px] w-[27px] rounded-full bg-white shadow-sm transform transition-transform duration-200">
+                                    </div>
+                                    <input id="exportHalfHourPrecisionToggle" class="peer sr-only" type="checkbox" />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
                     <!-- Apps Script URL -->
                     <div
                         class="bg-white dark:bg-surface-dark rounded-2xl p-4 shadow-sm border border-black/5 dark:border-white/5">
@@ -453,6 +481,11 @@
             if (scriptRes.success && scriptRes.value) {
                 document.getElementById('scriptUrl').value = scriptRes.value;
             }
+
+            const exportPrecisionRes = await window.api.getSetting({ key: 'export_half_hour_precision' });
+            if (exportPrecisionRes.success) {
+                document.getElementById('exportHalfHourPrecisionToggle').checked = exportPrecisionRes.value === 'true';
+            }
         }
 
         // Save settings
@@ -477,6 +510,7 @@
 
             // Get timesheet integration values
             const scriptUrl = document.getElementById('scriptUrl').value.trim();
+            const exportHalfHourPrecision = document.getElementById('exportHalfHourPrecisionToggle').checked;
 
             // Save all settings
             await window.api.setSetting({ key: 'daily_target', value: String(dailyTargetSeconds) });
@@ -493,6 +527,7 @@
             await window.api.setSetting({ key: 'pomodoro_auto_start_work', value: pomodoroAutoStartWork ? 'true' : 'false' });
 
             await window.api.setSetting({ key: 'script_url', value: scriptUrl });
+            await window.api.setSetting({ key: 'export_half_hour_precision', value: exportHalfHourPrecision ? 'true' : 'false' });
 
             showAlert('Settings saved successfully!', 'success');
         }

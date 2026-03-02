@@ -119,7 +119,8 @@ function initDatabase() {
         pomodoro_long_break: '900', // 15 minutes in seconds
         pomodoro_sessions_until_long_break: '4',
         pomodoro_auto_start_breaks: 'true',
-        pomodoro_auto_start_work: 'false'
+        pomodoro_auto_start_work: 'false',
+        export_half_hour_precision: 'false'
     };
 
     const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
