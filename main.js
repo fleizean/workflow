@@ -1,7 +1,7 @@
 // main.js
 // Electron main process
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
 const path = require('path');
 const db = require('./database/db');
 const { exec } = require('child_process');
@@ -14,6 +14,9 @@ function getLocalDate() {
 }
 
 let mainWindow;
+let tray = null;
+
+let isQuiting = false;
 
 /**
  * Create the main application window
@@ -61,6 +64,15 @@ function createWindow() {
     // Open DevTools in development (disabled for production)
     // mainWindow.webContents.openDevTools();
     mainWindow.webContents.closeDevTools();
+
+    // Prevent default close to allow hiding to tray instead
+    mainWindow.on('close', function (event) {
+        if (!isQuiting) {
+            event.preventDefault();
+            mainWindow.hide();
+        }
+        return false;
+    });
 }
 
 /**
@@ -69,6 +81,46 @@ function createWindow() {
 app.whenReady().then(() => {
     db.initDatabase();
     createWindow();
+
+    // System Tray Setup
+    const iconPath = path.join(__dirname, 'assets', 'workflow-timer.png');
+    // Resize icon specifically for tray to avoid large image issues on Windows
+    const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    tray = new Tray(trayIcon);
+
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: 'Göster',
+            click: () => {
+                if (mainWindow) {
+                    mainWindow.show();
+                    mainWindow.focus();
+                }
+            }
+        },
+        {
+            label: 'Çıkış',
+            click: () => {
+                isQuiting = true;
+                app.quit();
+            }
+        }
+    ]);
+
+    tray.setToolTip('Workflow');
+    tray.setContextMenu(contextMenu);
+
+    // Toggle window visibility on click
+    tray.on('click', () => {
+        if (mainWindow) {
+            if (mainWindow.isVisible()) {
+                mainWindow.hide();
+            } else {
+                mainWindow.show();
+                mainWindow.focus();
+            }
+        }
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -569,12 +621,12 @@ ipcMain.handle('navigate', async (event, { page }) => {
  */
 ipcMain.on('minimize-window', () => {
     if (mainWindow) {
-        mainWindow.minimize();
+        mainWindow.hide(); // Hide completely from taskbar
     }
 });
 
 ipcMain.on('close-window', () => {
     if (mainWindow) {
-        mainWindow.close();
+        mainWindow.hide(); // Hide completely from taskbar instead of closing
     }
 });
