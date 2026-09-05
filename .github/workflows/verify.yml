@@ -25,8 +25,28 @@ jobs:
           node-version: '24'          # Node 20 is EOL 2026-03-24 (C9). See .nvmrc.
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      # TEMPORARY BRIDGE - REMOVE IN PLAN 01-07 (wave 6).
+      # better-sqlite3@9.6.0 ships no N-API prebuild, so its install script falls through
+      # to `node-gyp rebuild`, and 9.x's C++ does not compile against Node 24's V8 headers
+      # (run 33970229605). D-12 forbids upgrading to 13.x before wave 6, because the parity
+      # baseline capture in waves 4-5 needs v1.2.1 running on Electron 28 / N-API 9.
+      # --ignore-scripts skips the native build. Nothing this job runs loads the module:
+      # eslint does not, and the typecheck/test steps plan 01-02 adds must not either while
+      # this flag is in place. Once 13.x lands, the install script is what FETCHES the
+      # prebuild, so the flag MUST go - the guard below fails the build if it outlives 9.x.
+      - name: Install dependencies (native build skipped - see plan 01-07)
+        run: npm ci --ignore-scripts
+
+      - name: Fail if the --ignore-scripts bridge outlived better-sqlite3 9.x
+        run: |
+          range=$(node -p "const p=require('./package.json');(p.dependencies&&p.dependencies['better-sqlite3'])||(p.devDependencies&&p.devDependencies['better-sqlite3'])||''")
+          major=$(printf '%s' "$range" | grep -oE '[0-9]+' | head -1)
+          echo "better-sqlite3 range: '${range}' (major ${major:-unknown})"
+          if [ -n "$major" ] && [ "$major" -ge 13 ]; then
+            echo "::error::better-sqlite3 is now ${range}, which ships N-API prebuilds."
+            echo "::error::Drop --ignore-scripts from the install step above and delete this guard (plan 01-07)."
+            exit 1
+          fi
 
       - name: Run Linter
         run: npm run lint
