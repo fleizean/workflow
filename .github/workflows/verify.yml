@@ -19,6 +19,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # D-13's line-ending contract is unprotected unless CI enforces it. Placed before
+      # npm ci so it costs seconds when it fails. 'git diff --check' catches whitespace
+      # errors; the renormalise assertion catches the actual D-13 regression - a blob
+      # committed with line endings that disagree with .gitattributes, which surfaces
+      # later as "whole file changed" on a file nobody edited.
+      - name: Check whitespace and line-ending contract
+        run: |
+          git diff --check
+          git add --renormalize .
+          if ! git diff --cached --quiet; then
+            echo "::error::Committed line endings disagree with .gitattributes in:"
+            git diff --cached --name-only
+            echo "::error::Fix with: git add --renormalize . && git commit"
+            exit 1
+          fi
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
