@@ -1,0 +1,81 @@
+name: Release
+
+# The ONLY triggers are a `v*` tag push and a manual dispatch. There is deliberately
+# no branch trigger here: "pushing a commit to main produces no release" is provable
+# by reading this block, not by reasoning about an `if:` expression (CUSTODY-01 / D-06).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            build_cmd: npm run build
+            artifact_path: dist/*.exe
+          - os: macos-latest
+            build_cmd: npm run build:mac
+            artifact_path: dist/*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Electron app
+        run: ${{ matrix.build_cmd }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-build
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error       # a green build that produced nothing is a failure
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                    # scoped to this job only
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-build
+          path: dist/
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-build
+          path: dist/
+
+      - name: Create DRAFT release
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          # tag_name defaults to github.ref_name; on workflow_dispatch from a branch it must be given.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-manual', github.run_number) }}
+          draft: true                    # D-06 - a human promotes it
+          prerelease: false
+          make_latest: false             # drafts cannot be "latest" anyway; state it explicitly
+          fail_on_unmatched_files: true
+          files: dist/*

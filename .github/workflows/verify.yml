@@ -1,0 +1,32 @@
+name: Verify
+
+# Runs on every ref and every pull request. This workflow gates; it never releases.
+# It grants read-only repository permission and contains no release step, so a push
+# to any branch cannot publish an installer (CUSTODY-01 / D-06).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'          # Node 20 is EOL 2026-03-24 (C9). See .nvmrc.
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linter
+        run: npm run lint
