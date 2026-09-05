@@ -1,0 +1,24 @@
+# Line-ending contract (D-13). Decided deliberately at the head of the v2 restructure,
+# while a whole-tree renormalisation is still cheap.
+#
+# Every pre-existing blob in this repository stored CRLF (main.js: 632 CRLF, 0 bare LF)
+# because core.autocrlf=true was active with no .gitattributes. Left alone, the first .ts
+# file added by plan 01-02 would be stored LF while every existing blob was CRLF - a latent
+# whole-tree diff that would surface later as "whole file changed" on a file nobody edited.
+# text=auto normalises blobs to LF; eol=crlf checks them out as CRLF, which is what a
+# Windows-first project wants. Applied in one isolated commit so it reverts as a unit.
+
+* text=auto eol=crlf
+
+# Binary: never convert, never diff as text.
+*.png binary
+*.mp3 binary
+*.ico binary
+*.exe binary
+*.db  binary
+
+# POSIX tools read these byte-for-byte. A shell script checked out with CRLF hands bash a
+# shebang ending in a carriage return; it fails as "bad interpreter", which reads like a
+# missing binary rather than a line-ending bug. Ubuntu CI runs tools/baseline/*.sh (plan 01-04).
+*.sh   text eol=lf
+.nvmrc text eol=lf
