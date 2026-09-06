@@ -122,11 +122,66 @@ The archive location itself is deliberately **not** recorded here: this file is 
 
 ## 3. Vendored capture assets
 
-> **Reserved for plan `01-05`.** Fill in place. Expected content: each asset vendored under
-> `tools/baseline/vendor/` for the offline baseline capture, with its source, version and SHA-256,
-> so the capture is reproducible without network access.
+A running v1.2.1 loads three third-party hosts, all of them live URLs:
 
-_Not yet populated._
+| Host | Loaded by | What it decides |
+|---|---|---|
+| `cdn.tailwindcss.com` | `src/pages/*.html:17` | essentially every rendered pixel |
+| `fonts.googleapis.com` | `src/styles/common.css:4-5` | which woff2 files are requested |
+| `fonts.gstatic.com` | the two stylesheets above | Inter, and all 41 Material Symbols glyphs |
+
+The Play CDN is the sharp edge. `https://cdn.tailwindcss.com?plugins=forms,container-queries`
+currently 302s to `/3.4.17?plugins=forms@0.5.10,container-queries@0.1.1` — **verified by request on
+2026-09-06**, which settles research assumption A7 by execution rather than by carry-forward — but
+nothing holds it there. It also does not ship a stylesheet: it ships the JIT engine, which
+generates CSS from the live DOM at runtime. A Phase 8 re-capture against a different build would
+produce a diff, and that diff would be attributed to the rewrite.
+
+So all eleven files are vendored under `tools/baseline/vendor/` and pinned by digest here.
+`tools/baseline/capture.mjs` intercepts all three hosts, verifies each file's SHA-256 against this
+table before fulfilling a request from it, and **fails closed** if a digest does not match. The
+capture therefore needs no network at all.
+
+Re-fetch (needs network; overwrites the files below, so re-record the digests if they move):
+
+```bash
+node tools/baseline/seed-baseline-db.mjs --fetch-vendor
+node tools/baseline/seed-baseline-db.mjs --verify-vendor   # disk vs index.json vs this table
+```
+
+Google Fonts serves a different stylesheet per User-Agent. The fetch pins
+`Chrome/120.0.0.0` — the Chromium version inside Electron 28.3.3, which is what the application
+itself would send. Changing the UA changes the vendored CSS.
+
+`tools/baseline/vendor/index.json` is the machine-readable form of this table (URL, file, bytes,
+digest, fetch date, User-Agent); it is what `capture.mjs` resolves requests through, and
+`--verify-vendor` cross-checks it against both the files on disk and the digests below.
+
+Fetched **2026-09-06**, 1.8 MB total:
+
+| Asset | Source URL | Bytes | SHA-256 |
+|---|---|---|---|
+| `tailwind.js` | <https://cdn.tailwindcss.com?plugins=forms,container-queries> | 418,973 | `a789ce5a73191759006b64a0c05f63afbf9aa43a86511bf798d688737429e60a` |
+| `fonts-css/inter.css` | <https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap> | 9,884 | `5682df055e3bc3420ab5065274d8b14caeee02857f0af6c07d0995b8d6271077` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2JL7SUc.woff2> | 25,960 | `ca157063339ac4ad418f214f3abfed119b0798ab4d377386ce5c9e5a7a435ebd` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa0ZL7SUc.woff2> | 18,748 | `71d5ee93cc1e9f1d520a3a8b66456de18c7879d8df09d57fcd2eaff75fef0075` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2ZL7SUc.woff2> | 11,232 | `6e9e020a25f9b56d418f2c085b1d3c09725a4da23fe693a5b463064606732190` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1pL7SUc.woff2> | 18,996 | `1be3448e292fbf05ffe176fe1e43f135013d50b1e7d324ad1a558f623d3bb6f6` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa2pL7SUc.woff2> | 10,252 | `5c66f9e07e90c6d4ac4922cc68d60de26c17b1858e677fb5e603fce3952b3ff2` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa25L7SUc.woff2> | 85,068 | `34b9c504cab7a73e37b746343a449132e56cf7b5481af2cb81dc74dcff25c956` |
+| `fonts/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2` | <https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2> | 48,256 | `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62` |
+| `fonts-css/material-symbols.css` | <https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap> | 688 | `f229b149a663e9f469a61a8977d0327b9534b8952999be3a09e7b1a9e389d709` |
+| `fonts/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2` | <https://fonts.gstatic.com/s/materialsymbolsoutlined/v369/kJEPBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oDMzBwG-RpA6RzaxHMPdY40KH8nGzv3fzfVJO1Q.woff2> | 1,130,004 | `48d81a1cab89b4f3106081e85fff323b218cce76daf4c2c542503c8b1ccc6072` |
+
+Two notes for a future reader:
+
+- **The Material Symbols woff2 is 1.13 MB and is the whole variable font.** The application uses 41
+  distinct icons and never touches the `FILL` axis, so a subset would be far smaller — but a subset
+  is a *different* font, and the point of this directory is byte-fidelity to what v1.2.1 actually
+  rendered. Subsetting belongs to the Phase 2 bundle-size work, not here.
+- **`.gitattributes` marks `tools/baseline/vendor/**` as `-text`.** Without it the tree-wide
+  `eol=crlf` rule would check `tailwind.js` and the two stylesheets out as CRLF, and every digest
+  in the table above would fail on a fresh clone of a file nobody had touched.
 
 ---
 
@@ -206,7 +261,52 @@ so the gate is provably capable of failing.
 
 ### Fixture seeding policy
 
-> **Reserved for plan `01-05` task 2.** How the fixture's dates are derived from the run date.
+Written by `tools/baseline/seed-baseline-db.mjs`. **Phase 8 must reproduce this exactly or its diff
+means nothing**, which is why the policy is recorded here and not only in the script.
+
+`database/db.js` reads the real system clock in `getTodaySessions()`, `getThisWeekTotal()`,
+`getLastWeekTotal()` and `calculateCurrentStreak()`, so today's date is rendered into the output.
+Research offered two responses: seed relative to the run date, or accept the drift and mask the date
+strip. **Option (a), seed relative to the run date, was taken** — masking hides a region that the
+parity diff would otherwise cover.
+
+The non-obvious part is that "relative to the run date" is not enough on its own. `getThisWeekTotal`
+and `getLastWeekTotal` slice by **calendar week, Monday to Sunday**, not by "N days ago". Seeding
+`today-1` and `today-2` would put a different number of sessions inside the current week depending
+on which weekday the capture ran on — none of them on a Monday, both on a Thursday. So the seed is
+anchored to the week boundary on purpose:
+
+| Rule | Consequence |
+|---|---|
+| All of the current week's work sits on **today**: 3 sessions, 14400 + 10800 + 5400 = **30,600 s** | This Week always contains exactly 3 sessions totalling 30,600 s |
+| The historical block sits on **last week's Monday, Tuesday and Wednesday**, derived as `mondayOf(today) - 7 days + {0,1,2}` | always entirely inside "last week", never inside "this week"; Last Week is always 66,600 s |
+| **Nothing** is seeded on `today-1` or `today-2` | those days cross the week boundary as the weekday changes |
+| Pomodoro rows are seeded on **today only** | `getWeeklyPomodoroStats()` uses a rolling `[today-7, today]` window, not a calendar week |
+| `daily_target` = 28,800 s; today's 30,600 s clears it; yesterday is empty | `calculateCurrentStreak()` returns **exactly 1** on every run date |
+
+The streak of 1 is deliberate and doubly safe: `src/pages/index.html:719-729` starts the
+`requestAnimationFrame` particle canvas at `streak > 10` and adds a pulsing CSS tier at `streak > 5`,
+so at 1 there is no tier class and no animation clock to photograph. The capture masks
+`#streakFireCanvas` as well; a fixture that never lights it is the sturdier of the two controls and
+using both is correct.
+
+Dates are formatted with the byte-for-byte copy of `database/db.js:16-18` `formatLocalDate` —
+**local**, never `toISOString()`, or the fixture would be a day out for anyone whose offset from UTC
+crosses midnight.
+
+Every row passes `created_at` explicitly; `DEFAULT CURRENT_TIMESTAMP` would stamp the wall clock
+into the fixture and two runs on the same date would then differ. Company and session names are
+invented (`Northwind Fixture`, `Contoso Fixture`, `Fabrikam Fixture` — Microsoft's canonical
+fictional companies, suffixed so no reader can mistake one for a real client), because every string
+in the fixture is rendered into a PNG in this public repository. `Unassigned` is the one name that is
+not invented: `initDatabase()` recreates it on every launch, so a fixture without it would be
+silently mutated by the app the moment the capture began.
+
+Verify all of the above without a database, a network or an app:
+
+```bash
+node tools/baseline/seed-baseline-db.mjs --self-test
+```
 
 ### Capture run
 
