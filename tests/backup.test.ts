@@ -33,6 +33,7 @@ import Database from 'better-sqlite3';
 import {
     DEFAULT_RETAINED_BACKUPS,
     backupDatabase,
+    describeVerificationMismatches,
     pruneBackups,
     readDatabaseStats,
     restoreDatabase,
@@ -619,5 +620,262 @@ describe('src/lib/db/backup.ts module contract', () => {
             expect(fs.existsSync(newest.backupPath)).toBe(true);
         }
         expect(fs.readdirSync(dir)).toHaveLength(1);
+    });
+});
+
+/*
+ * CUSTODY-03. Selected by the validation strategy's name filter:
+ *   npx vitest run tests/backup.test.ts -t 'uncheckpointed'
+ *
+ * The argument this block makes is not "the online backup works". It is that the OBVIOUS
+ * alternative fails silently, so nothing short of the online backup is acceptable. That is why
+ * the naive copy is executed here as a real negative control rather than described in a comment:
+ * on a cleanly-closed database the two approaches are indistinguishable, which is exactly why
+ * the owner's own krono.db-wal is 0 bytes and why a naive backup would have tested green on this
+ * machine forever.
+ */
+describe('CUSTODY-03: the online backup captures uncheckpointed WAL content', () => {
+    it('keeps rows a file copy loses, and that copy still reports integrity ok', async () => {
+        const fx = await makeWalFixture();
+        const pristineSidecar = fs.statSync(fx + '-wal').size;
+
+        // Never the pristine fixture, always a copy of the whole triple (Pitfall 2). truth() is
+        // read-only, so reading the ground truth does not checkpoint the evidence away.
+        const source = copyFixture(fx);
+        const expected = truth(source);
+        expect(expected.count).toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+        expect(expected.sum).toBe(CHECKPOINTED_SECONDS + WAL_ONLY_SECONDS);
+
+        /*
+         * THE NEGATIVE CONTROL. Copying the main database file is what a backup written by
+         * someone who has not read sqlite.org/backup.html looks like.
+         *
+         * eslint-disable-next-line no-restricted-syntax -- this call is the DEFECT under test.
+         * The CUSTODY-03 rule exists to stop exactly this from reaching production code; here it
+         * is executed deliberately so its consequence is measured rather than asserted.
+         */
+        const naiveCase = copyFixture(fx);
+        const naive = path.join(path.dirname(naiveCase), 'naive-copy.bak');
+        // eslint-disable-next-line no-restricted-syntax
+        fs.copyFileSync(naiveCase, naive);
+        const naiveStats = truth(naive);
+
+        /*
+         * STRICTLY less, never less-than-or-equal. A fixture that had degraded to a clean
+         * single file would satisfy the weaker comparison, and this test would pass while
+         * proving the exact opposite of what it claims.
+         */
+        expect(naiveStats.count).toBeLessThan(expected.count);
+        expect(naiveStats.sum).toBeLessThan(expected.sum);
+        expect(naiveStats.count).toBe(CHECKPOINTED_ROWS);
+        expect(naiveStats.sum).toBe(CHECKPOINTED_SECONDS);
+
+        // ...and it is NOT corrupt. Nothing throws, nothing warns. The bad backup is not
+        // broken, it is short - which is the entire reason integrity_check is insufficient.
+        expect(verifyBackup(naive).integrity).toBe('ok');
+
+        // THE REAL THING, against the same fixture, in the same test.
+        const result = await backupDatabase(source, backupDirFor(source));
+        expect(result.verification.integrity).toBe('ok');
+        expect(result.verification.rows.work_sessions).toBe(expected.count);
+        expect(result.verification.totalDuration).toBe(expected.sum);
+
+        // Everything above ran read-only against copies; the pristine fixture is untouched, so
+        // the next test in this file still finds an adversarial sidecar.
+        expect(fs.statSync(fx + '-wal').size).toBe(pristineSidecar);
+        expect(fs.statSync(source + '-wal').size).toBeGreaterThan(32);
+    });
+});
+
+/*
+ * CUSTODY-04. A backup nobody checked is a belief, and a backup checked only against itself is
+ * a belief with a certificate.
+ */
+describe('CUSTODY-04: a backup is verified against the source, not against itself', () => {
+    /*
+     * The naive copy's REAL measured statistics, run through the module's own comparison. This
+     * is the pairing the requirement turns on: the copy passes every check it can perform on
+     * itself, and fails the only check that compares it with what it was copied from.
+     */
+    it('rejects the naive copy on rows and on summed duration, though it passes integrity', async () => {
+        const fx = await makeWalFixture();
+        const source = copyFixture(fx);
+        const sourceStats = readDatabaseStats(source);
+
+        const naiveCase = copyFixture(fx);
+        const naive = path.join(path.dirname(naiveCase), 'naive-copy.bak');
+        // eslint-disable-next-line no-restricted-syntax -- deliberate negative control, see above
+        fs.copyFileSync(naiveCase, naive);
+        const naiveStats = readDatabaseStats(naive);
+
+        // What a verification that stopped at integrity would conclude:
+        expect(naiveStats.integrity).toBe('ok');
+
+        // What the module concludes instead.
+        const mismatches = describeVerificationMismatches(sourceStats, naiveStats);
+        expect(mismatches).toHaveLength(2);
+        expect(mismatches[0]).toContain('work_sessions');
+        expect(mismatches[0]).toContain(String(CHECKPOINTED_ROWS));
+        expect(mismatches[0]).toContain(String(CHECKPOINTED_ROWS + WAL_ONLY_ROWS));
+        expect(mismatches[1]).toContain(String(WAL_ONLY_SECONDS));
+        expect(mismatches[1]).toContain('seconds of tracked time');
+
+        // A copy that IS complete produces nothing to report.
+        const good = await backupDatabase(source, backupDirFor(source));
+        expect(describeVerificationMismatches(sourceStats, good.verification)).toEqual([]);
+    });
+
+    /*
+     * The comparison firing end-to-end, on real files, with no mocking and no mutation.
+     *
+     * restoreDatabase is handed a LIVE WAL-mode database in place of a quiesced backup. It reads
+     * 45 sessions from it (main file plus sidecar), then copies the main file alone - which is
+     * precisely the naive-copy defect - and the re-verification catches the 40 missing rows and
+     * refuses. This is also why restoreDatabase re-verifies at all: a file copy is only sound
+     * against a backup the online API produced, and this proves what happens when it is not.
+     */
+    it('refuses to accept a short copy, naming the table and both values', async () => {
+        const fx = await makeWalFixture();
+        const notAQuiescedBackup = copyFixture(fx);
+        const target = makeCleanFixture();
+
+        expect(() => restoreDatabase(notAQuiescedBackup, target)).toThrow(
+            /Restore verification failed[\s\S]*work_sessions[\s\S]*sum\(duration\)/
+        );
+    });
+
+    /*
+     * The error must name the mismatch. "Backup failed" is useless at three in the morning
+     * during a migration, which is the only time anyone reads it.
+     */
+    it('states expected against observed rather than merely that something went wrong', async () => {
+        const fx = await makeWalFixture();
+        const notAQuiescedBackup = copyFixture(fx);
+        const target = makeCleanFixture();
+
+        let message = '';
+        try {
+            restoreDatabase(notAQuiescedBackup, target);
+        } catch (error) {
+            message = error instanceof Error ? error.message : String(error);
+        }
+        expect(message).toContain('holds ' + String(CHECKPOINTED_ROWS) + ' rows');
+        expect(message).toContain('expected ' + String(CHECKPOINTED_ROWS + WAL_ONLY_ROWS));
+        expect(message).toContain(String(WAL_ONLY_SECONDS) + ' seconds of tracked time');
+        // T-01-37: counts and sums only. No row value, company name or session note.
+        expect(message).not.toMatch(/Northwind|Contoso|Fixture task/);
+    });
+});
+
+/*
+ * CUSTODY-05. Selected by the validation strategy's name filter:
+ *   npx vitest run tests/backup.test.ts -t 'restore'
+ *
+ * A backup with no tested restore is untested code on the most important path in the
+ * application.
+ */
+describe('CUSTODY-05: restore returns a damaged database to service', () => {
+    it('refuses to restore a backup that is not a database, and leaves the target alone', async () => {
+        const fx = makeCleanFixture();
+        const { backupPath } = await backupDatabase(fx, backupDirFor(fx));
+        const targetDigestBefore = sha256(fx);
+
+        fs.writeFileSync(backupPath, Buffer.alloc(4096, 0x41));
+
+        expect(() => restoreDatabase(backupPath, fx)).toThrow(
+            /Refusing to restore an unverified backup/
+        );
+        // Refused BEFORE touching the target: the working database is byte-identical, and its
+        // sidecars were not removed either.
+        expect(sha256(fx)).toBe(targetDigestBefore);
+        expect(truth(fx).count).toBeGreaterThan(0);
+    });
+
+    /*
+     * The round trip, on the WAL fixture rather than the clean one, so three things are true at
+     * once: the backup had to capture sidecar content to be complete, the damaged target still
+     * carries a 329 KB stale sidecar describing the file that was destroyed, and the recovered
+     * statistics are compared against values measured before the damage rather than against
+     * constants.
+     */
+    it('damages a working database, restores it, and recovers the exact pre-damage figures', async () => {
+        const fx = await makeWalFixture();
+        const live = copyFixture(fx);
+        const before = truth(live);
+        expect(before.count).toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+
+        const { backupPath } = await backupDatabase(live, backupDirFor(live));
+
+        // DAMAGE. Overwrite the main file's header and pages with non-database bytes, and leave
+        // the sidecar in place - that is what a half-written file or a bad restore looks like,
+        // and a -wal describing a database that no longer exists is the hazard restore must
+        // clear rather than inherit.
+        const staleFrames = fs.statSync(live + '-wal').size;
+        expect(staleFrames).toBeGreaterThan(32);
+        fs.writeFileSync(live, Buffer.alloc(4096, 0x41));
+
+        // Observed, not assumed: the database can no longer be opened at all.
+        expect(() => truth(live)).toThrow(/not a database/);
+
+        const recovered = restoreDatabase(backupPath, live);
+
+        expect(recovered.integrity).toBe('ok');
+        expect(recovered.rows.work_sessions).toBe(before.count);
+        expect(recovered.totalDuration).toBe(before.sum);
+        expect(truth(live)).toEqual(before);
+
+        const survivingFrames = fs.existsSync(live + '-wal') ? fs.statSync(live + '-wal').size : 0;
+        expect(survivingFrames).toBe(0);
+    });
+});
+
+/*
+ * Retention. Phase 4's DATA-03 asks for "old backups are pruned"; the count is a parameter so
+ * that phase can set its own policy without editing the module.
+ */
+describe('backup retention', () => {
+    it('keeps the three newest of five, deletes only the older two, and rewrites nothing', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+
+        // Created out of chronological order on purpose: a prune that trusted insertion order,
+        // or directory order, would pass a test that made them in sequence.
+        const order = ['10:00:03', '10:00:00', '10:00:04', '10:00:02', '10:00:01'];
+        const byStamp = new Map<string, string>();
+        for (const stamp of order) {
+            const made = await backupDatabase(fx, dir, {
+                now: new Date('2026-09-06T' + stamp + '.000Z')
+            });
+            byStamp.set(stamp, made.backupPath);
+        }
+        expect(fs.readdirSync(dir)).toHaveLength(5);
+
+        const survivors = ['10:00:02', '10:00:03', '10:00:04'].map((s) => byStamp.get(s) ?? '');
+        const digestsBefore = survivors.map(sha256);
+
+        const deleted = pruneBackups(dir, 3).sort();
+
+        expect(deleted).toEqual([byStamp.get('10:00:00'), byStamp.get('10:00:01')].sort());
+        expect(fs.readdirSync(dir)).toHaveLength(3);
+        for (const survivor of survivors) {
+            expect(fs.existsSync(survivor)).toBe(true);
+        }
+        // Pruning only deletes. It must never write over a known-good backup.
+        expect(survivors.map(sha256)).toEqual(digestsBefore);
+        // The newest, which is the one a migration is about to depend on.
+        expect(fs.existsSync(byStamp.get('10:00:04') ?? '')).toBe(true);
+    });
+
+    it('ignores files that are not backups it wrote', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
+        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:01.000Z') });
+
+        const stranger = path.join(dir, 'notes.txt');
+        fs.writeFileSync(stranger, 'not mine\n');
+
+        expect(pruneBackups(dir, 1)).toHaveLength(1);
+        expect(fs.existsSync(stranger)).toBe(true);
     });
 });
