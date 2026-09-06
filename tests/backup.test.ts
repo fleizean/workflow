@@ -337,10 +337,21 @@ describe('the rest of the fixture corpus', () => {
     });
 
     /*
-     * DATA-12. These rows exist in the wild precisely because the cascades are inert (CB-4):
-     * deleting a company in v1.2.1 leaves its sessions behind, pointing at nothing.
+     * DATA-12. These rows are NOT what the application produces, and the fixture does not claim
+     * they are. The cascades are live - see "enforces ON DELETE CASCADE, contrary to CB-4" above -
+     * and database/db.js deletes the sessions explicitly before removing a company anyway, so the
+     * app's own delete path cannot strand one. The owner's real database holds 97 sessions and 0
+     * orphans.
+     *
+     * The fixture is kept because it is DEFENSIVE, not descriptive. foreign_keys is a
+     * per-connection pragma, so anything that opens krono.db without better-sqlite3's compiled-in
+     * default - the sqlite3 CLI, DB Browser for SQLite, a hand-rolled repair script, a partial
+     * restore - can delete a company and leave its sessions pointing at nothing. Phase 4's cleanup
+     * has to survive that database whoever made it. So makeOrphanFixture() manufactures the state
+     * with an explicit PRAGMA, exactly as such a tool would; tests/fixtures/seed.ts records the
+     * correction and its consequences for DATA-12 at length.
      */
-    it('carries work_sessions orphaned while the cascades were inert', () => {
+    it('carries work_sessions orphaned by a tool that opened the database without foreign keys', () => {
         const fx = makeOrphanFixture();
         const orphans = scalar(
             fx,

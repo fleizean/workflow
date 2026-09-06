@@ -57,11 +57,32 @@ const realSchemaPath = path.join(repoRoot, 'tests', 'fixtures', 'v121-real-schem
  * initDatabase(), so they sit LAST. A fixture with a tidier column order is not a v1.2.1 database,
  * and phase 04's PRAGMA table_info migration logic would then be tested against a lie.
  *
- * PRAGMA foreign_keys is deliberately NOT enabled here. The application never enables it
- * (database/db.js opens the database and sets only journal_mode), so every declared ON DELETE
- * CASCADE is inert in production. node:sqlite's DatabaseSync turns foreign keys ON by default,
- * which is the opposite of the application's behaviour, so the connection below switches it off
- * explicitly - see openFixture().
+ * FOREIGN KEYS ARE ENFORCED HERE, because they are enforced in production. An earlier revision of
+ * this file switched them off, on the premise recorded as CB-4: database/db.js issues no
+ * PRAGMA foreign_keys, therefore every declared ON DELETE CASCADE is inert in the field. The first
+ * half is true. The conclusion is false, and it has been disproved three independent ways:
+ *
+ *   1. better-sqlite3 - the driver v1.2.1 ships, and the one this repo now uses - compiles SQLite
+ *      with SQLITE_DEFAULT_FOREIGN_KEYS (deps/defines.gypi). PRAGMA compile_options lists
+ *      DEFAULT_FOREIGN_KEYS and PRAGMA foreign_keys reads 1 on a connection db.js never touched.
+ *   2. A cascade delete really cascades - tests/backup.test.ts, "enforces ON DELETE CASCADE,
+ *      contrary to CB-4", deletes a parent and observes the child rows go.
+ *   3. The owner's real database holds 97 work sessions, 0 orphans, and an empty
+ *      PRAGMA foreign_key_check.
+ *
+ * So node:sqlite's DatabaseSync default of ON already matched the application, and the override
+ * was actively making this fixture diverge from the thing it is a photograph of. It is gone - see
+ * openFixture(). Nothing seeded here needs to violate referential integrity, and a seed row that
+ * dangles is a bug in the seed data that should fail loudly at insert time rather than render into
+ * a PNG committed to a public repository. Where a fixture genuinely DOES need to violate it -
+ * tests/fixtures/seed.ts's orphan fixture, which manufactures what a third-party tool leaves
+ * behind - the disable is scoped to the statements that need it and explained at the point of use.
+ *
+ * PRAGMA foreign_keys is a per-connection setting, not schema, and is not stored in the database
+ * file, so flipping it changes no byte of the seeded fixture. That was confirmed rather than
+ * assumed: sqlite_master (type, name, sql) plus every row of every table was dumped before and
+ * after this change and the two dumps hash identically (sha256 2a174157e2d4b77c...b434f0d35), so
+ * the committed schema extract and the byte-for-byte sqlite_master comparison are untouched.
  */
 export const V121_DDL = `
 CREATE TABLE IF NOT EXISTS companies (
@@ -244,11 +265,23 @@ const POMODOROS = [
 /* Seeding                                                                                    */
 /* ---------------------------------------------------------------------------------------- */
 
+/*
+ * The single place the fixture connection's shape is decided. Kept as a named constant for two
+ * reasons: it can be mutated in one place to prove the self-test below can still fail, and the
+ * self-test reads the pragma back from a connection opened through these helpers rather than from
+ * one it configured itself - an assertion against a hand-configured connection would only prove
+ * that the test had configured itself.
+ *
+ * true = what better-sqlite3 hands the application without db.js asking. See the header.
+ */
+const FIXTURE_FOREIGN_KEYS = true;
+
 function openFixture(file) {
-    return new DatabaseSync(file, {
-        /* The application never enables foreign keys; node:sqlite does by default. Match the app. */
-        enableForeignKeyConstraints: false
-    });
+    return new DatabaseSync(file, { enableForeignKeyConstraints: FIXTURE_FOREIGN_KEYS });
+}
+
+function openFixtureReadOnly(file) {
+    return new DatabaseSync(file, { readOnly: true, enableForeignKeyConstraints: FIXTURE_FOREIGN_KEYS });
 }
 
 /*
@@ -326,7 +359,7 @@ export function seedDatabase(targetDir, now = new Date()) {
 
 /* Everything a determinism comparison needs: every row of every table, in a stable order. */
 export function dumpContent(file) {
-    const db = new DatabaseSync(file, { readOnly: true, enableForeignKeyConstraints: false });
+    const db = openFixtureReadOnly(file);
     try {
         const out = {};
         for (const table of TABLES) {
@@ -502,7 +535,7 @@ export function verifyVendor() {
  * from the shape phase 04's migration runner will meet in the field. */
 function realSchemaColumns() {
     if (!fs.existsSync(realSchemaPath)) return null;
-    const db = new DatabaseSync(':memory:', { enableForeignKeyConstraints: false });
+    const db = new DatabaseSync(':memory:', { enableForeignKeyConstraints: FIXTURE_FOREIGN_KEYS });
     try {
         /* The extract carries `CREATE TABLE sqlite_sequence(name,seq)` because it is a faithful
          * dump of the real sqlite_master, and SQLite creates that table implicitly for
@@ -540,11 +573,12 @@ function selfTest() {
         const first = seedDatabase(path.join(root, 'a'), now);
         const second = seedDatabase(path.join(root, 'b'), now);
 
-        const db = new DatabaseSync(first.file, { readOnly: true, enableForeignKeyConstraints: false });
+        const db = openFixtureReadOnly(first.file);
         let objects;
         let sessions;
         let missingCreatedAt;
         let foreignKeys;
+        let fkViolations;
         let columns;
         try {
             objects = db.prepare('SELECT name FROM sqlite_master WHERE type = \'table\'').all().map((r) => r.name);
@@ -554,12 +588,42 @@ function selfTest() {
                 db.prepare('SELECT count(*) AS c FROM companies WHERE created_at IS NULL').get().c +
                 db.prepare('SELECT count(*) AS c FROM pomodoro_sessions WHERE created_at IS NULL').get().c;
             foreignKeys = db.prepare('PRAGMA foreign_keys').get().foreign_keys;
+            fkViolations = db.prepare('PRAGMA foreign_key_check').all().length;
             columns = {};
             for (const table of TABLES) {
                 columns[table] = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
             }
         } finally {
             db.close();
+        }
+
+        /*
+         * A negative control, and not a restatement of the pragma readback. It opens a scratch
+         * fixture through the same openFixture() the seeder uses and tries to insert a work_session
+         * pointing at a company that does not exist. Two independent mutations turn it red:
+         * flipping FIXTURE_FOREIGN_KEYS to false, and dropping the REFERENCES clause out of
+         * V121_DDL - the second of which the D-05 comparison cannot see, because that compares
+         * column names and order, never constraints.
+         */
+        const dangling = { rejected: false, detail: 'the insert was accepted' };
+        {
+            const scratchDir = path.join(root, 'dangling');
+            fs.mkdirSync(scratchDir, { recursive: true });
+            const scratch = openFixture(path.join(scratchDir, DB_NAME));
+            try {
+                scratch.exec(V121_DDL);
+                scratch
+                    .prepare(
+                        'INSERT INTO work_sessions (name, duration, date, created_at, company_id, note) ' +
+                        'VALUES (?, ?, ?, ?, ?, ?)'
+                    )
+                    .run('dangling fixture row', 60, '2000-01-01', '2000-01-01 00:00:00', 9999, null);
+            } catch (error) {
+                dangling.rejected = true;
+                dangling.detail = String(error.message);
+            } finally {
+                scratch.close();
+            }
         }
 
         const present = TABLES.filter((t) => objects.includes(t));
@@ -569,7 +633,27 @@ function selfTest() {
             objects.includes('sqlite_sequence')
         );
         check('at least five seeded sessions', sessions.c >= 5, `${sessions.c} sessions, ${sessions.d} s total`);
-        check('foreign keys left disabled, matching the application', foreignKeys === 0, `PRAGMA foreign_keys = ${foreignKeys}`);
+        /*
+         * The three checks below replace one that asserted "foreign keys left disabled, matching
+         * the application". The application does not run with foreign keys off - see the header -
+         * and the old check could not have failed anyway: it opened the connection with
+         * enforcement explicitly disabled and then asserted that enforcement was disabled.
+         */
+        check(
+            'the fixture connection enforces foreign keys, matching what better-sqlite3 gives the application',
+            foreignKeys === 1,
+            `PRAGMA foreign_keys = ${foreignKeys}`
+        );
+        check(
+            'the seeded fixture holds no dangling reference',
+            fkViolations === 0,
+            `PRAGMA foreign_key_check returned ${fkViolations} row(s)`
+        );
+        check(
+            'a dangling company_id is actually rejected, so the fixture schema still carries the constraint',
+            dangling.rejected,
+            dangling.detail
+        );
         check('every created_at explicitly set', missingCreatedAt === 0, `${missingCreatedAt} NULL`);
 
         const contentA = JSON.stringify(dumpContent(first.file));
