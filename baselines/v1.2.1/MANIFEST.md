@@ -310,7 +310,88 @@ node tools/baseline/seed-baseline-db.mjs --self-test
 
 ### Capture run
 
-> **Reserved for plan `01-06`.** The machine and OS build the capture ran on, and the commit it was
-> taken at.
+Executed by plan `01-06` on **2026-09-06**. This is the run that produced the 20 PNGs under
+`pixels/` and the 20 computed-style records under `computed/`.
 
-_Not yet populated._
+**A Phase 8 re-capture that does not reproduce every row below produces a diff that cannot be
+attributed** — a changed Chromium, a changed Tailwind build, a different scale factor or a
+different locale each move pixels and computed values on their own, and none of them is the rewrite.
+
+| Field | Value |
+|---|---|
+| Run date | 2026-09-06 |
+| Commit | `90eaedc` (`v2-restructure`); the artifacts are committed on the child of that commit |
+| Driver | `tools/baseline/capture.mjs`, invoked as `npm run baseline:capture` |
+| `playwright-core` | **1.63.0**, pinned exactly — Playwright's Electron support is experimental and outside its stability guarantees, so Phase 8 must compare against a capture taken by the same driver |
+| Launch path | `installed`, per the Launch path table above |
+| Executable | `%USERPROFILE%\workflow-timer-archive\app-v1.2.1\Workflow.exe` |
+| Installer the payload came from | `Workflow.Setup.1.2.1.exe`, `sha256 e0b19426708728597f17088048a1ff5ad247fcf139ab4823710163f4d112c7f0` (section 1) |
+| Electron reported by the app | **28.3.3** |
+| Chromium reported by the app | **120.0.6099.291** |
+| Tailwind actually served | **3.4.17** with `forms@0.5.10` and `container-queries@0.1.1`, from the vendored `tailwind.js` (section 3) |
+| Vendored assets | 11 files, all verified against the section 3 digest table before the first request was fulfilled |
+| Network | none reached the app; all three hosts were served from `tools/baseline/vendor/`, and zero un-vendored remote requests were attempted |
+| Timezone forced at launch | `Europe/Istanbul` |
+| Locale forced at launch | `tr-TR` |
+| Colour scheme forced at launch | `dark` |
+| Device scale factor | **1** (`--force-device-scale-factor=1`), plus `--disable-lcd-text` so subpixel antialiasing cannot vary with the host display |
+| Screenshot options | `animations: 'disabled'`, `caret: 'hide'`, `fullPage: false` |
+| Masked selectors | `#streakFireCanvas` |
+| Fixture date policy | the Fixture seeding policy above; the fixture's `today` for this run was **2026-09-06** |
+| Machine | Windows 11 Pro x64, build **10.0.26100.9168**; Node **v24.14.0** drove the capture |
+
+The Electron and Chromium versions are read out of the extracted `Workflow.exe` itself
+(`Electron/28.3.3`, `Chrome/120.0.6099.291`), which also confirms the choice in section 3 to pin the
+Google Fonts fetch to a `Chrome/120` User-Agent: Google Fonts serves a different stylesheet per
+User-Agent, so the vendored copies are the ones this Chromium would have been given.
+
+#### What was produced
+
+| Directory | Count | Naming |
+|---|---|---|
+| `pixels/` | 20 PNG | `<page>@<width>x<height>.png` |
+| `computed/` | 20 JSON | `<page>@<width>x<height>.json` |
+
+Pages `index`, `companies`, `work-history`, `settings`; sizes 380x600, 430x932, 768x1024, 1280x800,
+1920x1080. Element counts are stable across all five sizes of a page — 122 for `index`, 123 for
+`companies`, 421 for `work-history`, 206 for `settings` — which is the expected shape: v1.2.1 has no
+size-conditional rendering, so a size change must move geometry without adding or removing nodes. A
+future capture whose counts differ *within* a page has changed the DOM, not the layout.
+
+#### Why the frames are not unstyled
+
+The Play CDN is a JIT engine that generates CSS from the live DOM through a `MutationObserver`, so
+`load` fires long before a page is styled and a `waitForLoadState` capture would photograph an
+unstyled document. The driver therefore waits on a **computed value** instead:
+`getComputedStyle(document.body).backgroundColor === 'rgb(16, 28, 34)'` — the palette's
+`background-dark`, `#101c22`, which only exists once the CDN has generated it. It then awaits
+`document.fonts.ready`, and before each screenshot asserts `window.innerWidth === <requested width>`,
+because `main.js:31` makes the window frameless so `setSize` and `setContentSize` differ and an
+off-by-one content size would otherwise be recorded under the wrong filename.
+
+All 20 computed-style records carry `rgb(16, 28, 34)` on `body:nth-child(2)`, asserted by
+`tests/baselines.test.ts` on every record rather than on a sample.
+
+#### The masked streak card (known, deliberate)
+
+`#streakFireCanvas` is `absolute inset-0` inside the streak card, so Playwright's mask — which
+covers the element's bounding box — covers **the whole card**, not just the canvas. In
+`index@*.png` this is the magenta rectangle. It is left in place on purpose: the fire animation is
+`requestAnimationFrame`-driven and non-deterministic, and unmasking it to get a prettier picture
+would make every future diff noisy. The card is not lost to the baseline — the computed-style
+records are unaffected by masking and cover it in full. Phase 8 should compare that card by computed
+style, not by pixels.
+
+#### Privacy, checked rather than assumed (D-03, T-01-24)
+
+- The entry probe ran first and proved the redirection in this run before a screenshot was possible.
+- `%APPDATA%\workflow-timer\krono.db` was asserted byte-identical before the first launch and after
+  the last: 61,440 bytes, `sha256 ca9423fa…c56383`, mtime unchanged at nanosecond resolution
+  (`1774296193022671200`). Both WAL sidecars likewise unchanged.
+- The `computed/` records contain **no text content at all**, which is a stronger property than
+  "no real names": their keys are structural selector paths (`tag#id:nth-child(n)`, 63 distinct ids,
+  every one a static markup id from `src/pages/*.html`) and their values are drawn only from the
+  enumerated CSS property set. Grepping all 20 files for the fixture's own company names returns
+  nothing, because no name of any kind is recorded.
+- Every string rendered in the PNGs traces to `tools/baseline/seed-baseline-db.mjs`, and four
+  screenshots spanning both extremes of the size matrix were reviewed directly.
