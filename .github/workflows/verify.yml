@@ -56,38 +56,42 @@ jobs:
           node-version: '24'          # Node 20 is EOL 2026-03-24 (C9). See .nvmrc.
           cache: 'npm'
 
-      # TEMPORARY BRIDGE - REMOVE IN PLAN 01-07 (wave 6).
-      # better-sqlite3@9.6.0 ships no N-API prebuild, so its install script falls through
-      # to `node-gyp rebuild`, and 9.x's C++ does not compile against Node 24's V8 headers
-      # (run 33970229605). D-12 forbids upgrading to 13.x before wave 6, because the parity
-      # baseline capture in waves 4-5 needs v1.2.1 running on Electron 28 / N-API 9.
-      # --ignore-scripts skips the native build. Nothing this job runs loads the module:
-      # eslint does not, and the typecheck/test steps plan 01-02 adds must not either while
-      # this flag is in place. Once 13.x lands, the install script is what FETCHES the
-      # prebuild, so the flag MUST go - the guard below fails the build if it outlives 9.x.
-      - name: Install dependencies (native build skipped - see plan 01-07)
-        run: npm ci --ignore-scripts
+      # The --ignore-scripts bridge and its expiry guard were removed here, together, by plan
+      # 01-07. They existed because better-sqlite3@9.6.0 shipped no prebuild, so its install
+      # script fell through to `node-gyp rebuild`, and 9.x's C++ does not compile against Node
+      # 24's V8 headers (run 33970229605). D-12 forbade upgrading before the parity baselines
+      # were captured on Electron 28 / N-API 9; they are captured, and the driver is now 13.0.3.
+      #
+      # A correction worth keeping, because the removed comment stated it the other way round
+      # and someone will otherwise re-derive the wrong model: 13.0.3 does NOT fetch its binary
+      # from an install script. It declares no `install` and no `postinstall` at all, and the
+      # eight N-API prebuilds ship inside the npm tarball. Measured both ways in a scratch dir -
+      # `npm install better-sqlite3@13.0.3 --ignore-scripts` also yields a loadable binary and
+      # no build/ directory. So the flag is not removed to protect the binary; it is removed
+      # because its reason expired and because --ignore-scripts is repo-wide, silently
+      # suppressing lifecycle scripts for all 433 packages and making CI diverge from what a
+      # developer's plain `npm ci` actually does.
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Fail if the --ignore-scripts bridge outlived better-sqlite3 9.x
+      # This job now has a real native binary, so tests may load better-sqlite3. That is the
+      # point of the upgrade: it is what makes the fixture corpus and src/lib/db/backup.ts
+      # testable in plain Node under Vitest, with no node-gyp, Python or MSVC (D-08).
+      - name: Assert better-sqlite3 loads from a prebuild, with nothing compiled locally
         run: |
-          range=$(node -p "const p=require('./package.json');(p.dependencies&&p.dependencies['better-sqlite3'])||(p.devDependencies&&p.devDependencies['better-sqlite3'])||''")
-          major=$(printf '%s' "$range" | grep -oE '[0-9]+' | head -1)
-          echo "better-sqlite3 range: '${range}' (major ${major:-unknown})"
-          if [ -n "$major" ] && [ "$major" -ge 13 ]; then
-            echo "::error::better-sqlite3 is now ${range}, which ships N-API prebuilds."
-            echo "::error::Drop --ignore-scripts from the install step above and delete this guard (plan 01-07)."
+          test -d node_modules/better-sqlite3/prebuilds || {
+            echo "::error::No prebuilds/ directory - the N-API premise behind D-08 does not hold."; exit 1; }
+          if [ -d node_modules/better-sqlite3/build ]; then
+            echo "::error::A build/ directory exists, so node-gyp compiled locally."
+            echo "::error::The no-compiler claim behind D-08 does not hold on this runner."
             exit 1
           fi
+          node -e "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(a)');db.prepare('insert into t values (1)').run();if(db.prepare('select count(*) c from t').get().c!==1)process.exit(1);db.close();console.log('DRIVER_LOADS_OK napi='+process.versions.napi)"
 
       - name: Run Linter
         run: npm run lint
 
       # D-10: the gate is lint + type check + unit tests, each able to fail the job.
-      # NEITHER of these may load better-sqlite3 while the --ignore-scripts bridge above is
-      # in place - there is no native binary in this job until plan 01-07 (wave 6). tsc only
-      # reads type declarations, and tests/ imports node:fs, node:path and node:url only.
-      # Verified locally against a tree with no better_sqlite3.node present at all, which is
-      # exactly this job's condition.
       - name: Type check
         run: npm run typecheck
 
