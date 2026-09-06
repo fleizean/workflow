@@ -19,6 +19,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # D-03 backstop. .gitignore already excludes these patterns, so this step exists to
+      # catch a deliberate 'git add -f'. A real krono.db pushed to a public repository is
+      # unrecoverable: clones taken before any history rewrite keep the user's data forever.
+      # Placed before npm ci so it costs seconds rather than a full install when it trips.
+      - name: Fail if a database file is tracked by git
+        run: |
+          tracked=$(git ls-files -- '*.db' '*.db-wal' '*.db-shm')
+          if [ -n "$tracked" ]; then
+            echo "::error::Database files are tracked by git:"
+            echo "$tracked"
+            echo "::error::Remove with 'git rm --cached <file>'. A pushed database cannot be un-published (D-03)."
+            exit 1
+          fi
+          echo "No tracked database files."
+
       # D-13's line-ending contract is unprotected unless CI enforces it. Placed before
       # npm ci so it costs seconds when it fails. 'git diff --check' catches whitespace
       # errors; the renormalise assertion catches the actual D-13 regression - a blob
@@ -66,3 +81,15 @@ jobs:
 
       - name: Run Linter
         run: npm run lint
+
+      # D-10: the gate is lint + type check + unit tests, each able to fail the job.
+      # NEITHER of these may load better-sqlite3 while the --ignore-scripts bridge above is
+      # in place - there is no native binary in this job until plan 01-07 (wave 6). tsc only
+      # reads type declarations, and tests/ imports node:fs, node:path and node:url only.
+      # Verified locally against a tree with no better_sqlite3.node present at all, which is
+      # exactly this job's condition.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test
