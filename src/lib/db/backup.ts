@@ -157,22 +157,44 @@ export function verifyBackup(backupPath: string): BackupVerification {
     return readDatabaseStats(backupPath);
 }
 
-function describeMismatch(expected: BackupVerification, observed: BackupVerification): string | null {
+/**
+ * Every way `observed` fails to match `expected`, as sentences naming both values. Empty means
+ * the two agree.
+ *
+ * This is the comparison that catches a short backup, and it is exported because the judgement
+ * "is this copy complete" is the module's actual contribution - integrity_check is a check the
+ * copy performs on itself, and a copy that is missing four fifths of its rows is perfectly
+ * self-consistent. Phase 4's migration runner needs the same judgement, and a test can point it
+ * at a genuinely short copy's real numbers rather than at a mock.
+ *
+ * It reports ALL mismatches rather than the first, because at three in the morning during a
+ * migration the difference between "work_sessions is short" and "work_sessions is short AND
+ * 4,000 seconds of tracked time are missing" is the difference between one diagnosis and two.
+ */
+export function describeVerificationMismatches(
+    expected: BackupVerification,
+    observed: BackupVerification
+): string[] {
+    const mismatches: string[] = [];
     if (observed.integrity !== 'ok') {
-        return 'integrity_check reported "' + observed.integrity + '", expected "ok"';
-    }
-    if (observed.totalDuration !== expected.totalDuration) {
-        return 'work_sessions sum(duration) is ' + String(observed.totalDuration) +
-            ', expected ' + String(expected.totalDuration) + ' - the copy is short by ' +
-            String(expected.totalDuration - observed.totalDuration) + ' seconds of tracked time';
+        mismatches.push('integrity_check reported "' + observed.integrity + '", expected "ok"');
     }
     for (const table of COUNTED_TABLES) {
         if (observed.rows[table] !== expected.rows[table]) {
-            return 'table "' + table + '" holds ' + String(observed.rows[table]) +
-                ' rows, expected ' + String(expected.rows[table]);
+            mismatches.push(
+                'table "' + table + '" holds ' + String(observed.rows[table]) +
+                ' rows, expected ' + String(expected.rows[table])
+            );
         }
     }
-    return null;
+    if (observed.totalDuration !== expected.totalDuration) {
+        mismatches.push(
+            'work_sessions sum(duration) is ' + String(observed.totalDuration) + ', expected ' +
+            String(expected.totalDuration) + ' - a difference of ' +
+            String(expected.totalDuration - observed.totalDuration) + ' seconds of tracked time'
+        );
+    }
+    return mismatches;
 }
 
 /**
@@ -243,10 +265,10 @@ export async function backupDatabase(
     }
 
     const verification = verifyBackup(backupPath);
-    const mismatch = describeMismatch(expected, verification);
-    if (mismatch !== null) {
+    const mismatches = describeVerificationMismatches(expected, verification);
+    if (mismatches.length > 0) {
         throw new Error(
-            'Backup verification failed for ' + backupPath + ': ' + mismatch +
+            'Backup verification failed for ' + backupPath + ': ' + mismatches.join('; ') +
             '. The copy was NOT trusted.'
         );
     }
@@ -341,10 +363,10 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
     fs.copyFileSync(backupPath, targetPath);
 
     const restored = verifyBackup(targetPath);
-    const mismatch = describeMismatch(verification, restored);
-    if (mismatch !== null) {
+    const mismatches = describeVerificationMismatches(verification, restored);
+    if (mismatches.length > 0) {
         throw new Error(
-            'Restore verification failed for ' + targetPath + ': ' + mismatch +
+            'Restore verification failed for ' + targetPath + ': ' + mismatches.join('; ') +
             '. The restored database does not match the backup it came from.'
         );
     }
