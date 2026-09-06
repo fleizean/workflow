@@ -58,6 +58,28 @@ const trackedMatching = (extensions: string[]): string[] =>
  */
 const digestCandidates = (text: string): string[] => text.match(/\b[0-9a-fA-F]{32,}\b/g) ?? [];
 
+/*
+ * The manifest grew a second and a third kind of pin in plan 01-05, and "record vs enforcement"
+ * has to be checked per kind or not at all:
+ *
+ *   section 1  the release installers   enforced by tools/baseline/fetch-installer.sh
+ *   section 3  the vendored CDN + font assets  enforced by tools/baseline/vendor/index.json
+ *   section 4  the unpacked application files  a provenance record; nothing re-derives them
+ *
+ * Before this existed, the section-1 assertion scanned the WHOLE file, so the first vendored
+ * digest added in section 3 read as "documented but not enforced by the installer fetch script"
+ * and reddened a test about installers. Scoping by section keeps each pin checked against the
+ * thing that actually enforces it, instead of loosening the check to make room.
+ */
+const manifestSection = (n: number): string => {
+    const text = read(MANIFEST);
+    const start = text.search(new RegExp('^## ' + n + '\\. ', 'm'));
+    if (start === -1) return '';
+    const rest = text.slice(start + 1);
+    const end = rest.search(/^## \d+\. /m);
+    return end === -1 ? text.slice(start) : text.slice(start, start + 1 + end);
+};
+
 describe('CUSTODY-07 / CUSTODY-08: no real user data and no large binary enters this repository', () => {
     it('tracks no database file - .db, .db-wal or .db-shm (D-03)', () => {
         const offenders = trackedMatching(['.db', '.db-wal', '.db-shm']);
@@ -173,7 +195,7 @@ describe('CUSTODY-07 / CUSTODY-08: no real user data and no large binary enters 
     });
 
     it('the fetch script enforces exactly the digests the manifest documents', () => {
-        const manifestDigests = new Set(read(MANIFEST).match(/\b[0-9a-f]{64}\b/g) ?? []);
+        const manifestDigests = new Set(manifestSection(1).match(/\b[0-9a-f]{64}\b/g) ?? []);
         const scriptDigests = new Set(read(FETCH_SCRIPT).match(/\b[0-9a-f]{64}\b/g) ?? []);
 
         const undocumented = [...scriptDigests].filter((d) => !manifestDigests.has(d));
@@ -187,6 +209,36 @@ describe('CUSTODY-07 / CUSTODY-08: no real user data and no large binary enters 
             '\nThe manifest is the record and the script is the enforcement; if they drift, the ' +
             'documented pin is not the one actually checked.'
         ).toEqual({ undocumented: [], unenforced: [] });
+    });
+
+    /*
+     * The same record-vs-enforcement invariant, one section down. tools/baseline/capture.mjs
+     * refuses to fulfil a request from a vendored file whose digest is not in the manifest, so a
+     * vendor digest that drifts out of section 3 does not silently degrade the baseline - it stops
+     * the capture. This asserts the two lists are the same list, which is the precondition for that
+     * refusal meaning anything.
+     */
+    it('every vendored capture asset is pinned in the manifest, and vice versa (CUSTODY-10)', () => {
+        const indexPath = path.join(repoRoot, 'tools/baseline/vendor/index.json');
+        if (!fs.existsSync(indexPath)) return;
+        const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as {
+            assets: { file: string; sha256: string }[];
+        };
+        const documented = new Set(manifestSection(3).match(/\b[0-9a-f]{64}\b/g) ?? []);
+
+        const unpinned = index.assets.filter((a) => !documented.has(a.sha256)).map((a) => a.file);
+        const orphaned = [...documented].filter(
+            (digest) => !index.assets.some((a) => a.sha256 === digest)
+        );
+
+        expect(
+            { unpinned, orphaned },
+            'tools/baseline/vendor/index.json and section 3 of ' + MANIFEST + ' disagree.\n' +
+            '  vendored but not pinned in the manifest: ' + unpinned.join(', ') +
+            '\n  pinned in the manifest but not vendored: ' + orphaned.join(', ') +
+            '\nA re-fetch that updates the files without updating the manifest is exactly the ' +
+            'silent CDN drift the pinning exists to make loud.'
+        ).toEqual({ unpinned: [], orphaned: [] });
     });
 
     it('the pinned release URLs use the current repository name, not the redirect (T-01-16)', () => {

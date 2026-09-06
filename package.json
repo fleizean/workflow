@@ -41,6 +41,7 @@
         "electron-rebuild": "^3.2.9",
         "eslint": "^9.39.2",
         "globals": "^16.5.0",
+        "playwright-core": "1.63.0",
         "typescript": "5.9.3",
         "typescript-eslint": "^8.69.0",
         "vitest": "^5.0.0"
