@@ -259,3 +259,146 @@ REL-06 is satisfied when every `Reimplemented` and every `Verified` box above is
 rows explicitly marked *do not port* (#95, #97, #98, #103, #104 — SPA-15) and the rows marked
 *deliberately not ported* (#7, #107 — IPC-02), which are ticked by confirming the capability is
 **absent**. Only then does SPA-14 delete `src/pages/*.html` in its own commit.
+
+---
+
+# Closing handoff — written at the end of Phase 1
+
+Everything below is a fact a later phase needs and would otherwise have to re-derive, recorded
+here rather than only in a plan summary because this file is what those phases open. Each note
+states the **consequence**, not just the fact: a fact without its consequence gets read, agreed
+with, and then not acted on.
+
+## Phase 1's five roadmap criteria, checked against the artifacts rather than against memory
+
+| # | Criterion | Evidence on disk |
+|---|---|---|
+| 1 | A push to `main` produces no release; releases come from a `v*` tag or manual dispatch and are drafts | `.github/workflows/build-release.yml` is absent; `release.yml` triggers on `push: tags: ['v*']` and `workflow_dispatch` only, with no `branches:` key, and carries `draft: true`. Empirically confirmed in 01-01: three pushes produced only `Verify` runs and the published release count stayed at 14. |
+| 2 | The build fails if `package.json`'s `name` changes or a top-level `productName` appears | `tests/app-identity.test.ts`, 7 assertions, run by `verify.yml` via `npm test`. Five dangerous mutations were injected into a scratch copy of `package.json` in 01-02 and all five were caught. |
+| 3 | The backup captures uncheckpointed `-wal` content that a file copy demonstrably loses | `tests/backup.test.ts` → *CUSTODY-03: the online backup captures uncheckpointed WAL content*. Source 45 sessions / 22,000 s; naive copy 5 / 18,000 with `integrity_check` reporting **ok**; online backup 45 / 22,000. |
+| 4 | The restore path returns a damaged database to service, proven by a test | `tests/backup.test.ts` → *CUSTODY-05: restore returns a damaged database to service*. The database is overwritten with non-database bytes, observed to be unopenable, restored, and found to hold its exact pre-damage row count and summed duration. |
+| 5 | A parity evidence bundle is committed and contains no real user data | This file (110 behaviour rows), `handlers.tsv`, `api-calls.tsv`, `preload-surface.txt`, `ipc-channels.txt`, 20 PNGs in `pixels/`, 20 JSON records in `computed/`, `MANIFEST.md`. `git ls-files -- '*.db' '*.db-wal' '*.db-shm' '*.exe' '*.dmg'` matches nothing. |
+
+## For Phase 2 — toolchain, scaffold and build pipeline
+
+- **The identity guard's file list is hard-coded and will silently stop covering anything.**
+  `tests/app-identity.test.ts:96` scans exactly `['main.js', 'preload.js', 'database/db.js']` for
+  `app.setName` / `app.setPath`. The moment the tree becomes `src/main/**` those three paths no
+  longer exist, and a test that finds no files to scan **passes**. It must become a glob over the
+  whole source tree in the same commit that moves the layout — not afterwards, because between
+  the two commits the guard protects nothing while still reporting green.
+- **A build step that generates a `package.json` is a `userData` vector this test cannot see.**
+  The guard reads the repository's `package.json`. `userData` is resolved by Electron from the
+  `name` in the manifest **inside the packaged application**, which electron-builder can rewrite
+  via `build.extraMetadata`. A scaffold that emits its own manifest, or a builder config that
+  injects a different `name` or `productName`, orphans every existing `krono.db` without
+  tripping a single assertion. This is precisely what BUILD-01's port-in-place rule mitigates:
+  keep one manifest, keep it the one under test.
+- **`eslint@9.39.2` is npm-deprecated and the pin is deliberate.** `9` is the `maintenance`
+  dist-tag; `latest` is `10.x`. It was pinned because Phase 1's job was data custody, not lint
+  modernisation. `typescript-eslint@8.69.0` peers `^8 || ^9 || ^10`, so the upgrade path is open.
+  **BUILD-13 decides**; leaving it un-decided means shipping a deprecation warning on every
+  `npm ci` for the rest of the milestone.
+- **`npm start` is expected to FAIL until the runtime moves to Electron 44, and the reason is the
+  N-API level, not a broken script.** `better-sqlite3@13.0.3` is compiled at N-API 10, which needs
+  Node ≥ 22.14. Electron 28.3.3 — what this application ships — bundles Node 18.18.2 and caps at
+  N-API 9. Loading the prebuild under Electron 28 **segfaults**: exit 139, no diagnostic, not a
+  catchable error. A future reader who finds a broken start script and no explanation will "fix"
+  it by downgrading the driver, which would undo D-09 and make the backup module untestable in
+  plain Node again. Anything that needs a running v1.2.1 uses the pinned installer archived per
+  CUSTODY-08.
+- **D-08's substantive claim holds; its broader reading does not.** A shipped prebuild loads on
+  both verified platforms and nothing is compiled — that part is solid, and `npmRebuild: false`
+  is correct. But npm's implicit `node-gyp rebuild` fires for any package carrying a
+  `binding.gyp`, and it **is** invoked on the Ubuntu runner: it configures (hence `config.gypi`),
+  and node-gyp configure needs Python on `PATH` even though it compiles nothing. Hosted runners
+  have Python, so this is free in CI; it is not necessarily free on a contributor's machine.
+  BUILD-05 / BUILD-06 must not lean on the stronger form of the claim.
+
+## For Phase 4 — database engine and migrations
+
+- **`src/lib/db/backup.ts` is the module DATA-03 calls.** It is already in the target structure
+  with an injected path and no Electron import, which is the whole reason D-08 required it be
+  written once here rather than twice. `backupDatabase(sourcePath, backupDir, { now, deadlineMs })`
+  returns the destination path, the page count and the verification; it refuses a destination that
+  already exists, so a second migration attempt cannot clobber the good copy the first one made.
+  `pruneBackups(backupDir, keep)` takes the retention count as a **parameter defaulting to 3**, so
+  DATA-03 sets its own policy without editing the module — and it can never delete the newest
+  backup, whatever count it is passed.
+- **`makeOrphanFixture()` exists for DATA-12, but the premise DATA-12 was sized on is wrong.**
+  CB-4 reasons that `database/db.js` issues no `PRAGMA foreign_keys`, therefore the declared
+  `ON DELETE CASCADE` is inert for every user. The premise is true; the conclusion is false.
+  `better-sqlite3` compiles SQLite with `SQLITE_DEFAULT_FOREIGN_KEYS`, so enforcement is ON from
+  the moment the driver opens a connection — verified in the driver this repo now uses *and* in
+  the 9.x build bundled inside the shipped v1.2.1 asar. The cascade is **live for every user**.
+  Consequence: the app's own delete path cannot produce an orphan, so **DATA-12 is defensive
+  cleanup after third-party tools** (the `sqlite3` CLI, DB Browser for SQLite, a hand-rolled
+  repair script, a partial restore), not cleanup of a population the application creates. Size
+  and message it accordingly, and note that the fixture has to *manufacture* the state with an
+  explicit pragma.
+- **D-05 resolved in the negative: there is no second legacy schema variant.** The generated
+  fixture's `sqlite_master` matches the owner's real database **byte for byte**, all five objects
+  including the implicit `sqlite_sequence`. Consequence: **DATA-04's adoption logic has exactly
+  one shape to handle**, and `tests/fixtures/v121.sql` is that shape. It runs the `ALTER TABLE`
+  migration path rather than flat `CREATE TABLE`s on purpose — `sqlite_master` stores each
+  statement as typed, so a tidier fixture would be semantically identical, textually different,
+  and would read as a legacy variant that does not exist in the wild.
+- **A restore must remove the target's stale sidecars before copying.** A `-wal` describing a
+  database that no longer exists is the separated-WAL hazard SQLite warns about.
+  `restoreDatabase` does this; anything else that replaces a database file must too.
+
+## For Phase 5 — repositories, services, ports and adapters
+
+Neither D-01 nor D-02 produces an artifact in Phase 1. Both are recorded here so the phase that
+owns them (CORE-09, CORE-10) inherits the reasoning instead of re-deriving it.
+
+- **D-02: the `ExportTarget` seam is designed with the company fork as its primary intended
+  consumer, not as speculative future-proofing.** That fork replaces the Google Sheets target with
+  its own API target. Treat the seam as a real integration contract: a target-neutral payload,
+  registry-based target selection, and **no Sheets-specific concept — column letters, row numbers
+  — leaking above the target implementation**. Widening it later means touching every export call
+  site and the payload shape the fork depends on.
+- **D-01 is both why that matters and why it is bounded.** This repository stays the general
+  product; the company-specific work happens in a **separate fork**, not by consuming this repo as
+  a dependency. So architectural debt transfers directly into that fork, which raises the value of
+  clean layering — but `shared/` needs no published-API polish, because there is no package
+  boundary to honour.
+
+## For Phase 8 — feature screens
+
+- **This checklist is ticked here.** REL-06 is satisfied when every `Reimplemented` and every
+  `Verified` box above is ticked, except the *do not port* rows (#95, #97, #98, #103, #104) and
+  the *deliberately not ported* rows (#7, #107), which are ticked by confirming the capability is
+  **absent**. Only then does SPA-14 delete `src/pages/*.html`, in its own commit.
+- **Diff the baselines against `MANIFEST.md`'s recorded provenance, not against a memory of how
+  they were made.** The manifest records the launch path (`installed` — the extracted, never
+  executed, `Workflow.exe`), the binary and asar digests, the Electron/Chromium versions read out
+  of the binary (28.3.3 / 120.0.6099.291) and the Tailwind build actually served (3.4.17 with
+  `forms@0.5.10`, `container-queries@0.1.1`). A visual diff taken under a different Chromium or a
+  different Tailwind is not a parity result, it is a different measurement.
+- **Re-run the inventory generator and diff it; never re-read the artifacts.**
+  `tools/baseline/inventory.sh` is the only thing that writes `handlers.tsv`, `api-calls.tsv`,
+  `preload-surface.txt` and `ipc-channels.txt`, and `tests/inventory.test.ts` asserts the live
+  tree and the committed files agree. Regenerating and diffing is what makes a stale inventory
+  impossible to mistake for an authoritative one — which matters because the inventory is what
+  authorises an irreversible deletion.
+- **The `-wal` sidecar is not decoration in the fixtures.** Anything in Phase 8 that copies or
+  seeds a database must copy the whole triple (`.db`, `-wal`, `-shm`) or use the online backup
+  API. `tests/fixtures/seed.ts` `copyFixture()` is the sanctioned helper.
+
+## Outstanding manual verifications, for the end-of-phase review
+
+Everything Phase 1 can prove mechanically is proven mechanically. These are the ones that are
+not, listed so the review has a complete set rather than an implied one.
+
+| # | Item | Requirement | Why it is still manual | When it can close |
+|---|---|---|---|---|
+| 1 | A `v*` tag produces a release with `isDraft: true`, and `release.yml`'s `uses: ./.github/workflows/verify.yml` call actually resolves | CUSTODY-01 | No `v*` tag has ever been pushed, so the draft path and the reusable-workflow call have never executed. The trigger block and inputs are proven statically; the produced artifact is not. Proving it requires creating a real release. | **Phase 10**, at the first real tag: `gh release view <tag> --json isDraft` must return `true`. If the `uses:` call misbehaves, inline the steps — CUSTODY-01 is unaffected either way, because the *trigger* is the control surface. |
+| 2 | The handoff notes above read as usable instructions to someone arriving three phases later | — | Whether a note will actually be understood by its future reader is a judgement about writing, not a property a test can assert. | End-of-phase UAT. |
+| 3 | The archived real `krono.db` and the archived v1.2.1 installer are still present outside the repository | CUSTODY-07, CUSTODY-08 | They live on the owner's machine by design (D-03) and are pinned here only by SHA-256. Nothing in CI can see them, and nothing should. | Before Phase 4 runs a migration against real data; re-check the digests recorded in `MANIFEST.md`. |
+| 4 | The real `%APPDATA%\workflow-timer\krono.db` mtime is unchanged by any future baseline re-capture | CUSTODY-10 | It proves the fixture-DB redirection worked on the owner's machine, which no runner can observe. | Any time `npm run baseline:capture` is re-run. The capture driver's redirection probe is a hard gate, but the mtime check is the independent confirmation. |
+
+Informational, carried from `deferred-items.md` and owned elsewhere: `actions/checkout@v4` and
+`actions/setup-node@v4` are annotated as Node-20-targeting and should move to `@v5` (Phase 2,
+BUILD-09); the local `git remote origin` still points at the pre-rename URL and is redirected by
+GitHub on every push (owner, one-off, invisible to any commit).
