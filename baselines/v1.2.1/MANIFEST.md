@@ -132,9 +132,85 @@ _Not yet populated._
 
 ## 4. Capture provenance
 
-> **Reserved for plan `01-06`.** Fill in place. Expected content: which launch path the baseline
-> capture actually used (source tree, or the installed v1.2.1 obtained through section 1), the
-> machine and OS it ran on, how the seeded dates were chosen, and the commit the capture was taken
-> at. Phase 8 has to reproduce this capture exactly and this is where it will look.
+Phase 8 re-runs this capture and diffs the result. Everything it needs in order to launch the
+*same* v1.2.1 the same way is here. Plan `01-05` filled in the launch path and the fixture policy;
+plan `01-06` adds the machine, the OS build and the commit the capture was taken at.
+
+### Launch path
+
+`tools/baseline/probe-userdata.mjs` and `tools/baseline/capture.mjs` both read these rows. The
+`Executable` row is parsed, so its shape matters: it is a single backticked value in the second
+cell, and `%NAME%` environment variables in it are expanded at use.
+
+| Field | Value |
+|---|---|
+| Launch path | `installed` |
+| Executable | `%USERPROFILE%\workflow-timer-archive\app-v1.2.1\Workflow.exe` |
+| Launch args | `--no-sandbox` |
+| Payload source | the pinned `Workflow.Setup.1.2.1.exe` from section 1 |
+| Resolved | plan `01-05`, 2026-09-06 |
+
+**The installed-application path was chosen over run-from-source**, per research Open Question 2:
+it is literally what users run, it needs no `better-sqlite3` native rebuild, and it therefore does
+not depend on a toolchain this machine does not have (`better-sqlite3@9.6.0` fails to build here
+with `MSB8020`, a missing ClangCL platform toolset — see plan `01-02`'s summary). It also means the
+D-12 ordering barrier softens from an absolute to a preference: the capture no longer needs the
+source tree's `better-sqlite3` to work.
+
+**The installer is unpacked, not executed.** `Workflow.Setup.1.2.1.exe` is a one-click
+electron-builder NSIS installer (`package.json` declares no `nsis` block, so `oneClick` and
+`runAfterFinish` both take their default of `true`), and a one-click installer launches the
+application when it finishes — including under `/S`. That launch would open the owner's real
+`%APPDATA%\workflow-timer\krono.db` before the redirection probe had ever run, which is exactly the
+disclosure this phase exists to prevent. The installer's payload is a 7-Zip stream appended to the
+NSIS stub, so the identical application files are obtainable without executing anything:
+
+```bash
+# 7za.exe ships inside electron-builder's 7zip-bin dependency; no extra install is needed.
+node_modules/7zip-bin/win/x64/7za.exe x \
+  "$USERPROFILE/workflow-timer-archive/installers/Workflow.Setup.1.2.1.exe" \
+  -o"$USERPROFILE\workflow-timer-archive\app-v1.2.1" -y
+```
+
+The extraction reports `There are data after the end of archive` — that is the NSIS stub and the
+overlay either side of the payload, and is expected.
+
+| Extracted file | Bytes | SHA-256 |
+|---|---|---|
+| `Workflow.exe` | 176,903,168 | `4fdd357c655edec7aaa9906ad19ff9a761e016dfa7993b74b528cc74e80c7f4f` |
+| `resources/app.asar` | 21,543,827 | `c23e46b2089be581e585c2a1cb3035da274ebb778ed43fd8a20f446e41638de8` |
+
+The extraction directory is outside this repository and is deliberately recorded relative to
+`%USERPROFILE%` rather than as a literal path, for the same reason section 2 omits the archive
+location: this file is public and the literal path carries the owner's Windows account name.
+
+### The fixture-database redirection (assumption A1 — RESOLVED by execution)
+
+`database/db.js:9-10` opens `path.join(app.getPath('userData'), 'krono.db')` at module load, and
+`main.js:6` requires it at the top of the file, so no application-level hook runs early enough to
+redirect it. Electron's `--user-data-dir` switch does, because
+`ElectronMainDelegate::PreSandboxStartup()` overrides `chrome::DIR_USER_DATA` before the main
+module is evaluated. Research read that from Electron v28.3.3's source but never executed it.
+
+**It was executed on 2026-09-06 and it holds.** Launching the extracted `Workflow.exe` with
+`--no-sandbox --user-data-dir=<tmp>` created `<tmp>/krono.db` and left the real database
+byte-identical, mtime included. Re-verify at any time with:
+
+```bash
+node tools/baseline/probe-userdata.mjs
+```
+
+The probe is the capture driver's entry gate, not a comment: `tools/baseline/capture.mjs` calls it
+before it is structurally able to take a screenshot, and `--skip-probe` is defined to exit non-zero
+so the gate is provably capable of failing.
+
+### Fixture seeding policy
+
+> **Reserved for plan `01-05` task 2.** How the fixture's dates are derived from the run date.
+
+### Capture run
+
+> **Reserved for plan `01-06`.** The machine and OS build the capture ran on, and the commit it was
+> taken at.
 
 _Not yet populated._
