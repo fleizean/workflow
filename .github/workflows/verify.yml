@@ -76,17 +76,77 @@ jobs:
 
       # This job now has a real native binary, so tests may load better-sqlite3. That is the
       # point of the upgrade: it is what makes the fixture corpus and src/lib/db/backup.ts
-      # testable in plain Node under Vitest, with no node-gyp, Python or MSVC (D-08).
-      - name: Assert better-sqlite3 loads from a prebuild, with nothing compiled locally
+      # testable in plain Node under Vitest (D-08).
+      #
+      # THE FIRST VERSION OF THIS STEP ASSERTED THE WRONG THING and failed this job on run
+      # 34034471809. It required that node_modules/better-sqlite3/build not exist, treating that
+      # as equivalent to "nothing was compiled". It is not equivalent, and the difference is not
+      # academic - it is the difference between a red build and a real regression.
+      #
+      # Measured on ubuntu-latest, npm 11.19.0 / Node 24.20.0 (probe run 34035556354): a plain
+      # `npm ci` DOES create node_modules/better-sqlite3/build, and that directory contains
+      # nothing but node-gyp's configure scaffolding - config.gypi, Makefile, binding.Makefile,
+      # two .target.mk files and two empty .stamp files. No object file. No
+      # build/Release/better_sqlite3.node. `find` over the whole package turns up exactly eight
+      # .node files: the eight shipped prebuilds, and nothing else.
+      #
+      # That is upstream's design, stated in better-sqlite3's own binding.gyp:
+      #
+      #     # npm's implicit node-gyp rebuild should do nothing when the package
+      #     # contains a prebuild for the host. Explicit build scripts override this.
+      #     'force_build%': 0,
+      #     'prebuild_exists%': '<!(node lib/binding.js)',
+      #
+      # With a prebuild present for the host, every gyp target collapses to `type: none`. npm's
+      # implicit rebuild runs and compiles nothing; build/ is the footprint of a no-op. Windows
+      # with npm 11.9.0 does not produce it at all, because npm versions disagree about whether
+      # `gypfile: false` suppresses the implicit rebuild - so the presence of build/ tracks the
+      # npm version, not whether a compiler was needed. Asserting on it tests npm.
+      #
+      # One thing does change, and Phase 2 should know it: npm's implicit rebuild means node-gyp
+      # is INVOKED (it configured, hence config.gypi), which needs Python on PATH even though it
+      # compiles nothing. The hosted runners have it. D-08's substantive claim - that the driver
+      # loads a shipped prebuild and nothing is built - holds; the broader "no toolchain is
+      # touched at all" reading does not, and BUILD-05/BUILD-06 should not lean on it.
+      #
+      # So assert the two things that are load-bearing AND can still fail: nothing was compiled,
+      # and the binding that actually loads is one of the shipped prebuilds. If a platform ever
+      # lacks a prebuild, or force_build is set, node-gyp emits .o files and
+      # build/Release/better_sqlite3.node and the first check fails.
+      - name: Assert better-sqlite3 loads a shipped prebuild, with nothing compiled locally
         run: |
           test -d node_modules/better-sqlite3/prebuilds || {
             echo "::error::No prebuilds/ directory - the N-API premise behind D-08 does not hold."; exit 1; }
-          if [ -d node_modules/better-sqlite3/build ]; then
-            echo "::error::A build/ directory exists, so node-gyp compiled locally."
+
+          compiled=$(find node_modules/better-sqlite3 \
+            -path node_modules/better-sqlite3/prebuilds -prune -o \
+            \( -name '*.o' -o -name '*.node' \) -print)
+          if [ -n "$compiled" ]; then
+            echo "::error::Locally compiled artefacts exist, so node-gyp really did build:"
+            echo "$compiled"
             echo "::error::The no-compiler claim behind D-08 does not hold on this runner."
             exit 1
           fi
-          node -e "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(a)');db.prepare('insert into t values (1)').run();if(db.prepare('select count(*) c from t').get().c!==1)process.exit(1);db.close();console.log('DRIVER_LOADS_OK napi='+process.versions.napi)"
+
+          node -e "
+            const D = require('better-sqlite3');
+            const db = new D(':memory:');
+            db.exec('create table t(a)');
+            db.prepare('insert into t values (1)').run();
+            if (db.prepare('select count(*) c from t').get().c !== 1) process.exit(1);
+            db.close();
+            const loaded = Object.keys(require.cache).filter((k) => k.endsWith('.node'));
+            if (loaded.length !== 1) {
+              console.error('::error::expected exactly one native binding, got ' + JSON.stringify(loaded));
+              process.exit(1);
+            }
+            const norm = loaded[0].split(require('path').sep).join('/');
+            if (!norm.includes('/better-sqlite3/prebuilds/')) {
+              console.error('::error::the loaded binding is not a shipped prebuild: ' + norm);
+              process.exit(1);
+            }
+            console.log('DRIVER_LOADS_PREBUILD ' + norm + ' napi=' + process.versions.napi);
+          "
 
       - name: Run Linter
         run: npm run lint
