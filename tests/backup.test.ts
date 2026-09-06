@@ -475,6 +475,28 @@ describe('src/lib/db/backup.ts module contract', () => {
         expect(result.verification.integrity).toBe('ok');
     });
 
+    /*
+     * The backup on disk must be ONE file. The online backup API closes and checkpoints its own
+     * destination handle, but verifying the result reopens it, and a read-only connection cannot
+     * delete the -shm and empty -wal that reopening a WAL database creates. Left in place they
+     * are not untidiness: restoreDatabase copies the .bak alone, so a sidecar beside a backup is
+     * content a restore would silently not carry, and it outlives the .bak once that backup is
+     * pruned. Discovered by execution here, not by reading - the research note that the
+     * destination "is a single quiescent file" is true of the backup call and not of the
+     * verification that must follow it.
+     */
+    it('leaves the backup as a single quiescent file with no sidecars beside it', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+
+        const result = await backupDatabase(fx, dir);
+
+        expect(fs.readdirSync(dir)).toEqual([path.basename(result.backupPath)]);
+        for (const suffix of ['-wal', '-shm']) {
+            expect(fs.existsSync(result.backupPath + suffix)).toBe(false);
+        }
+    });
+
     it('reopens a backup read-only and reports integrity, per-table counts and summed duration', async () => {
         const fx = makeCleanFixture();
         const { backupPath } = await backupDatabase(fx, backupDirFor(fx));
@@ -554,6 +576,31 @@ describe('src/lib/db/backup.ts module contract', () => {
 
         // The destination did not exist beforehand, so the driver unlinks the partial file.
         expect(fs.existsSync(path.join(dir, 'krono.db.2026-09-06T10-00-00-000Z.bak'))).toBe(false);
+    });
+
+    /*
+     * A -wal describing a database that no longer exists is the classic separated-WAL hazard,
+     * and a restore creates exactly that state unless the target's sidecars go first. The WAL
+     * fixture is the only source that makes this observable: its target carries a 329 KB sidecar
+     * full of frames that describe the PRE-restore file. Against a clean fixture there would be
+     * no sidecar to leave behind and the assertion would pass without the removal existing.
+     */
+    it('removes the stale sidecars of the database it restores over', async () => {
+        const fx = await makeWalFixture();
+        const target = copyFixture(fx);
+        const { backupPath } = await backupDatabase(target, backupDirFor(target));
+
+        const staleFrames = fs.statSync(target + '-wal').size;
+        expect(staleFrames).toBeGreaterThan(32);
+
+        const restored = restoreDatabase(backupPath, target);
+
+        expect(restored.integrity).toBe('ok');
+        expect(restored.rows.work_sessions).toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+        const survivingFrames = fs.existsSync(target + '-wal')
+            ? fs.statSync(target + '-wal').size
+            : 0;
+        expect(survivingFrames).toBe(0);
     });
 
     /*
