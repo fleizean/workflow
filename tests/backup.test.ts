@@ -5,6 +5,12 @@
  * backup and restore blocks to this same file, which is what binds the validation strategy's
  * per-requirement commands to real tests.
  *
+ * Reading order, because the blocks are not independent. The fixture invariants come first and
+ * everything below them is worthless without them; then the module contract of
+ * src/lib/db/backup.ts; then the three requirement-titled blocks whose titles carry the words
+ * the validation strategy's name filters select on - 'uncheckpointed' for CUSTODY-03 and
+ * 'restore' for CUSTODY-05.
+ *
  * Why the invariants live here rather than beside the generator: the fixture corpus is not an
  * incidental test helper, it is the evidence. CUSTODY-03's whole proof - that fs.copyFileSync
  * is not a backup and db.backup() is - is vacuous unless one fixture holds committed rows that
@@ -18,10 +24,20 @@
  */
 
 import { afterAll, describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+
+import {
+    DEFAULT_RETAINED_BACKUPS,
+    backupDatabase,
+    pruneBackups,
+    readDatabaseStats,
+    restoreDatabase,
+    verifyBackup
+} from '../src/lib/db/backup';
 
 import {
     assertWalNonEmpty,
@@ -382,5 +398,179 @@ describe('fixture handling', () => {
         };
         expect(dump(makeCleanFixture())).toBe(dump(makeCleanFixture()));
         expect(dump(makeOrphanFixture())).toBe(dump(makeOrphanFixture()));
+    });
+});
+
+/*
+ * Reads a database's true row count and summed duration WITHOUT disturbing it.
+ *
+ * readonly:true is the whole point and is not interchangeable with scalar() above. A read-write
+ * connection that reads and then closes CHECKPOINTS - it folds the -wal into the main file and
+ * deletes the sidecar. Calling scalar() on a WAL fixture before taking the naive copy would
+ * therefore hand the naive copy every row, and CUSTODY-03's negative control would pass while
+ * proving the opposite of what it claims. Measured in plan 01-07: open-read-close removes the
+ * sidecar; a read-only connection leaves it byte-for-byte intact.
+ */
+function truth(dbPath: string): { count: number; sum: number } {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        const row = db
+            .prepare<[], { c: number; s: number }>(
+                'SELECT count(*) c, coalesce(sum(duration), 0) s FROM work_sessions'
+            )
+            .get();
+        if (row === undefined) {
+            throw new Error('truth(): aggregate query returned no row for ' + dbPath);
+        }
+        return { count: row.c, sum: row.s };
+    } finally {
+        db.close();
+    }
+}
+
+/* Byte identity, for asserting that a refused operation really wrote nothing. */
+function sha256(filePath: string): string {
+    return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function backupDirFor(dbPath: string): string {
+    return path.join(path.dirname(dbPath), 'backups');
+}
+
+/*
+ * Plan 01-08, Task 1 - the module's own contract, separate from the three requirement blocks.
+ *
+ * These are the properties that make the requirement proofs below possible at all: a destination
+ * that cannot collide, a refusal to touch one that already exists, a source connection that does
+ * not consume what it reads, and a deadline that can end a backup which will not end by itself.
+ */
+describe('src/lib/db/backup.ts module contract', () => {
+    it('produces a verified copy matching the source on rows and summed duration', async () => {
+        const fx = makeCleanFixture();
+        const before = truth(fx);
+        expect(before.count).toBeGreaterThan(0);
+
+        const result = await backupDatabase(fx, backupDirFor(fx));
+
+        expect(result.verification.integrity).toBe('ok');
+        expect(result.verification.rows.work_sessions).toBe(before.count);
+        expect(result.verification.totalDuration).toBe(before.sum);
+        expect(result.totalPages).toBeGreaterThan(0);
+        expect(fs.existsSync(result.backupPath)).toBe(true);
+    });
+
+    /*
+     * DATA-05's null trap, at the module boundary rather than in SQL. sum() over zero rows is
+     * NULL, and `NULL !== 0` would fail a fresh-install backup for no reason at all - on the one
+     * database where a spurious "backup failed" is most likely to be believed.
+     */
+    it('verifies an empty fresh-install database with a summed duration of zero, not null', async () => {
+        const fx = makeEmptyFixture();
+        const result = await backupDatabase(fx, backupDirFor(fx));
+
+        expect(result.verification.totalDuration).toBe(0);
+        expect(result.verification.rows.work_sessions).toBe(0);
+        expect(result.verification.rows.companies).toBe(0);
+        expect(result.verification.rows.pomodoro_sessions).toBe(0);
+        expect(result.verification.integrity).toBe('ok');
+    });
+
+    it('reopens a backup read-only and reports integrity, per-table counts and summed duration', async () => {
+        const fx = makeCleanFixture();
+        const { backupPath } = await backupDatabase(fx, backupDirFor(fx));
+
+        const verification = verifyBackup(backupPath);
+        expect(verification.integrity).toBe('ok');
+        expect(Object.keys(verification.rows).sort()).toEqual([
+            'companies',
+            'pomodoro_sessions',
+            'settings',
+            'work_sessions'
+        ]);
+        expect(verification).toEqual(readDatabaseStats(fx));
+    });
+
+    /*
+     * A stable krono.db.bak is the trap this avoids: the driver opens an existing destination
+     * SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE and overwrites it silently, so a second failed
+     * migration attempt would destroy the good copy the first one made.
+     */
+    it('derives a distinct timestamped destination from the injected clock', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+
+        const first = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
+        const second = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:01.000Z') });
+
+        expect(path.basename(first.backupPath)).toBe('krono.db.2026-09-06T10-00-00-000Z.bak');
+        expect(first.backupPath).not.toBe(second.backupPath);
+        expect(fs.readdirSync(dir)).toHaveLength(2);
+    });
+
+    it('refuses a destination that already exists and leaves it byte-identical', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const now = new Date('2026-09-06T10:00:00.000Z');
+
+        const first = await backupDatabase(fx, dir, { now });
+        const digestBefore = sha256(first.backupPath);
+
+        await expect(backupDatabase(fx, dir, { now })).rejects.toThrow(/already exists/);
+        expect(sha256(first.backupPath)).toBe(digestBefore);
+        expect(fs.readdirSync(dir)).toHaveLength(1);
+    });
+
+    /*
+     * Pitfall 2 at the module level. readonly:true backs up the FULL sidecar content and leaves
+     * the source's -wal in place, so a fixture is not consumed by being backed up. A read-write
+     * source connection would checkpoint on close and quietly disarm every later case.
+     */
+    it('leaves the source -wal intact, because the source is opened read-only', async () => {
+        const fx = await makeWalFixture();
+        const working = copyFixture(fx);
+        const sidecarBefore = fs.statSync(working + '-wal').size;
+        expect(sidecarBefore).toBeGreaterThan(0);
+
+        await backupDatabase(working, backupDirFor(working));
+
+        expect(fs.statSync(working + '-wal').size).toBe(sidecarBefore);
+        expect(assertWalNonEmpty(fx)).toBeGreaterThan(0);
+    });
+
+    /*
+     * better-sqlite3 does not sleep on SQLITE_BUSY and SQLite may restart a backup indefinitely
+     * while the source is being written, so an unbounded backup could in principle never finish.
+     * Phase 4 runs this immediately before a migration, where hanging is the worst outcome.
+     *
+     * A zero deadline makes the abort deterministic: the driver's first transfer(0) is a probe
+     * that copies no pages, so the progress callback is always invoked at least once.
+     */
+    it('aborts a backup that exceeds its wall-clock deadline and leaves no partial file', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const now = new Date('2026-09-06T10:00:00.000Z');
+
+        await expect(backupDatabase(fx, dir, { now, deadlineMs: 0 })).rejects.toThrow(/deadline/i);
+
+        // The destination did not exist beforehand, so the driver unlinks the partial file.
+        expect(fs.existsSync(path.join(dir, 'krono.db.2026-09-06T10-00-00-000Z.bak'))).toBe(false);
+    });
+
+    /*
+     * A retention count of zero is not an instruction to delete the only backup there is. The
+     * newest is the one a migration is about to depend on.
+     */
+    it('never deletes the newest backup, whatever retention count it is given', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const newest = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:02.000Z') });
+        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
+
+        expect(DEFAULT_RETAINED_BACKUPS).toBe(3);
+        for (const keep of [0, -1]) {
+            pruneBackups(dir, keep);
+            expect(fs.existsSync(newest.backupPath)).toBe(true);
+        }
+        expect(fs.readdirSync(dir)).toHaveLength(1);
     });
 });
