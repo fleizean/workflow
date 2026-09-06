@@ -1,0 +1,106 @@
+src/pages/companies.html	89	modal.querySelector('.close-alert').addEventListener('click', () => modal.remove());
+src/pages/companies.html	90	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/companies.html	157	document.getElementById('addCompanyFAB').addEventListener('click', () => {
+src/pages/companies.html	193	modal.querySelector('#saveCompany').addEventListener('click', async () => {
+src/pages/companies.html	212	input.addEventListener('keypress', (e) => {
+src/pages/companies.html	218	modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+src/pages/companies.html	219	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/companies.html	276	modal.querySelector('#updateCompany').addEventListener('click', async () => {
+src/pages/companies.html	298	nameInput.addEventListener('keypress', (e) => {
+src/pages/companies.html	304	modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+src/pages/companies.html	305	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/companies.html	336	modal.querySelector('.cancel-delete').addEventListener('click', () => modal.remove());
+src/pages/companies.html	337	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/companies.html	340	modal.querySelector('.confirm-delete').addEventListener('click', async () => {
+src/pages/companies.html	354	document.getElementById('backButton').addEventListener('click', () => {
+src/pages/index.html	534	modal.querySelector('.close-alert').addEventListener('click', () => modal.remove());
+src/pages/index.html	535	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/index.html	1020	modal.querySelector('.close-goal-alert').addEventListener('click', () => modal.remove());
+src/pages/index.html	1021	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/index.html	1037	playButton.addEventListener('click', () => {
+src/pages/index.html	1051	adjustButton.addEventListener('click', () => {
+src/pages/index.html	1120	btn.addEventListener('click', () => {
+src/pages/index.html	1128	menu.querySelector('#applyManual').addEventListener('click', () => {
+src/pages/index.html	1136	menu.querySelector('#closeAdjustBtn').addEventListener('click', () => {
+src/pages/index.html	1141	menu.addEventListener('click', (e) => {
+src/pages/index.html	1149	saveButton.addEventListener('click', async () => {
+src/pages/index.html	1213	modal.querySelector('#confirmSave').addEventListener('click', async () => {
+src/pages/index.html	1251	modal.querySelector('.close-save-modal').addEventListener('click', () => modal.remove());
+src/pages/index.html	1254	modal.addEventListener('click', (e) => {
+src/pages/index.html	1259	nameInput.addEventListener('keypress', (e) => {
+src/pages/index.html	1267	resetButton.addEventListener('click', () => {
+src/pages/index.html	1284	modal.querySelector('.confirm-reset').addEventListener('click', () => {
+src/pages/index.html	1295	modal.querySelector('.cancel-reset').addEventListener('click', () => modal.remove());
+src/pages/index.html	1296	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/index.html	1300	datePickerBtn.addEventListener('click', () => {
+src/pages/index.html	1362	btn.addEventListener('click', () => {
+src/pages/index.html	1374	modal.querySelector('#customDate').addEventListener('change', (e) => {
+src/pages/index.html	1381	modal.querySelector('.close-date-modal').addEventListener('click', () => modal.remove());
+src/pages/index.html	1382	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/index.html	1428	pomodoroToggleBtn.addEventListener('click', async () => {
+src/pages/index.html	1468	loggedDisplay.parentElement.parentElement.addEventListener('click', () => {
+src/pages/index.html	1475	document.getElementById('streakCard').addEventListener('click', () => {
+src/pages/settings.html	407	modal.querySelector('.close-alert').addEventListener('click', () => modal.remove());
+src/pages/settings.html	408	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/settings.html	554	modal.querySelector('.confirm-delete').addEventListener('click', async () => {
+src/pages/settings.html	573	resultModal.querySelector('.close-result').addEventListener('click', () => resultModal.remove());
+src/pages/settings.html	574	resultModal.addEventListener('click', (e) => { if (e.target === resultModal) resultModal.remove(); });
+src/pages/settings.html	577	modal.querySelector('.cancel-delete').addEventListener('click', () => modal.remove());
+src/pages/settings.html	578	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/settings.html	582	document.getElementById('dailyTargetBtn').addEventListener('click', () => {
+src/pages/settings.html	634	btn.addEventListener('click', () => {
+src/pages/settings.html	644	modal.querySelector('#applyCustomTime').addEventListener('click', () => {
+src/pages/settings.html	653	modal.querySelector('.close-time-modal').addEventListener('click', () => modal.remove());
+src/pages/settings.html	654	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/settings.html	658	document.getElementById('backButton').addEventListener('click', () => {
+src/pages/settings.html	662	document.getElementById('aboutButton').addEventListener('click', () => {
+src/pages/settings.html	666	document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
+src/pages/settings.html	668	document.querySelector('.mt-8.mb-8 button').addEventListener('click', resetAllData);
+src/pages/settings.html	671	document.getElementById('setupInstructionsBtn').addEventListener('click', () => {
+src/pages/settings.html	726	modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+src/pages/settings.html	727	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/settings.html	731	document.getElementById('pomodoroEnabledToggle').addEventListener('change', (e) => {
+src/pages/settings.html	738	document.getElementById('pomodoroWorkDuration').addEventListener('input', (e) => {
+src/pages/settings.html	742	document.getElementById('pomodoroShortBreak').addEventListener('input', (e) => {
+src/pages/settings.html	746	document.getElementById('pomodoroLongBreak').addEventListener('input', (e) => {
+src/pages/settings.html	750	document.getElementById('pomodoroSessionsUntilLongBreak').addEventListener('input', (e) => {
+src/pages/work-history.html	278	modal.querySelector('.close-alert').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	279	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/work-history.html	302	modal.querySelector('.cancel-delete').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	303	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/work-history.html	306	modal.querySelector('.confirm-delete').addEventListener('click', async () => {
+src/pages/work-history.html	398	modal.querySelector('#saveEditSession').addEventListener('click', async () => {
+src/pages/work-history.html	428	modal.querySelector('.close-edit-modal').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	429	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/work-history.html	705	card.addEventListener('click', function (e) {
+src/pages/work-history.html	723	document.getElementById('backButton').addEventListener('click', () => {
+src/pages/work-history.html	728	document.getElementById('companiesButton').addEventListener('click', () => {
+src/pages/work-history.html	733	document.getElementById('exportDayEndButton').addEventListener('click', async () => {
+src/pages/work-history.html	815	modal.querySelector('#changeDateBtn').addEventListener('click', () => {
+src/pages/work-history.html	872	btn.addEventListener('click', () => {
+src/pages/work-history.html	884	dateModal.querySelector('#customExportDatePicker').addEventListener('change', (e) => {
+src/pages/work-history.html	892	dateModal.querySelector('.close-date-modal').addEventListener('click', () => dateModal.remove());
+src/pages/work-history.html	893	dateModal.addEventListener('click', (e) => { if (e.target === dateModal) dateModal.remove(); });
+src/pages/work-history.html	922	confirmBtn.addEventListener('click', async () => {
+src/pages/work-history.html	946	modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	960	cancelBtn.addEventListener('click', () => modal.remove());
+src/pages/work-history.html	961	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/work-history.html	972	document.getElementById('filterButton').addEventListener('click', async () => {
+src/pages/work-history.html	1096	modal.querySelector('#applyFilters').addEventListener('click', () => {
+src/pages/work-history.html	1115	modal.querySelector('#clearFilters').addEventListener('click', () => {
+src/pages/work-history.html	1123	radio.addEventListener('change', function () {
+src/pages/work-history.html	1138	modal.querySelector('.close-modal').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	1139	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/pages/work-history.html	1143	document.getElementById('addSessionFAB').addEventListener('click', async () => {
+src/pages/work-history.html	1212	sessionDateBtn.addEventListener('click', () => {
+src/pages/work-history.html	1268	btn.addEventListener('click', () => {
+src/pages/work-history.html	1279	dateModal.querySelector('#customDatePicker').addEventListener('change', (e) => {
+src/pages/work-history.html	1286	dateModal.querySelector('.close-date-picker').addEventListener('click', () => dateModal.remove());
+src/pages/work-history.html	1287	dateModal.addEventListener('click', (e) => { if (e.target === dateModal) dateModal.remove(); });
+src/pages/work-history.html	1290	modal.querySelector('#saveNewSession').addEventListener('click', async () => {
+src/pages/work-history.html	1325	modal.querySelector('.close-add-modal').addEventListener('click', () => modal.remove());
+src/pages/work-history.html	1326	modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+src/renderer/bottom-nav.js	66	link.addEventListener('click', (e) => {
+src/renderer/bottom-nav.js	101	document.addEventListener('DOMContentLoaded', () => {
+src/renderer/shared.js	132	toast.querySelector('.toast-close').addEventListener('click', () => {
+src/renderer/titlebar.js	28	document.addEventListener('DOMContentLoaded', () => {

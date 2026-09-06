@@ -1,0 +1,67 @@
+src/pages/companies.html	95	const result = await window.api.getCompanies();
+src/pages/companies.html	115	const sessionsResult = await window.api.getSessions();
+src/pages/companies.html	201	const result = await window.api.createCompany({ name, noteRequired });
+src/pages/companies.html	225	const companyResult = await window.api.getCompany({ id: companyId });
+src/pages/companies.html	287	const result = await window.api.updateCompany({ id: companyId, name, excelColumn, noteColumn, noteRequired });
+src/pages/companies.html	342	const result = await window.api.deleteCompany({ id: companyId });
+src/pages/index.html	548	const sessionsRes = await window.api.getSessionsByDate({ startDate: dateStr, endDate: dateStr });
+src/pages/index.html	737	const streakRes = await window.api.getCurrentStreak();
+src/pages/index.html	753	const targetRes = await window.api.getSetting({ key: 'daily_target' });
+src/pages/index.html	760	const pomodoroEnabledRes = await window.api.getSetting({ key: 'pomodoro_enabled' });
+src/pages/index.html	763	const workDurationRes = await window.api.getSetting({ key: 'pomodoro_work_duration' });
+src/pages/index.html	766	const shortBreakRes = await window.api.getSetting({ key: 'pomodoro_short_break' });
+src/pages/index.html	769	const longBreakRes = await window.api.getSetting({ key: 'pomodoro_long_break' });
+src/pages/index.html	772	const sessionsRes = await window.api.getSetting({ key: 'pomodoro_sessions_until_long_break' });
+src/pages/index.html	775	const autoStartBreaksRes = await window.api.getSetting({ key: 'pomodoro_auto_start_breaks' });
+src/pages/index.html	778	const autoStartWorkRes = await window.api.getSetting({ key: 'pomodoro_auto_start_work' });
+src/pages/index.html	1158	const companiesResult = await window.api.getCompanies();
+src/pages/index.html	1223	const result = await window.api.saveSession({
+src/pages/index.html	1434	window.api.saveSetting({ key: 'pomodoro_enabled', value: 'false' });
+src/pages/index.html	1437	const workDurationRes = await window.api.getSetting({ key: 'pomodoro_work_duration' });
+src/pages/index.html	1440	const shortBreakRes = await window.api.getSetting({ key: 'pomodoro_short_break' });
+src/pages/index.html	1443	const longBreakRes = await window.api.getSetting({ key: 'pomodoro_long_break' });
+src/pages/index.html	1446	const sessionsRes = await window.api.getSetting({ key: 'pomodoro_sessions_until_long_break' });
+src/pages/index.html	1449	const autoStartBreaksRes = await window.api.getSetting({ key: 'pomodoro_auto_start_breaks' });
+src/pages/index.html	1452	const autoStartWorkRes = await window.api.getSetting({ key: 'pomodoro_auto_start_work' });
+src/pages/index.html	1459	window.api.saveSetting({ key: 'pomodoro_enabled', value: 'true' });
+src/pages/settings.html	413	const targetRes = await window.api.getSetting({ key: 'daily_target' });
+src/pages/settings.html	424	const goalRes = await window.api.getSetting({ key: 'goal_notification' });
+src/pages/settings.html	429	const excludeWeekendsRes = await window.api.getSetting({ key: 'exclude_weekends_from_streak' });
+src/pages/settings.html	435	const pomodoroEnabledRes = await window.api.getSetting({ key: 'pomodoro_enabled' });
+src/pages/settings.html	442	const workDurationRes = await window.api.getSetting({ key: 'pomodoro_work_duration' });
+src/pages/settings.html	449	const shortBreakRes = await window.api.getSetting({ key: 'pomodoro_short_break' });
+src/pages/settings.html	456	const longBreakRes = await window.api.getSetting({ key: 'pomodoro_long_break' });
+src/pages/settings.html	463	const sessionsRes = await window.api.getSetting({ key: 'pomodoro_sessions_until_long_break' });
+src/pages/settings.html	470	const autoStartBreaksRes = await window.api.getSetting({ key: 'pomodoro_auto_start_breaks' });
+src/pages/settings.html	475	const autoStartWorkRes = await window.api.getSetting({ key: 'pomodoro_auto_start_work' });
+src/pages/settings.html	480	const scriptRes = await window.api.getSetting({ key: 'script_url' });
+src/pages/settings.html	485	const exportPrecisionRes = await window.api.getSetting({ key: 'export_half_hour_precision' });
+src/pages/settings.html	516	await window.api.setSetting({ key: 'daily_target', value: String(dailyTargetSeconds) });
+src/pages/settings.html	517	await window.api.setSetting({ key: 'goal_notification', value: goalNotif ? 'true' : 'false' });
+src/pages/settings.html	518	await window.api.setSetting({ key: 'exclude_weekends_from_streak', value: excludeWeekends ? 'true' : 'false' });
+src/pages/settings.html	521	await window.api.setSetting({ key: 'pomodoro_enabled', value: pomodoroEnabled ? 'true' : 'false' });
+src/pages/settings.html	522	await window.api.setSetting({ key: 'pomodoro_work_duration', value: String(pomodoroWorkDuration) });
+src/pages/settings.html	523	await window.api.setSetting({ key: 'pomodoro_short_break', value: String(pomodoroShortBreak) });
+src/pages/settings.html	524	await window.api.setSetting({ key: 'pomodoro_long_break', value: String(pomodoroLongBreak) });
+src/pages/settings.html	525	await window.api.setSetting({ key: 'pomodoro_sessions_until_long_break', value: String(pomodoroSessions) });
+src/pages/settings.html	526	await window.api.setSetting({ key: 'pomodoro_auto_start_breaks', value: pomodoroAutoStartBreaks ? 'true' : 'false' });
+src/pages/settings.html	527	await window.api.setSetting({ key: 'pomodoro_auto_start_work', value: pomodoroAutoStartWork ? 'true' : 'false' });
+src/pages/settings.html	529	await window.api.setSetting({ key: 'script_url', value: scriptUrl });
+src/pages/settings.html	530	await window.api.setSetting({ key: 'export_half_hour_precision', value: exportHalfHourPrecision ? 'true' : 'false' });
+src/pages/settings.html	555	const result = await window.api.deleteAllSessions();
+src/pages/work-history.html	308	const result = await window.api.deleteSession({ id: sessionId });
+src/pages/work-history.html	322	const sessionsResult = await window.api.getSessions();
+src/pages/work-history.html	323	const companiesResult = await window.api.getCompanies();
+src/pages/work-history.html	410	const result = await window.api.updateSession({
+src/pages/work-history.html	436	const result = await window.api.getSessions();
+src/pages/work-history.html	446	const companiesRes = await window.api.getCompanies();
+src/pages/work-history.html	479	const targetRes = await window.api.getSetting({ key: 'daily_target' });
+src/pages/work-history.html	508	const weekResult = await window.api.getWeekTotal();
+src/pages/work-history.html	740	const result = await window.api.previewDayEnd({ date: dateStr });
+src/pages/work-history.html	933	const exportResult = await window.api.exportDayEnd({ date: selectedDateStr });
+src/pages/work-history.html	974	const companiesRes = await window.api.getCompanies();
+src/pages/work-history.html	1145	const companiesRes = await window.api.getCompanies();
+src/pages/work-history.html	1309	const result = await window.api.saveSession({
+src/renderer/shared.js	156	await window.api.navigateTo({ page });
+src/renderer/titlebar.js	16	<button onclick="window.api.minimizeWindow()" class="minimize-btn flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-black/5 dark:hover:bg-white/5 transition-colors border-r border-slate-200 dark:border-slate-800">
+src/renderer/titlebar.js	19	<button onclick="window.api.closeWindow()" class="close-btn flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-red-500/10 hover:text-red-500 transition-colors border-r border-slate-200 dark:border-slate-800">
