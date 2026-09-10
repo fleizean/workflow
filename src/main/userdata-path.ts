@@ -36,14 +36,20 @@
  * both can be unit-tested in plain Node against a stand-in object.
  */
 
-import { join } from 'node:path';
-import type { App } from 'electron';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { App, CommandLine } from 'electron';
 
 /** Appended to the manifest name to form the development userData directory name. */
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
 
+/** The Chromium switch a launcher uses to name the userData directory explicitly. */
+export const USER_DATA_DIR_SWITCH = 'user-data-dir';
+
 /** The slice of Electron's `app` this module touches. */
 export type UserDataApp = Pick<App, 'isPackaged' | 'getName' | 'getPath' | 'setPath'>;
+
+/** UserDataApp plus the command line, for the unpackaged-start policy. */
+export type UnpackagedUserDataApp = UserDataApp & { readonly commandLine: Pick<CommandLine, 'hasSwitch'> };
 
 /**
  * The development userData directory for an app named `appName` under `appData`.
@@ -95,4 +101,32 @@ export function applyDevelopmentUserDataPath(app: UserDataApp): string {
     app.setPath('userData', target);
 
     return target;
+}
+
+/**
+ * WR-06: an unpackaged build honours an explicit --user-data-dir instead of overriding it with the
+ * shared development directory, but refuses one that points at the production directory.
+ */
+export function applyUnpackagedUserDataPath(app: UnpackagedUserDataApp): string {
+    // A packaged app goes straight to the D-09 refusal, before the command line is even read.
+    if (app.isPackaged || !app.commandLine.hasSwitch(USER_DATA_DIR_SWITCH)) {
+        return applyDevelopmentUserDataPath(app);
+    }
+    const explicit = app.getPath('userData');
+    const production = join(app.getPath('appData'), app.getName());
+    if (isSameOrInside(production, explicit)) {
+        throw new Error(
+            'WR-06: --' + USER_DATA_DIR_SWITCH + ' points at the production userData directory ' + production +
+            '; an unpackaged build may never run against the directory real users\' krono.db lives in.'
+        );
+    }
+    return explicit;
+}
+
+/** Whether `child` is `parent` or inside it, case-folded where the filesystem usually ignores case. */
+function isSameOrInside(parent: string, child: string): boolean {
+    const fold = (p: string): string =>
+        process.platform === 'win32' || process.platform === 'darwin' ? resolve(p).toLowerCase() : resolve(p);
+    const rel = relative(fold(parent), fold(child));
+    return rel === '' || (rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel));
 }

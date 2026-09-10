@@ -36,7 +36,7 @@ import { app, BrowserWindow, type WebContents } from 'electron';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { applyDevelopmentUserDataPath } from './userdata-path';
+import { applyUnpackagedUserDataPath } from './userdata-path';
 
 const SMOKE_FLAG = '--smoke';
 const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
@@ -56,9 +56,10 @@ const SMOKE_EXIT_FALLBACK_MS = 3_000;
 const SMOKE_ESCAPE_URL = 'https://example.invalid/';
 const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 
-// Step 2: development builds get their own userData directory before anything else happens.
+// Step 2: before anything else, a development build gets its own userData directory, or the one an
+// explicit --user-data-dir names (WR-06).
 if (!app.isPackaged) {
-    applyDevelopmentUserDataPath(app);
+    applyUnpackagedUserDataPath(app);
 }
 
 // Step 3: the lock, before any database-touching module has been loaded.

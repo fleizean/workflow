@@ -36,9 +36,11 @@ import { fileURLToPath } from 'node:url';
 
 import {
     DEVELOPMENT_USER_DATA_SUFFIX,
+    USER_DATA_DIR_SWITCH,
     applyDevelopmentUserDataPath,
+    applyUnpackagedUserDataPath,
     devUserDataPath,
-    type UserDataApp
+    type UnpackagedUserDataApp
 } from '../src/main/userdata-path';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -64,23 +66,25 @@ interface SetPathCall {
     value: string;
 }
 
-interface RecordingApp extends UserDataApp {
+interface RecordingApp extends UnpackagedUserDataApp {
     readonly setPathCalls: SetPathCall[];
 }
 
 /*
  * A stand-in for Electron's app object. getPath('userData') starts where Electron would put it -
- * <appData>/<name> - and moves only if setPath is called, so the stub can also report whether the
- * production path survived untouched.
+ * <appData>/<name>, or the --user-data-dir it was given - and moves only if setPath is called.
  */
-function recordingApp(options: { isPackaged: boolean; name: string }): RecordingApp {
+function recordingApp(options: { isPackaged: boolean; name: string; userDataDir?: string }): RecordingApp {
     const paths: Record<string, string> = {
         appData: APP_DATA,
-        userData: path.join(APP_DATA, options.name)
+        userData: options.userDataDir ?? path.join(APP_DATA, options.name)
     };
     const setPathCalls: SetPathCall[] = [];
     return {
         isPackaged: options.isPackaged,
+        commandLine: {
+            hasSwitch: (name: string): boolean => name === USER_DATA_DIR_SWITCH && options.userDataDir !== undefined
+        },
         getName: () => options.name,
         getPath: (name: string): string => {
             const value = paths[name];
@@ -194,5 +198,55 @@ describe('D-09: the production name comes from the manifest at runtime, not from
             'if it is only in a comment, reword the comment'
         ).toBe(false);
         expect(moduleSource.includes('workflow-timer')).toBe(false);
+    });
+});
+
+describe('WR-06: an explicit --user-data-dir in an unpackaged build', () => {
+    const FIXTURE_DIR = path.join('C:/fixtures', 'wft-parity', 'ud');
+    const production = path.join(APP_DATA, STUB_NAME);
+
+    it('is honoured as given, and the path setter is never called', () => {
+        const app = recordingApp({ isPackaged: false, name: STUB_NAME, userDataDir: FIXTURE_DIR });
+        expect(applyUnpackagedUserDataPath(app), MODULE + ' overrode an explicit --user-data-dir').toBe(FIXTURE_DIR);
+        expect(app.setPathCalls).toEqual([]);
+        expect(app.getPath('userData')).toBe(FIXTURE_DIR);
+    });
+
+    it('without the switch, still relocates to the development directory exactly once', () => {
+        const app = recordingApp({ isPackaged: false, name: STUB_NAME });
+        const expected = devUserDataPath(APP_DATA, STUB_NAME);
+        expect(applyUnpackagedUserDataPath(app)).toBe(expected);
+        expect(app.setPathCalls).toEqual([{ name: 'userData', value: expected }]);
+    });
+
+    it('refuses the production directory and anything inside it, without calling the path setter', () => {
+        // `..x` is a child named "..x", not a parent reference.
+        for (const dir of [production, path.join(production, 'sub'), path.join(production, '..x', 'data')]) {
+            const app = recordingApp({ isPackaged: false, name: STUB_NAME, userDataDir: dir });
+            expect(() => applyUnpackagedUserDataPath(app), MODULE + ' accepted --user-data-dir=' + dir).toThrow(/WR-06/);
+            expect(app.setPathCalls).toEqual([]);
+        }
+    });
+
+    it.runIf(process.platform === 'win32' || process.platform === 'darwin')(
+        'refuses the production directory spelled in another case, where the filesystem ignores case', () => {
+            const app = recordingApp({
+                isPackaged: false, name: STUB_NAME, userDataDir: path.join(APP_DATA, STUB_NAME.toUpperCase())
+            });
+            expect(() => applyUnpackagedUserDataPath(app)).toThrow(/WR-06/);
+        });
+
+    it('accepts a sibling whose name merely starts with the production name', () => {
+        const sibling = production + '-fixture';
+        const app = recordingApp({ isPackaged: false, name: STUB_NAME, userDataDir: sibling });
+        expect(applyUnpackagedUserDataPath(app)).toBe(sibling);
+    });
+
+    it('still throws D-09 in a packaged build, switch or no switch, without calling the path setter', () => {
+        for (const userDataDir of [FIXTURE_DIR, undefined]) {
+            const app = recordingApp({ isPackaged: true, name: STUB_NAME, userDataDir });
+            expect(() => applyUnpackagedUserDataPath(app)).toThrow(/D-09/);
+            expect(app.setPathCalls).toEqual([]);
+        }
     });
 });
