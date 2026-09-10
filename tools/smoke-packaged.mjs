@@ -50,8 +50,8 @@ export const PRODUCT_NAME = 'Workflow';
 export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
 export const SMOKE_DB_NAME = 'smoke.db';
 export const DEFAULT_TIMEOUT_MS = 90_000;
-/** What src/renderer/src/main.tsx renders. */
-export const RENDERER_MARKER_TEXT = 'Workflow';
+/** The heading the renderer's index route renders (src/renderer/src/routes/Home.tsx). Must match src/main/index.ts. */
+export const RENDERER_MARKER_TEXT = 'Home';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

@@ -43,8 +43,10 @@ const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
 const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
 // The key src/preload/index.ts exposes its placeholder bridge under.
 const SHELL_BRIDGE_KEY = 'workflowShell';
-// What src/renderer/src/main.tsx renders; the smoke launch waits for it.
-const RENDERER_MARKER_TEXT = 'Workflow';
+// The heading the renderer's index route renders (src/renderer/src/routes/Home.tsx); the smoke
+// launch waits for it. The bottom navigation carries the same word, so this proves the React tree
+// mounted - not, on its own, which route resolved.
+const RENDERER_MARKER_TEXT = 'Home';
 const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
