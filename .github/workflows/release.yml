@@ -15,41 +15,16 @@ jobs:
   verify:
     uses: ./.github/workflows/verify.yml
 
+  # BUILD-10 / D-17: building is delegated to the packaging workflow instead of being carried here
+  # as a second matrix. One definition, in package.yml, is what keeps the four legs - Windows and
+  # macOS, x64 and arm64 - from drifting apart between the pull-request path and this tag path. The
+  # tag reaches package.yml only through this call: package.yml deliberately has no tag trigger of
+  # its own, or one tag would start eight packaging legs instead of four.
+  #
+  # D-20: the checkout and setup-node steps this job used to carry now live in package.yml, on @v5. They are first-party actions on mutable major tags; the commit-hash pinning applied to the third-party release action below is deliberately not required of them.
   build:
     needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            build_cmd: npm run build
-            artifact_path: dist/*.exe
-          - os: macos-latest
-            build_cmd: npm run build:mac
-            artifact_path: dist/*.dmg
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Electron app
-        run: ${{ matrix.build_cmd }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os }}-build
-          path: ${{ matrix.artifact_path }}
-          if-no-files-found: error       # a green build that produced nothing is a failure
+    uses: ./.github/workflows/package.yml
 
   release:
     needs: build
@@ -57,17 +32,65 @@ jobs:
     permissions:
       contents: write                    # scoped to this job only
     steps:
-      - name: Download Windows artifacts
+      # All four, by the names package.yml assigns. A download by name fails when that artifact does
+      # not exist, which is the first line of defence against a missing architecture.
+      - name: Download Windows x64 installer
         uses: actions/download-artifact@v4
         with:
-          name: windows-latest-build
+          name: windows-latest-x64-build
           path: dist/
 
-      - name: Download macOS artifacts
+      - name: Download Windows arm64 installer
         uses: actions/download-artifact@v4
         with:
-          name: macos-latest-build
+          name: windows-latest-arm64-build
           path: dist/
+
+      - name: Download macOS x64 disk image
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-x64-build
+          path: dist/
+
+      - name: Download macOS arm64 disk image
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-arm64-build
+          path: dist/
+
+      # BUILD-10, enforced at the moment it matters most. fail_on_unmatched_files below catches an
+      # empty glob, but it cannot tell that three of four architectures showed up - dist/* matches
+      # happily either way. So count what arrived: exactly one non-empty file per expected
+      # installer, and nothing else in dist/, because every file in dist/ is attached to the release.
+      # The suffixes follow the artifactName templates in electron-builder.yml.
+      - name: Refuse to publish unless all four installers arrived
+        shell: bash
+        run: |
+          shopt -s nullglob
+          failed=0
+          for suffix in x64-setup.exe arm64-setup.exe x64.dmg arm64.dmg; do
+            matches=( dist/*-"$suffix" )
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::expected exactly one installer ending in -$suffix, found ${#matches[@]}: ${matches[*]:-none}"
+              failed=1
+            elif [ ! -s "${matches[0]}" ]; then
+              echo "::error::${matches[0]} arrived empty"
+              failed=1
+            else
+              echo "ARRIVED ${matches[0]} $(wc -c < "${matches[0]}" | tr -d ' ') bytes"
+            fi
+          done
+          everything=( dist/* )
+          if [ "${#everything[@]}" -ne 4 ]; then
+            echo "::error::dist/ holds ${#everything[@]} entries, expected exactly the four installers - every file in dist/ is attached to the release"
+            ls -la dist/ || true
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Refusing to create the release: it would ship without every platform and architecture (BUILD-10)."
+            exit 1
+          fi
+          echo "FOUR_ARTIFACTS_OK"
 
       - name: Create DRAFT release
         uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
