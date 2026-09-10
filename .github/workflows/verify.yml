@@ -36,6 +36,8 @@ jobs:
       # D-20: checkout and setup-node are first-party GitHub actions on mutable major tags, moved @v4 -> @v5 off the deprecated Node 20 runtime; the SHA pinning of the third-party release action is deliberately not required of them.
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0              # WR-05: the whitespace check diffs a commit range
 
       # D-03 backstop. .gitignore already excludes these patterns, so this step exists to
       # catch a deliberate 'git add -f'. A real krono.db pushed to a public repository is
@@ -57,9 +59,30 @@ jobs:
       # errors; the renormalise assertion catches the actual D-13 regression - a blob
       # committed with line endings that disagree with .gitattributes, which surfaces
       # later as "whole file changed" on a file nobody edited.
+      # WR-05: only what this run's range introduces - frozen legacy files already carry trailing
+      # whitespace, and --ignore-cr-at-eol hides D-13's CRLF-to-LF rewrite of them.
       - name: Check whitespace and line-ending contract
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          git diff --check
+          is_commit() { [ -n "$1" ] && [ "$1" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$1^{commit}" 2>/dev/null; }
+          base=''
+          if [ "$EVENT_NAME" = pull_request ] && is_commit "$PR_BASE_SHA"; then
+            base="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = push ] && is_commit "$PUSH_BEFORE_SHA"; then
+            base="$PUSH_BEFORE_SHA"
+          elif [ -n "$DEFAULT_BRANCH" ] && git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH^{commit}" > /dev/null; then
+            base=$(git merge-base "origin/$DEFAULT_BRANCH" HEAD)
+          fi
+          if [ -z "$base" ]; then
+            echo "::error::cannot determine which commits this run introduces (event '$EVENT_NAME'), so the whitespace check would check nothing"
+            exit 1
+          fi
+          echo "Whitespace check over $(git rev-parse --short "$base")..$(git rev-parse --short HEAD) ($EVENT_NAME)"
+          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**'
           git add --renormalize .
           if ! git diff --cached --quiet; then
             echo "::error::Committed line endings disagree with .gitattributes in:"
