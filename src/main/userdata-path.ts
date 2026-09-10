@@ -5,11 +5,13 @@
  * or corrupt the krono.db that holds a developer's real tracked time (BUILD-12).
  *
  * Electron resolves userData as DIR_APP_DATA + app.name, and app.name comes from package.json's
- * `name` - `workflow-timer` - which is why every installed v1.2.1 keeps its data in
- * <appData>/workflow-timer. A development build runs from the same manifest, so without this
+ * `name` - the value tests/app-identity.test.ts pins - which is why every installed v1.2.1 keeps
+ * its data in <appData>/<name>. A development build runs from the same manifest, so without this
  * module it resolves the very same directory. This module moves the development build to
  * <appData>/<name>-dev, where <name> is read from the manifest at runtime and never written here
- * as a literal: a hard-coded directory name is a second source of truth that drifts.
+ * as a literal: a hard-coded directory name is a second source of truth that drifts. The name is
+ * not spelled even in this comment, because tests/userdata-path.test.ts asserts its absence over
+ * this file's raw text - a text gate cannot tell prose from a hard-coded directory name.
  *
  * D-07 - the split is made in code, not by a launch flag. --user-data-dir is a flag a developer
  * can forget, and `npm run dev` is not the only way Electron starts: a debugger attach, an IDE run
