@@ -20,14 +20,14 @@
 
 // Turkish month names
 const MONTH_NAMES_TR = [
-    "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
-    "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+    'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
+    'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
 
 // English month names (fallback)
 const MONTH_NAMES_EN = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
 /**
@@ -57,13 +57,16 @@ function getSheetForDate(spreadsheet, date) {
     }
     
     // Fallback to active sheet (backward compatibility)
-    Logger.log(`No month-specific sheet found, using active sheet`);
+    Logger.log('No month-specific sheet found, using active sheet');
     return spreadsheet.getActiveSheet();
 }
 
 /**
  * Main POST handler - receives data from Workflow Timer
  */
+// Not dead code: the Apps Script web-app runtime calls doPost by name on every POST from the
+// app's export (BUILD-13 lint, plan 02-04). Removing or renaming it breaks the deployed endpoint.
+// eslint-disable-next-line no-unused-vars
 function doPost(e) {
     try {
         const data = JSON.parse(e.postData.contents);
@@ -142,7 +145,11 @@ function doPost(e) {
 /**
  * GET handler - test endpoint to verify the script is working
  */
-function doGet(e) {
+// Not dead code: the Apps Script web-app runtime calls doGet by name on every GET to the
+// deployment URL (BUILD-13 lint, plan 02-04). Its event argument was never read, so it is not
+// declared; the runtime passes it regardless.
+// eslint-disable-next-line no-unused-vars
+function doGet() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const testDate = new Date();
     const sheet = getSheetForDate(spreadsheet, testDate);
@@ -174,6 +181,9 @@ function columnLetterToNumber(letter) {
  * Test function - run this manually to verify the script works
  * View results in: View → Logs
  */
+// Not dead code: the user runs testScript by hand from the Apps Script editor's function picker
+// (BUILD-13 lint, plan 02-04). Nothing in the script calls it, by design.
+// eslint-disable-next-line no-unused-vars
 function testScript() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const testDate = new Date();
