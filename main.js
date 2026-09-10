@@ -1,3 +1,19 @@
+/*
+ * DEAD CODE - nothing loads this file. It awaits Phase 7's atomic cutover (D-01, D-03).
+ *
+ * package.json `main` now points at ./out/main/index.js, which electron-vite builds from
+ * src/main/index.ts. This file stays on disk, unedited below this header, together with
+ * preload.js, database/ and src/pages/, only because the v1.2.1 behaviour inventory
+ * (tests/inventory.test.ts) and the Phase 8 parity baselines are measured against it. Phase 7
+ * deletes the whole legacy tree in one commit.
+ *
+ * Do NOT point package.json `main` back at this file to "fix" something. That would undo the
+ * layout change and ship the legacy app again: a renderer that loads Tailwind and its fonts from
+ * remote origins with no Content-Security-Policy, a database connection opened at module load
+ * before any single-instance lock exists, and a page load resolved against the working directory
+ * rather than this file's location.
+ */
+
 // main.js
 // Electron main process
 

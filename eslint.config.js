@@ -57,7 +57,7 @@ module.exports = [
     {
         files: ['**/*.ts', '**/*.mts'],
         languageOptions: {
-            parserOptions: { projectService: true, tsconfigRootDir: __dirname },
+            parserOptions: { project: ['./tsconfig.node.json', './tsconfig.web.json'], tsconfigRootDir: __dirname },
             globals: { ...globals.node }
         },
         rules: {

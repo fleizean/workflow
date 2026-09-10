@@ -1,0 +1,57 @@
+# electron-builder configuration. Moved here from package.json's inline block in plan 02-01, so the
+# package manifest carries identity only and this file carries packaging only.
+#
+# THIS FILE IS AN INPUT TO WHERE EVERY USER'S DATABASE LIVES. Electron resolves userData from the
+# `name` in the manifest INSIDE the packaged app, and electron-builder writes that manifest. It
+# must therefore carry NO key that injects or rewrites manifest metadata: such a key would move
+# every installed user's krono.db to an empty directory without tripping a single source-level
+# assertion (D-10, Phase 1 D-14). tests/app-identity.test.ts reads this file as text and fails on
+# one, and tools/smoke-packaged.mjs checks the name the packaged app actually reports.
+#
+# productName (below) is DELIBERATELY different from package.json's `name` (workflow-timer). It
+# is the installer and display name only and never becomes app.name. Do not "tidy up" the mismatch
+# in either direction.
+
+appId: com.workflow.timer
+productName: Workflow
+
+directories:
+  buildResources: build
+  output: dist
+
+# An ALLOWLIST, not a deny list (BUILD-08, fix Y10). The old files: ["**/*"] shipped docs/,
+# assets/, baselines/, tools/ and three copies of a 1.8 MB PNG. Everything not named here stays
+# out by never being listed - including the whole legacy v1.2.1 tree (main.js, preload.js,
+# database/, src/pages/, src/renderer/*.js, src/styles/), which stays on disk until Phase 7.
+# electron-builder adds package.json and the production node_modules (better-sqlite3) itself.
+files:
+  - out/**
+  - '!**/*.map'
+  - '!**/*.ts'
+
+# A native .node addon must exist as a real file on disk; it cannot be dlopen'd from inside the
+# asar archive (BUILD-05). tools/smoke-packaged.mjs proves the packaged app loads it from here.
+asarUnpack:
+  - '**/node_modules/better-sqlite3/**'
+
+# better-sqlite3 >= 13.0.2 ships N-API prebuilds for win32/darwin/linux on x64 and arm64 inside
+# its npm tarball, so nothing needs rebuilding against Electron's ABI - and rebuilding would bring
+# back a node-gyp toolchain dependency on every runner.
+npmRebuild: false
+
+win:
+  target: nsis
+  icon: build/icon.png
+
+nsis:
+  # ${arch} is in the name because x64 and arm64 are built as separate installers (D-17).
+  artifactName: '${name}-${version}-${arch}-setup.${ext}'
+
+mac:
+  target: dmg
+  # Unsigned this milestone; code signing is out of scope and accepted as such (T-02-06).
+  identity: null
+  notarize: false
+
+dmg:
+  artifactName: '${name}-${version}-${arch}.${ext}'

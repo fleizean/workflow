@@ -1,0 +1,27 @@
+<!doctype html>
+<!--
+    The single renderer entry point. electron-vite discovers it by convention.
+
+    The Content-Security-Policy below forbids every remote origin: scripts, styles, fonts, images,
+    media and connections all come from the app bundle. v1.2.1 loaded Tailwind and its fonts from
+    remote origins and so rendered icons as literal words when offline. Never add a remote URL here.
+
+    This file sits under src/ with an .html extension, so tools/baseline/inventory.sh and
+    tests/inventory.test.ts scan it. It must carry no DOM event-registration call and no reference
+    to the legacy preload bridge, or the Phase 1 inventory pins change.
+-->
+<html class="dark" lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; media-src 'self'; connect-src 'self'"
+        />
+        <title>Workflow</title>
+    </head>
+    <body>
+        <div id="root"></div>
+        <script type="module" src="/src/main.tsx"></script>
+    </body>
+</html>

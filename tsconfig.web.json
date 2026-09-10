@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "composite": true,
+        "outDir": "node_modules/.tmp/tsc-web",
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "jsx": "react-jsx",
+        "types": [],
+        "strict": true,
+        "noImplicitAny": true,
+        "noUncheckedIndexedAccess": true,
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "isolatedModules": true,
+        "forceConsistentCasingInFileNames": true,
+        "skipLibCheck": true
+    },
+    "include": [
+        "src/renderer/src/**/*",
+        "src/preload/*.d.ts",
+        "src/shared/**/*"
+    ]
+}

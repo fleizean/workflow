@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 /*
@@ -22,6 +23,17 @@ import { fileURLToPath } from 'node:url';
  *
  * The GitHub repository was renamed to fleizean/workflow, which makes "fixing" `name` to match
  * feel like tidying up. It is not. That is the single edit this file exists to stop (CUSTODY-02).
+ *
+ * Phase 2 (plan 02-01, D-10/D-11) moved two things this file guards, and every assertion moved
+ * with them in the same commit - a follow-up commit would have left a window in which the guard
+ * reported green while protecting nothing:
+ *
+ *   - The electron-builder configuration left package.json for electron-builder.yml. The two
+ *     builder assertions below read that file, as text, and a third asserts package.json carries
+ *     no inline builder block, so the configuration cannot silently move back.
+ *   - The main process moved to src/main/**. The setName/setPath scan was a hard-coded list of the
+ *     three v1.2.1 files; it is now every source file git knows about, with one annotated
+ *     allowlist entry for the development userData module.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,6 +47,61 @@ const readSource = (rel: string): string => {
 };
 
 const EXPECTED_NAME = 'workflow-timer';
+
+const BUILDER_CONFIG = 'electron-builder.yml';
+const builderConfig = readSource(BUILDER_CONFIG);
+
+/*
+ * Every other file name electron-builder would read its configuration from. If one of these
+ * appeared beside electron-builder.yml, the assertions over the YAML would be checking a file the
+ * build might not be using.
+ */
+const ALTERNATE_BUILDER_CONFIGS = [
+    'electron-builder.yaml', 'electron-builder.json', 'electron-builder.json5',
+    'electron-builder.toml', 'electron-builder.js', 'electron-builder.cjs',
+    'electron-builder.mjs', 'electron-builder.ts'
+];
+
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.cjs', '.mjs'];
+
+/*
+ * The whole source tree, as git sees it: tracked files AND files not yet committed, minus
+ * everything .gitignore excludes.
+ *
+ * git, not a filesystem walk, for the reason tests/custody-hygiene.test.ts gives: the standard
+ * exclusions keep out/, dist/, node_modules and the gitignored planning directories out for free.
+ * execFileSync with an argument array: no shell, no quoting surface.
+ *
+ * --cached --others, NOT a tracked-only listing. This test runs before the commit that adds a
+ * file exists - that is when it matters. A tracked-only listing cannot see src/main/** at that
+ * moment, so it would scan nothing new and report green while covering none of the tree it was
+ * just widened to protect: the same "green while protecting nothing" failure the Phase 1 handoff
+ * names for this exact assertion, one step earlier.
+ */
+const sourceFiles = (): string[] =>
+    execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+        cwd: repoRoot,
+        encoding: 'utf8'
+    })
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+        .filter((file) => SOURCE_EXTENSIONS.some((ext) => file.endsWith(ext)));
+
+/*
+ * Files allowed to relocate userData, each with its justification. Exactly one entry, and the
+ * test below keeps it that way: a single narrow annotated path, never a loosened pattern.
+ */
+const SET_PATH_ALLOWLIST: Record<string, string> = {
+    'src/main/userdata-path.ts':
+        'D-07/D-08: moves a DEVELOPMENT build to <appData>/<name>-dev so npm run dev can never ' +
+        'open a real krono.db. It throws when app.isPackaged is true (D-09), so no installed ' +
+        'build executes the call, and it carries the matching inline ESLint exemption.'
+};
+
+const SET_NAME_CALL = /\bapp\s*\.\s*setName\s*\(/;
+const SET_PATH_CALL = /\bapp\s*\.\s*setPath\s*\(/;
+const SET_PATH_CALLS = /\bapp\s*\.\s*setPath\s*\(/g;
 
 describe('CUSTODY-02: the userData path cannot silently move', () => {
     it('package.json has a name that is present, non-empty and not whitespace-only', () => {
@@ -69,34 +136,69 @@ describe('CUSTODY-02: the userData path cannot silently move', () => {
         expect(Object.prototype.hasOwnProperty.call(pkg, 'productName')).toBe(false);
     });
 
-    it('electron-builder does not inject name/productName via build.extraMetadata', () => {
+    it('the builder configuration lives in electron-builder.yml and nowhere else', () => {
+        // Moved out of package.json in plan 02-01. If it silently moved back, or a second config
+        // file appeared, the two YAML assertions below would be reading a file the build ignores.
+        expect(builderConfig, BUILDER_CONFIG + ' is missing or empty').not.toBe('');
+        expect(
+            Object.prototype.hasOwnProperty.call(pkg, 'build'),
+            'package.json carries an inline builder block again; the configuration belongs in ' +
+            BUILDER_CONFIG + ' only'
+        ).toBe(false);
+        const alternates = ALTERNATE_BUILDER_CONFIGS.filter((f) => fs.existsSync(path.join(repoRoot, f)));
+        expect(alternates, 'a second electron-builder configuration file exists').toEqual([]);
+    });
+
+    it('electron-builder does not inject name/productName into the packaged manifest', () => {
         // app-builder-lib's modifyMainPackageJson runs deepAssign(mainPackageData, extraMetadata)
         // into the PACKAGED package.json, so this vector never appears in the source manifest's
-        // top level and is invisible to a plain `name` assertion.
-        const build = (pkg['build'] ?? {}) as Record<string, unknown>;
-        const extra = (build['extraMetadata'] ?? {}) as Record<string, unknown>;
-        expect(Object.prototype.hasOwnProperty.call(extra, 'name')).toBe(false);
-        expect(Object.prototype.hasOwnProperty.call(extra, 'productName')).toBe(false);
+        // top level and is invisible to a plain `name` assertion (D-10). Asserted over the raw
+        // text rather than a parsed key, so the key cannot hide anywhere in the file - which is
+        // also why electron-builder.yml's own comments never spell the key's name.
+        expect(builderConfig).not.toMatch(/extraMetadata/);
+        // `extends` pulls in a preset configuration this file cannot show, which may inject it.
+        expect(builderConfig).not.toMatch(/^extends\s*:/m);
     });
 
-    it('build.productName is still "Workflow", and that mismatch is intentional', () => {
-        // build.productName ("Workflow") deliberately differs from name ("workflow-timer").
-        // It is the installer/display name only: app-builder-lib's cleanupPackageJson merely
-        // DELETES properties and never promotes build.productName to the top level, so it can
+    it('electron-builder.yml productName is still "Workflow", and that mismatch is intentional', () => {
+        // productName ("Workflow") deliberately differs from name ("workflow-timer"). It is the
+        // installer/display name only: app-builder-lib's cleanupPackageJson merely DELETES
+        // properties and never promotes the builder's productName to the top level, so it can
         // never become app.name and can never move userData. Do not "resolve" this
         // inconsistency by aligning name to it — that is precisely the dangerous direction.
-        const build = (pkg['build'] ?? {}) as Record<string, unknown>;
-        expect(build['productName']).toBe('Workflow');
+        expect(builderConfig).toMatch(/^productName:\s*Workflow\s*$/m);
     });
 
-    it('no source file calls app.setName() or app.setPath()', () => {
+    it('no source file calls app.setName or app.setPath, except one annotated allowlist entry', () => {
         // Both APIs override app.name / the userData path at runtime, which no JSON assertion
-        // can see. ESLint's no-restricted-properties covers the whole tree; this covers the
-        // three files that exist today even if lint is bypassed.
-        for (const f of ['main.js', 'preload.js', 'database/db.js']) {
-            const src = readSource(f);
-            expect(src, `${f} must not call app.setName`).not.toMatch(/\bapp\s*\.\s*setName\s*\(/);
-            expect(src, `${f} must not call app.setPath`).not.toMatch(/\bapp\s*\.\s*setPath\s*\(/);
+        // can see. ESLint's no-restricted-properties covers the same ground; this covers it even
+        // if lint is bypassed.
+        const files = sourceFiles();
+        expect(
+            files,
+            'the scan cannot see the new main-process tree, so it would pass while covering nothing'
+        ).toEqual(expect.arrayContaining(['src/main/index.ts', ...Object.keys(SET_PATH_ALLOWLIST)]));
+
+        const offenders: string[] = [];
+        for (const file of files) {
+            const src = readSource(file);
+            if (SET_NAME_CALL.test(src)) offenders.push(file + ' calls app.setName');
+            if (SET_PATH_CALL.test(src) && !Object.hasOwn(SET_PATH_ALLOWLIST, file)) {
+                offenders.push(file + ' calls app.setPath');
+            }
+        }
+        expect(offenders).toEqual([]);
+    });
+
+    it('the setPath allowlist has exactly one entry, and it still names a real call', () => {
+        // An exemption that can grow, or that outlives the code it exempts, is a loosened rule.
+        const entries = Object.entries(SET_PATH_ALLOWLIST);
+        expect(entries).toHaveLength(1);
+        for (const [file, justification] of entries) {
+            expect(justification.trim(), file + ' has no justification').not.toBe('');
+            expect(fs.existsSync(path.join(repoRoot, file)), file + ' no longer exists').toBe(true);
+            const calls = (readSource(file).match(SET_PATH_CALLS) ?? []).length;
+            expect(calls, file + ' should make exactly the one exempted call').toBe(1);
         }
     });
 });
