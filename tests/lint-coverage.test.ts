@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ESLint } from 'eslint';
+import { ESLint, type Linter } from 'eslint';
 
 /*
  * Why this file exists (BUILD-13, D-04).
@@ -167,6 +167,77 @@ const computedConfig = async (rel: string): Promise<ComputedConfig | undefined> 
 const ruleEntry = async (rel: string, rule: string): Promise<unknown> =>
     (await computedConfig(rel))?.rules?.[rule];
 
+const CUSTODY_03_TEXT = 'copyFileSync|cp|cpSync|rename|renameSync';
+const DATE_MESSAGE = 'Calendar dates go through src/shared/utils/date.ts (SHARED-03).';
+const TS_PROBE_FILE = 'src/main/index.ts';
+const isTsFile = (file: string): boolean => /\.(ts|mts|cts|tsx)$/.test(file);
+
+interface ProbeVerdict {
+    missed: string[];
+    flagged: string[];
+}
+
+// Lints in-memory text under an existing path, so typed linting finds the file in its program (Pitfall 9).
+async function probe(
+    file: string,
+    header: readonly string[],
+    banned: readonly string[],
+    allowed: readonly string[],
+    matches: (m: Linter.LintMessage) => boolean
+): Promise<ProbeVerdict> {
+    const lines = [...header, ...banned, ...allowed];
+    const [result] = await eslint.lintText(lines.join('\n') + '\n', { filePath: path.join(repoRoot, file) });
+    const messages = result?.messages ?? [];
+    const fatal = messages.filter((m) => m.fatal === true);
+    if (fatal.length > 0) {
+        throw new Error(file + ': the probe did not parse - ' + fatal.map((m) => m.message).join('; '));
+    }
+    const hit = new Set(messages.filter(matches).map((m) => m.line));
+    const lineOf = (i: number): number => header.length + i + 1;
+    return {
+        missed: banned.filter((_, i) => !hit.has(lineOf(i))),
+        flagged: allowed.filter((_, i) => hit.has(lineOf(banned.length + i)))
+    };
+}
+
+const isDateBan = (m: Linter.LintMessage): boolean => m.message === DATE_MESSAGE;
+
+const BANNED_DATE_SHAPES = [
+    'd.toISOString();',
+    'd?.toISOString();',
+    'd[\'toISOString\']();',
+    'Date.parse(s);',
+    'Date[\'parse\'](s);',
+    'new Date(s);',
+    'new Date(...parts);',
+    'd.getUTCFullYear();',
+    'd.getUTCMonth();',
+    'd.getUTCDate();',
+    'd.getUTCDay();',
+    'const { toISOString } = d;',
+    'const { parse } = Date;'
+];
+const ALLOWED_DATE_SHAPES = ['new Date();', 'new Date(2026, 8, 10);', 'Date.UTC(2026, 8, 10);', 'Date.now();', 'd.getUTCHours();'];
+
+interface KnownGap {
+    file: string;
+    header: string[];
+    code: string;
+    matches: (m: Linter.LintMessage) => boolean;
+    why: string;
+}
+
+// Syntactic rules cannot resolve globalThis aliases; asserting the gap means a change in either direction is noticed.
+const KNOWN_GAPS: KnownGap[] = [
+    {
+        file: TS_PROBE_FILE,
+        header: ['declare const s: string;'],
+        code: 'new globalThis.Date(s);',
+        matches: isDateBan,
+        why: 'a syntactic rule cannot see through globalThis to the Date constructor'
+    }
+];
+
 describe('BUILD-13 / D-04: lint reaches every source file this repository owns', () => {
     it('enumerates the set it claims to: git-known files, this file included, no build output', () => {
         const files = repositoryFiles();
@@ -312,6 +383,13 @@ describe('the rules the rewrite must not lose', () => {
             JSON.stringify(syntax),
             'CUSTODY-03 no longer bans fs copies of a SQLite database for ' + file
         ).toContain('copyFileSync|cp|cpSync|rename|renameSync');
+
+        if (isTsFile(file)) {
+            const dateBans = JSON.stringify(syntax);
+            expect(dateBans, 'the date bans do not resolve for ' + file).toContain(DATE_MESSAGE);
+            expect(dateBans, 'toISOString is no longer banned for ' + file).toContain('property.name=\'toISOString\'');
+            expect(dateBans, 'one-argument Date construction is no longer banned for ' + file).toContain('arguments.length=1');
+        }
     });
 
     /*
@@ -331,4 +409,29 @@ describe('the rules the rewrite must not lose', () => {
             'the main process is where electron is supposed to be imported.'
         ).toBe(0);
     });
+});
+
+describe('SHARED-03: calendar dates go through src/shared/utils/date.ts', () => {
+    it('exempts date.ts from the date bans and keeps CUSTODY-03 there', async () => {
+        const syntax = await ruleEntry('src/shared/utils/date.ts', 'no-restricted-syntax');
+        expect(severityOf(syntax), 'no-restricted-syntax is not at error for date.ts').toBe(ERROR);
+        expect(JSON.stringify(syntax), 'the date.ts block dropped CUSTODY-03').toContain(CUSTODY_03_TEXT);
+        expect(JSON.stringify(syntax), 'date.ts is not exempt from the date bans').not.toContain(DATE_MESSAGE);
+    });
+
+    it('reports every banned shape and no allowed one in a TypeScript file', async () => {
+        const header = ['declare const d: Date;', 'declare const s: string;', 'declare const parts: [number, number];'];
+        const banned = [...BANNED_DATE_SHAPES, 'new Date(s as string);'];
+        const { missed, flagged } = await probe(TS_PROBE_FILE, header, banned, ALLOWED_DATE_SHAPES, isDateBan);
+        expect(missed, 'banned date shapes the TypeScript lint let through').toEqual([]);
+        expect(flagged, 'allowed date shapes the TypeScript lint reported').toEqual([]);
+    }, 60_000);
+
+    it.each(KNOWN_GAPS)('inventories the known gap $code', async (gap) => {
+        const { flagged } = await probe(gap.file, gap.header, [], [gap.code], gap.matches);
+        expect(
+            flagged,
+            gap.code + ' is now reported, so "' + gap.why + '" no longer holds - move it into the banned shapes'
+        ).toEqual([]);
+    }, 60_000);
 });

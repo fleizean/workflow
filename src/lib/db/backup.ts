@@ -40,6 +40,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type DatabaseType from 'better-sqlite3';
+import { utcIsoTimestamp } from '@shared/utils/date';
 
 /*
  * The four v1.2.1 tables, as a constant tuple of literals declared here.
@@ -229,7 +230,7 @@ export async function backupDatabase(
 
     fs.mkdirSync(backupDir, { recursive: true });
 
-    const stamp = now.toISOString().replace(/[:.]/g, '-');
+    const stamp = utcIsoTimestamp(now).replace(/[:.]/g, '-');
     const backupPath = path.join(backupDir, path.basename(sourcePath) + '.' + stamp + '.bak');
     if (fs.existsSync(backupPath)) {
         throw new Error(

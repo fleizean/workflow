@@ -51,6 +51,11 @@ import {
     readV121Ddl,
     schemaOf
 } from './fixtures/seed';
+import { instantFromEpochMs } from '@shared/utils/date';
+
+function at(h: number, m: number, s: number): Date {
+    return instantFromEpochMs(Date.UTC(2026, 8, 6, h, m, s));
+}
 
 afterAll(() => {
     cleanupFixtures();
@@ -533,8 +538,8 @@ describe('src/lib/db/backup.ts module contract', () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
 
-        const first = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
-        const second = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:01.000Z') });
+        const first = await backupDatabase(fx, dir, { now: at(10, 0, 0) });
+        const second = await backupDatabase(fx, dir, { now: at(10, 0, 1) });
 
         expect(path.basename(first.backupPath)).toBe('krono.db.2026-09-06T10-00-00-000Z.bak');
         expect(first.backupPath).not.toBe(second.backupPath);
@@ -544,7 +549,7 @@ describe('src/lib/db/backup.ts module contract', () => {
     it('refuses a destination that already exists and leaves it byte-identical', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
-        const now = new Date('2026-09-06T10:00:00.000Z');
+        const now = at(10, 0, 0);
 
         const first = await backupDatabase(fx, dir, { now });
         const digestBefore = sha256(first.backupPath);
@@ -582,7 +587,7 @@ describe('src/lib/db/backup.ts module contract', () => {
     it('aborts a backup that exceeds its wall-clock deadline and leaves no partial file', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
-        const now = new Date('2026-09-06T10:00:00.000Z');
+        const now = at(10, 0, 0);
 
         await expect(backupDatabase(fx, dir, { now, deadlineMs: 0 })).rejects.toThrow(/deadline/i);
 
@@ -622,8 +627,8 @@ describe('src/lib/db/backup.ts module contract', () => {
     it('never deletes the newest backup, whatever retention count it is given', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
-        const newest = await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:02.000Z') });
-        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
+        const newest = await backupDatabase(fx, dir, { now: at(10, 0, 2) });
+        await backupDatabase(fx, dir, { now: at(10, 0, 0) });
 
         expect(DEFAULT_RETAINED_BACKUPS).toBe(3);
         for (const keep of [0, -1]) {
@@ -855,7 +860,7 @@ describe('backup retention', () => {
         const byStamp = new Map<string, string>();
         for (const stamp of order) {
             const made = await backupDatabase(fx, dir, {
-                now: new Date('2026-09-06T' + stamp + '.000Z')
+                now: at(10, 0, Number(stamp.slice(-2)))
             });
             byStamp.set(stamp, made.backupPath);
         }
@@ -880,8 +885,8 @@ describe('backup retention', () => {
     it('ignores files that are not backups it wrote', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
-        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:00.000Z') });
-        await backupDatabase(fx, dir, { now: new Date('2026-09-06T10:00:01.000Z') });
+        await backupDatabase(fx, dir, { now: at(10, 0, 0) });
+        await backupDatabase(fx, dir, { now: at(10, 0, 1) });
 
         const stranger = path.join(dir, 'notes.txt');
         fs.writeFileSync(stranger, 'not mine\n');
