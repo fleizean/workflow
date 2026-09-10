@@ -134,13 +134,78 @@ function isDatabaseSpecifier(fromFile: string, specifier: string): boolean {
     if (specifier === DRIVER || specifier.startsWith(DRIVER + '/')) {
         return true;
     }
-    if (specifier.startsWith('.')) {
-        const target = path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier));
+    const target = resolveSpecifier(fromFile, specifier);
+    if (target !== undefined) {
         return target === DATABASE_LAYER_DIR || target.startsWith(DATABASE_LAYER_DIR + '/');
     }
-    // A path alias would bypass the relative resolution above; match its tail instead.
-    return /(^|\/)lib\/db(\/|$)/.test(specifier);
+    // An alias the build config does not define: match the tail, counting `@` as a boundary (WR-02).
+    return /(^|[/@])lib\/db(\/|$)/.test(specifier);
 }
+
+/** The repository path a relative or main-aliased specifier names, or undefined for a package. */
+function resolveSpecifier(fromFile: string, specifier: string): string | undefined {
+    if (specifier.startsWith('.')) {
+        return path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier));
+    }
+    for (const [alias, target] of MAIN_ALIASES) {
+        if (specifier === alias || specifier.startsWith(alias + '/')) {
+            return path.posix.normalize(target + specifier.slice(alias.length));
+        }
+    }
+    return undefined;
+}
+
+const VITE_CONFIG = 'electron.vite.config.ts';
+
+const propertyNameText = (name: ts.PropertyName | undefined): string | undefined =>
+    name !== undefined && (ts.isIdentifier(name) || ts.isStringLiteral(name)) ? name.text : undefined;
+
+// WR-02: the main target's aliases, read from the build config so the gate resolves what the build
+// resolves. A shape this reader does not know fails loudly instead of silently resolving nothing.
+function readMainAliases(): Map<string, string> {
+    const sourceFile = ts.createSourceFile(VITE_CONFIG, read(VITE_CONFIG), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const unreadable = (what: string): Error =>
+        new Error(VITE_CONFIG + ': ' + what + '; teach readMainAliases in tests/lock-ordering.test.ts this shape');
+    const objectAt = (object: ts.ObjectLiteralExpression, name: string): ts.ObjectLiteralExpression | undefined => {
+        if (object.properties.some(ts.isSpreadAssignment)) {
+            throw unreadable('a spread sits beside `' + name + '`');
+        }
+        const property = object.properties.find((p) => propertyNameText(p.name) === name);
+        if (property === undefined) {
+            return undefined;
+        }
+        if (!ts.isPropertyAssignment(property) || !ts.isObjectLiteralExpression(property.initializer)) {
+            throw unreadable('`' + name + '` is not a plain object literal');
+        }
+        return property.initializer;
+    };
+
+    const calls = findAll(sourceFile, (n): n is ts.CallExpression =>
+        ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'defineConfig');
+    const config = calls[0]?.arguments[0];
+    if (calls.length !== 1 || config === undefined || !ts.isObjectLiteralExpression(config)) {
+        throw unreadable('expected exactly one defineConfig({ ... }) call');
+    }
+    const main = objectAt(config, 'main');
+    const resolveBlock = main === undefined ? undefined : objectAt(main, 'resolve');
+    const alias = resolveBlock === undefined ? undefined : objectAt(resolveBlock, 'alias');
+
+    const aliases = new Map<string, string>();
+    for (const property of alias?.properties ?? []) {
+        const key = propertyNameText(property.name);
+        const value = ts.isPropertyAssignment(property) ? property.initializer : undefined;
+        const target = value !== undefined && ts.isCallExpression(value)
+            ? value.arguments[value.arguments.length - 1]
+            : undefined;
+        if (key === undefined || target === undefined || !ts.isStringLiteral(target)) {
+            throw unreadable('alias `' + property.getText(sourceFile) + '` is not `key: resolve(..., \'dir\')`');
+        }
+        aliases.set(key, path.posix.normalize(target.text));
+    }
+    return aliases;
+}
+
+const MAIN_ALIASES = readMainAliases();
 
 /** Whether `node` executes while its module is being loaded, rather than when a function runs. */
 function runsAtModuleLoad(node: ts.Node): boolean {
@@ -168,7 +233,7 @@ interface RuntimeImport {
  * A dynamic import() is not eager and is deliberately not listed - that is the sanctioned way to
  * reach the database layer after the lock.
  */
-function eagerImports(sourceFile: ts.SourceFile): RuntimeImport[] {
+function eagerImports(sourceFile: ts.SourceFile, includeLoadTimeImportCalls = false): RuntimeImport[] {
     const found: RuntimeImport[] = [];
     const add = (literal: ts.Expression | undefined): void => {
         if (literal !== undefined && ts.isStringLiteral(literal)) {
@@ -190,8 +255,12 @@ function eagerImports(sourceFile: ts.SourceFile): RuntimeImport[] {
         }
     }
     const visit = (node: ts.Node): void => {
-        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
-            node.expression.text === 'require' && runsAtModuleLoad(node)) {
+        // WR-02: an import() at load time in a module the entry imports runs before the entry's lock.
+        const isRequire = ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
+            node.expression.text === 'require';
+        const isImportCall = includeLoadTimeImportCalls && ts.isCallExpression(node) &&
+            node.expression.kind === ts.SyntaxKind.ImportKeyword;
+        if ((isRequire || isImportCall) && runsAtModuleLoad(node)) {
             add(node.arguments[0]);
         }
         ts.forEachChild(node, visit);
@@ -202,9 +271,12 @@ function eagerImports(sourceFile: ts.SourceFile): RuntimeImport[] {
 
 const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs', '/index.ts'];
 
-/** Resolves a relative specifier to a repository file, or undefined if none exists. */
-function resolveRelative(fromFile: string, specifier: string): string | undefined {
-    const base = path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier));
+/** Resolves a relative or main-aliased specifier to a repository file, or undefined if none exists. */
+function resolveModuleFile(fromFile: string, specifier: string): string | undefined {
+    const base = resolveSpecifier(fromFile, specifier);
+    if (base === undefined) {
+        return undefined;
+    }
     for (const candidate of [base, ...RESOLVE_EXTENSIONS.map((ext) => base + ext)]) {
         const abs = path.join(repoRoot, candidate);
         if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
@@ -228,12 +300,12 @@ function eagerChainsToDatabase(entry: string): string[] {
         }
         seen.add(file);
         const sourceFile = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-        for (const { specifier } of eagerImports(sourceFile)) {
+        for (const { specifier } of eagerImports(sourceFile, file !== entry)) {
             const step = [...trail, file + " imports '" + specifier + "'"];
             if (isDatabaseSpecifier(file, specifier)) {
                 chains.push(step.join(' -> '));
-            } else if (specifier.startsWith('.')) {
-                const next = resolveRelative(file, specifier);
+            } else {
+                const next = resolveModuleFile(file, specifier);
                 if (next !== undefined) {
                     walk(next, step);
                 }
@@ -244,8 +316,8 @@ function eagerChainsToDatabase(entry: string): string[] {
     return chains;
 }
 
-/** Nodes of `sourceFile` matching `predicate`, in source order. */
-function findAll<T extends ts.Node>(sourceFile: ts.SourceFile, predicate: (n: ts.Node) => n is T): T[] {
+/** Nodes under `root` (itself included) matching `predicate`, in source order. */
+function findAll<T extends ts.Node>(root: ts.Node, predicate: (n: ts.Node) => n is T): T[] {
     const found: T[] = [];
     const visit = (node: ts.Node): void => {
         if (predicate(node)) {
@@ -253,7 +325,7 @@ function findAll<T extends ts.Node>(sourceFile: ts.SourceFile, predicate: (n: ts
         }
         ts.forEachChild(node, visit);
     };
-    visit(sourceFile);
+    visit(root);
     return found;
 }
 
@@ -263,6 +335,59 @@ const isLockCall = (node: ts.Node): node is ts.CallExpression =>
     node.expression.name.text === 'requestSingleInstanceLock';
 
 const LOCK_CALL = /\.\s*requestSingleInstanceLock\s*\(/;
+
+// The only module whose functions may run before the lock: the development userData policy.
+const PRE_LOCK_MODULE = 'src/main/userdata-path';
+
+// WR-02: text order is not execution order - a hoisted function called above the lock runs first.
+// So above the lock only declarations may appear, and the only calls allowed go into PRE_LOCK_MODULE.
+function preLockViolations(fileName: string, sourceFile: ts.SourceFile): string[] {
+    const lockIndex = sourceFile.statements.findIndex((statement) =>
+        findAll(statement, isLockCall).some((call) => runsAtModuleLoad(call)));
+    if (lockIndex < 0) {
+        return ['no top-level requestSingleInstanceLock call'];
+    }
+    const allowed = new Set<string>();
+    for (const statement of sourceFile.statements) {
+        const bindings = ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) &&
+            resolveSpecifier(fileName, statement.moduleSpecifier.text) === PRE_LOCK_MODULE
+            ? statement.importClause?.namedBindings
+            : undefined;
+        if (bindings !== undefined && ts.isNamedImports(bindings)) {
+            bindings.elements.forEach((element) => allowed.add(element.name.text));
+        }
+    }
+
+    const violations: string[] = [];
+    const at = (node: ts.Node): string => 'line ' +
+        String(sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1) + ': ' +
+        (node.getText(sourceFile).split('\n')[0] ?? '');
+    const inspect = (node: ts.Node): void => {
+        if (ts.isFunctionLike(node)) {
+            return; // a body runs only when called, and the call is what this looks for
+        }
+        if (ts.isCallExpression(node)) {
+            if (!(ts.isIdentifier(node.expression) && allowed.has(node.expression.text))) {
+                violations.push('calls ' + at(node));
+            }
+        } else if (ts.isNewExpression(node) || ts.isTaggedTemplateExpression(node) || ts.isAwaitExpression(node)) {
+            violations.push('evaluates ' + at(node));
+        }
+        ts.forEachChild(node, inspect);
+    };
+    for (const statement of sourceFile.statements.slice(0, lockIndex)) {
+        if (ts.isImportDeclaration(statement) || ts.isFunctionDeclaration(statement) ||
+            ts.isInterfaceDeclaration(statement) || ts.isTypeAliasDeclaration(statement)) {
+            continue;
+        }
+        if (ts.isVariableStatement(statement) || ts.isIfStatement(statement) || ts.isExpressionStatement(statement)) {
+            inspect(statement);
+        } else {
+            violations.push('cannot prove inert ' + at(statement));
+        }
+    }
+    return violations;
+}
 
 describe('the analysis itself: comments and strings never reach the analysed text', () => {
     it('blanks line, block and JSDoc comments, strings, templates and regex literals, keeping offsets', () => {
@@ -299,11 +424,44 @@ describe('the analysis itself: comments and strings never reach the analysed tex
         expect(isDatabaseSpecifier(ENTRY, '../lib/db')).toBe(true);
         expect(isDatabaseSpecifier(ENTRY, DRIVER)).toBe(true);
         expect(isDatabaseSpecifier(ENTRY, '@/lib/db/client')).toBe(true);
+        // WR-02: the alias electron.vite.config.ts actually defines for the main target.
+        expect(isDatabaseSpecifier(ENTRY, '@lib/db/client')).toBe(true);
+        expect(isDatabaseSpecifier(ENTRY, '@lib/db')).toBe(true);
         // Prose that merely mentions them, and modules that are not the database layer.
         expect(isDatabaseSpecifier(ENTRY, 'the lock precedes ../lib/db/client')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, 'better-sqlite3 is loaded later')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, './userdata-path')).toBe(false);
+        expect(isDatabaseSpecifier(ENTRY, '@main/userdata-path')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, 'electron')).toBe(false);
+    });
+
+    it('resolves the main target aliases from the build config itself (WR-02)', () => {
+        expect(MAIN_ALIASES.size, VITE_CONFIG + ' defines main aliases, but the reader found none').toBeGreaterThan(0);
+        expect(resolveSpecifier(ENTRY, '@lib/db/client'), 'the @lib alias no longer resolves through ' + VITE_CONFIG)
+            .toBe('src/lib/db/client');
+    });
+
+    it('flags code that runs above the lock, wherever that code is written (WR-02)', () => {
+        const parse = (lines: string[]): ts.SourceFile =>
+            ts.createSourceFile(ENTRY, lines.join('\n'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const head = [
+            "import { app } from 'electron';",
+            "import { applyDevelopmentUserDataPath } from './userdata-path';",
+            "const FLAG = '--smoke';",
+            'if (!app.isPackaged) { applyDevelopmentUserDataPath(app); }'
+        ];
+        const lock = 'const holdsInstanceLock = app.requestSingleInstanceLock();';
+        const warmUp = "async function warmUp() { await import('../lib/db/client'); }";
+
+        expect(preLockViolations(ENTRY, parse([...head, lock, 'void warmUp();', warmUp]))).toEqual([]);
+        // The bypass the review found: the hoisted function is written after the lock, called before it.
+        expect(preLockViolations(ENTRY, parse([...head, 'void warmUp();', lock, warmUp])))
+            .toEqual(['calls line 5: warmUp()']);
+        expect(preLockViolations(ENTRY, parse([...head, 'const ready = app.whenReady();', lock])))
+            .toEqual(['calls line 5: app.whenReady()']);
+        expect(preLockViolations(ENTRY, parse([...head, 'if (!app.isPackaged) { applyDevelopmentUserDataPath(warmUp()); }', lock, warmUp])))
+            .toEqual(['calls line 5: warmUp()']);
+        expect(preLockViolations(ENTRY, parse(head))).toEqual(['no top-level requestSingleInstanceLock call']);
     });
 });
 
@@ -356,6 +514,22 @@ describe('BUILD-03 / D-15: the single-instance lock is acquired before the datab
         ).toEqual([]);
         expect(eagerChainsToDatabase(ENTRY), 'eager import chains reaching the database layer. ' + TWO_PROCESSES)
             .toEqual([]);
+    });
+
+    it('executes nothing above the lock except calls into ' + PRE_LOCK_MODULE + ' (WR-02)', () => {
+        expect(
+            preLockViolations(ENTRY, sourceFile),
+            ENTRY + ': code above the lock runs before it, wherever the code it calls is written. ' + TWO_PROCESSES
+        ).toEqual([]);
+    });
+
+    it('keeps ' + PRE_LOCK_MODULE + ', whose functions run before the lock, clear of the database layer (WR-02)', () => {
+        const file = PRE_LOCK_MODULE + '.ts';
+        const { strings } = stripCommentsAndStrings(file, read(file));
+        expect(
+            strings.filter((s) => isDatabaseSpecifier(file, s.value)).map((s) => s.value),
+            file + ' names the database layer, and it runs before the lock. ' + TWO_PROCESSES
+        ).toEqual([]);
     });
 });
 
