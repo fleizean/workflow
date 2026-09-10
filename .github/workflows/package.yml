@@ -1,0 +1,217 @@
+name: Package
+
+# BUILD-10 / D-17: build the installers the way they will actually ship - Windows and macOS, x64
+# and arm64, four artifacts - launch the two the runners can execute, and prove what got packaged.
+#
+# Exactly three triggers, and the two that are missing are missing on purpose.
+#   pull_request       nothing merges without four packaged artifacts and two smoke launches.
+#   workflow_dispatch  a manual run from the Actions tab, on any ref.
+#   workflow_call      release.yml reuses this workflow as its build job, so the pull-request path
+#                      and the tag path share one matrix definition and cannot drift apart.
+#
+# NOT on a branch push. BUILD-10 asks that CI builds the artifacts and fails when one is missing;
+# gating pull requests, tags and dispatches satisfies that before anything merges or ships, and
+# keeps branch pushes fast on the phase with the most commits. verify.yml still runs on every push.
+#
+# NOT on a version tag either - the non-obvious half. release.yml already fires on a v* tag and
+# reaches this workflow through its `uses:` delegation. A tag trigger here as well would start this
+# workflow twice for one tag, once directly and once through the release: eight packaging legs
+# instead of four, with two sets of uploads racing under identical artifact names. The tag path
+# exists; it arrives through release.yml, which is its single source.
+#
+# A separate file rather than a pull-request trigger added to release.yml, also on purpose:
+# release.yml's tag-or-dispatch-only trigger is the control surface CUSTODY-01 rests on, and adding
+# a pull-request trigger to a workflow that contains a release job would widen exactly what Phase 1
+# narrowed.
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+# Read-only. This workflow builds and uploads workflow artifacts; it never publishes anything.
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: package (${{ matrix.os }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    # The smoke launch carries its own 90-second backstop; this bounds everything else on a runner
+    # that hangs, so a stuck leg fails instead of holding a pull request open for six hours.
+    timeout-minutes: 45
+    strategy:
+      # A macOS failure must not hide a green Windows build, or the reverse. macOS is verified by CI
+      # alone - no macOS hardware exists - so its legs have to report independently.
+      fail-fast: false
+      # Four legs declared explicitly rather than as an os x arch cross product, so that each leg
+      # carries its own build script, artifact expectation and smoke decision. There is no timezone
+      # dimension: packaging is timezone-independent, and the three zones stay on verify.yml -
+      # 3 x 2 OS x 2 arch buys no signal over 3 + (2 x 2) (D-19).
+      #
+      # macOS is two explicit legs because macos-latest is an arm64 runner: a build without an
+      # explicit architecture produces arm64 only and silently drops the Intel Mac users who have
+      # v1.2.1 installed today. And two separate disk images rather than one universal binary: a
+      # universal build has to merge two archives holding two different better-sqlite3 native
+      # addons, which needs merge and architecture-file tuning and is the one place the prebuild
+      # story gets hard. Two images sidestep it entirely.
+      #
+      # smoke says whether the runner can execute what the leg built. An arm64 Windows binary cannot
+      # run on the x64 windows-latest runner, and this workflow will not claim to have executed an
+      # x64 macOS binary on the arm64 macos-latest runner, so those two legs build, assert and
+      # upload but do not launch - and print why.
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            script: build:win
+            artifact_glob: dist/*-x64-setup.exe
+            unpacked_dir: dist/win-unpacked
+            smoke: true
+            smoke_skip_reason: ''
+          - os: windows-latest
+            arch: arm64
+            script: build:win:arm64
+            artifact_glob: dist/*-arm64-setup.exe
+            unpacked_dir: dist/win-arm64-unpacked
+            smoke: false
+            smoke_skip_reason: an arm64 Windows binary cannot execute on the x64 windows-latest runner
+          - os: macos-latest
+            arch: x64
+            script: build:mac
+            artifact_glob: dist/*-x64.dmg
+            unpacked_dir: dist/mac
+            smoke: false
+            smoke_skip_reason: macos-latest is an arm64 runner, and this workflow does not claim to have executed an x64 macOS binary
+          - os: macos-latest
+            arch: arm64
+            script: build:mac:arm64
+            artifact_glob: dist/*-arm64.dmg
+            unpacked_dir: dist/mac-arm64
+            smoke: true
+            smoke_skip_reason: ''
+    # bash on both operating systems (Git Bash on Windows), so every step below reads its inputs
+    # from env the same way and the glob expansion behaves identically on all four legs.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # D-20: checkout and setup-node are first-party GitHub actions on mutable major tags, on @v5 as in verify.yml; the SHA pinning of the third-party release action is deliberately not required of them.
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          # npm ci and the build run thousands of third-party lifecycle and build scripts, and
+          # nothing after this step needs git credentials. Do not leave the token in .git/config.
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'          # matches verify.yml and .nvmrc
+          cache: 'npm'
+
+      # The cheap guard, before npm ci. A smoke leg executes its own build, so the runner has to be
+      # the architecture the leg built for. If GitHub ever moves windows-latest or macos-latest to
+      # another architecture, this fails in seconds with the reason, instead of the smoke step later
+      # reporting a missing binary that reads like a packaging failure.
+      - name: Prove the runner can execute this leg's build
+        if: matrix.smoke
+        env:
+          LEG_ARCH: ${{ matrix.arch }}
+        run: |
+          runner_arch=$(node -p process.arch)
+          if [ "$runner_arch" != "$LEG_ARCH" ]; then
+            echo "::error::this runner is $runner_arch but the leg smoke-launches an $LEG_ARCH build. Move the smoke launch to the leg whose architecture matches the runner, or it proves nothing."
+            exit 1
+          fi
+          echo "RUNNER_ARCH_OK $runner_arch"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Type check, electron-vite build, then electron-builder for this leg's platform and
+      # architecture. Every build script carries --publish never (plan 02-01), so a tag build cannot
+      # publish around release.yml's draft-only gate.
+      - name: Build and package (${{ matrix.os }}, ${{ matrix.arch }})
+        env:
+          # macOS legs only. The project ships unsigned this milestone (electron-builder.yml sets
+          # mac.identity: null); without this switch electron-builder attempts keychain identity
+          # discovery on the runner and fails the step. Empty on Windows, where it has nothing to do.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ runner.os == 'macOS' && 'false' || '' }}
+          LEG_SCRIPT: ${{ matrix.script }}
+        run: npm run "$LEG_SCRIPT"
+
+      # BUILD-07, on the output this leg just built. tests/renderer-build-output.test.ts reads out/
+      # and skips loudly when there is no build, and verify.yml does not build - so without this
+      # step the CSP and no-remote-resource checks never run in CI at all.
+      # WORKFLOW_REQUIRE_BUILD_OUTPUT=1 turns a missing build into a failure instead of a skip.
+      - name: Prove the built renderer carries its CSP and loads nothing remote (BUILD-07)
+        env:
+          WORKFLOW_REQUIRE_BUILD_OUTPUT: '1'
+        run: npx vitest run tests/renderer-build-output.test.ts
+
+      # BUILD-10: a green build that produced nothing is a failure. Expand this leg's artifact glob
+      # and fail, with the reason, unless it matched exactly one installer of plausible size. An
+      # Electron installer is tens of megabytes; a few kilobytes means a stub or a truncated write.
+      # The upload step's if-no-files-found is the belt to these braces - it cannot tell an empty
+      # file, or a second stray match, from a real installer.
+      - name: Assert this leg produced exactly one plausible installer
+        env:
+          ARTIFACT_GLOB: ${{ matrix.artifact_glob }}
+          MIN_ARTIFACT_BYTES: '20000000'
+        run: |
+          shopt -s nullglob
+          # Unquoted on purpose: the glob has to expand. nullglob makes no match an empty array.
+          matches=( $ARTIFACT_GLOB )
+          if [ "${#matches[@]}" -ne 1 ]; then
+            echo "::error::expected exactly one file matching $ARTIFACT_GLOB, found ${#matches[@]}: ${matches[*]:-none}"
+            ls -la dist || true
+            exit 1
+          fi
+          bytes=$(wc -c < "${matches[0]}" | tr -d ' ')
+          if [ "$bytes" -lt "$MIN_ARTIFACT_BYTES" ]; then
+            echo "::error::${matches[0]} is $bytes bytes, below the $MIN_ARTIFACT_BYTES-byte floor - not a plausible installer"
+            exit 1
+          fi
+          echo "ARTIFACT_OK ${matches[0]} $bytes bytes"
+
+      # BUILD-08, on the artifact rather than on electron-builder.yml: every packaged path is read
+      # from the archive's own header and checked against the allowlist, and the region unpacked
+      # from the archive may hold better-sqlite3 alone. Runs on all four legs, including the two
+      # that nothing executes.
+      - name: Assert the packaged app holds only allowlisted files (BUILD-08)
+        env:
+          UNPACKED_DIR: ${{ matrix.unpacked_dir }}
+        run: node tools/ci/assert-package-contents.mjs "$UNPACKED_DIR"
+
+      # BUILD-06 / D-18: launch the packaged build this leg produced and prove it opens a database
+      # through the app's own path - on the two legs whose build this runner can execute. This is
+      # the only macOS runtime signal the milestone will ever produce: no macOS hardware exists, so
+      # this launch stands in for it, and it is the only mechanism that can catch a macOS-specific
+      # asarUnpack path bug. electron-builder leaves the unpacked app beside the installer, and the
+      # harness resolves it from the runner's own platform and architecture
+      # (dist/win-unpacked/Workflow.exe, dist/mac-arm64/Workflow.app/Contents/MacOS/Workflow).
+      # It launches with a fresh temporary userData directory, an injected database path inside it,
+      # and a child environment scrubbed of ELECTRON_RUN_AS_NODE and NODE_OPTIONS. None of that may
+      # be relaxed to make a runner happy.
+      - name: Launch the packaged app and open a database (BUILD-06)
+        if: matrix.smoke
+        run: node tools/smoke-packaged.mjs
+
+      # A skip that prints its reason is a different thing from a check that silently did nothing.
+      # These two artifacts are built, size-checked and allowlist-checked, and never executed.
+      - name: Smoke launch skipped on a cross-architecture leg
+        if: ${{ !matrix.smoke }}
+        env:
+          LEG: ${{ matrix.os }} ${{ matrix.arch }}
+          SKIP_REASON: ${{ matrix.smoke_skip_reason }}
+        run: |
+          echo "::notice::SMOKE_SKIPPED ($LEG): $SKIP_REASON. The artifact was built, size-checked and allowlist-checked, but nothing executed it."
+          echo "SMOKE_SKIPPED $LEG - $SKIP_REASON"
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v4
+        with:
+          # Named after operating system and architecture, so release.yml can ask for all four by name.
+          name: ${{ matrix.os }}-${{ matrix.arch }}-build
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error       # a green build that produced nothing is a failure
