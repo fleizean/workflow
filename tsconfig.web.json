@@ -15,7 +15,11 @@
         "allowSyntheticDefaultImports": true,
         "isolatedModules": true,
         "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true
+        "skipLibCheck": true,
+        "paths": {
+            "@renderer/*": ["./src/renderer/src/*"],
+            "@shared/*": ["./src/shared/*"]
+        }
     },
     "include": [
         "src/renderer/src/**/*",

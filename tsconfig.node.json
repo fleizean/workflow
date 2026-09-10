@@ -14,7 +14,12 @@
         "allowSyntheticDefaultImports": true,
         "isolatedModules": true,
         "forceConsistentCasingInFileNames": true,
-        "skipLibCheck": true
+        "skipLibCheck": true,
+        "paths": {
+            "@main/*": ["./src/main/*"],
+            "@lib/*": ["./src/lib/*"],
+            "@shared/*": ["./src/shared/*"]
+        }
     },
     "include": [
         "src/main/**/*",
