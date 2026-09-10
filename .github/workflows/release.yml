@@ -96,7 +96,9 @@ jobs:
         uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           # tag_name defaults to github.ref_name; on workflow_dispatch from a branch it must be given.
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}-manual', github.run_number) }}
+          # WR-03: `manual-` so publishing the draft cannot re-match `v*`; the new tag targets the built commit.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
           draft: true                    # D-06 - a human promotes it
           prerelease: false
           make_latest: false             # drafts cannot be "latest" anyway; state it explicitly
