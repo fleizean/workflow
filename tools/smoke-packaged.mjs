@@ -179,6 +179,14 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         typeof f.SMOKE_PRELOAD_VERSION === 'string' && f.SMOKE_PRELOAD_VERSION !== '',
         'reported ' + JSON.stringify(f.SMOKE_PRELOAD_VERSION));
 
+    // WR-01: the page must not be able to leave its own CSP-bearing document.
+    check('window.open from the page was refused and opened no window',
+        f.SMOKE_WINDOW_OPEN_BLOCKED === 'true',
+        'reported ' + JSON.stringify(f.SMOKE_WINDOW_OPEN_BLOCKED));
+    check('a top-level navigation away from the renderer was refused',
+        f.SMOKE_NAVIGATION_BLOCKED === 'true',
+        'reported ' + JSON.stringify(f.SMOKE_NAVIGATION_BLOCKED));
+
     return checks;
 }
 

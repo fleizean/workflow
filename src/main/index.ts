@@ -32,9 +32,10 @@
  * someone launches it by hand.
  */
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, type WebContents } from 'electron';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { applyDevelopmentUserDataPath } from './userdata-path';
 
 const SMOKE_FLAG = '--smoke';
@@ -51,6 +52,9 @@ const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
 const SMOKE_EXIT_FALLBACK_MS = 3_000;
+// WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
+const SMOKE_ESCAPE_URL = 'https://example.invalid/';
+const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 
 // Step 2: development builds get their own userData directory before anything else happens.
 if (!app.isPackaged) {
@@ -64,6 +68,11 @@ if (!holdsInstanceLock) {
     // Another instance owns this userData directory and therefore its database. Leave now.
     app.quit();
 } else {
+    // WR-01: registered before any window exists, so every web contents gets the guard.
+    app.on('web-contents-created', (_event, contents) => {
+        hardenWebContents(contents);
+    });
+
     app.on('window-all-closed', () => {
         if (process.platform !== 'darwin') {
             app.quit();
@@ -146,11 +155,71 @@ function createMainWindow(options: { show: boolean }): BrowserWindow {
  * which is bug Y8 at main.js line 62.
  */
 function loadRenderer(win: BrowserWindow): Promise<void> {
-    const devServerUrl = process.env[RENDERER_URL_ENV];
-    if (!app.isPackaged && devServerUrl !== undefined && devServerUrl !== '') {
+    const devServerUrl = rendererDevServerUrl();
+    if (devServerUrl !== undefined) {
         return win.loadURL(devServerUrl);
     }
-    return win.loadFile(join(__dirname, '../renderer/index.html'));
+    return win.loadFile(rendererIndexPath());
+}
+
+function rendererDevServerUrl(): string | undefined {
+    const devServerUrl = process.env[RENDERER_URL_ENV];
+    return !app.isPackaged && devServerUrl !== undefined && devServerUrl !== '' ? devServerUrl : undefined;
+}
+
+function rendererIndexPath(): string {
+    return join(__dirname, '../renderer/index.html');
+}
+
+// WR-01: a navigation leaves the meta CSP behind while the preload bridge stays exposed, so only the
+// renderer's own document may load. HashRouter routes are same-document and never raise will-navigate.
+function hardenWebContents(contents: WebContents): void {
+    contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    contents.on('will-navigate', (event) => {
+        if (!isAppUrl(event.url)) {
+            event.preventDefault();
+        }
+    });
+    contents.on('will-redirect', (event) => {
+        if (!isAppUrl(event.url)) {
+            event.preventDefault();
+        }
+    });
+    contents.on('will-attach-webview', (event) => {
+        event.preventDefault();
+    });
+}
+
+/** The dev server's origin in an unpackaged dev run, otherwise exactly the built index.html. */
+function isAppUrl(url: string): boolean {
+    let target: URL;
+    try {
+        target = new URL(url);
+    } catch {
+        return false;
+    }
+    const devServerUrl = rendererDevServerUrl();
+    if (devServerUrl !== undefined) {
+        try {
+            return target.origin === new URL(devServerUrl).origin;
+        } catch {
+            return false;
+        }
+    }
+    if (target.protocol !== 'file:') {
+        return false;
+    }
+    let targetPath: string;
+    try {
+        // Search and hash are not part of the path, so a route or query on the app page still matches.
+        targetPath = fileURLToPath(target);
+    } catch {
+        return false;
+    }
+    const expected = resolve(rendererIndexPath());
+    const actual = resolve(targetPath);
+    // NTFS compares paths case-insensitively, and Chromium may spell the drive letter differently.
+    return process.platform === 'win32' ? actual.toLowerCase() === expected.toLowerCase() : actual === expected;
 }
 
 interface SmokeOutcome {
@@ -237,6 +306,17 @@ async function runSmoke(): Promise<SmokeOutcome> {
         if (version === '') {
             return fail('the sandboxed preload did not expose window.' + SHELL_BRIDGE_KEY);
         }
+
+        // WR-01: the guard installed on every web contents, exercised from inside the page.
+        const containment = await probeContainment(win);
+        lines.push('SMOKE_WINDOW_OPEN_BLOCKED=' + String(containment.windowOpenBlocked));
+        lines.push('SMOKE_NAVIGATION_BLOCKED=' + String(containment.navigationBlocked));
+        if (!containment.windowOpenBlocked) {
+            return fail('window.open from the page was not refused');
+        }
+        if (!containment.navigationBlocked) {
+            return fail('a navigation to ' + SMOKE_ESCAPE_URL + ' was not refused');
+        }
     } catch (error) {
         return fail('renderer: ' + describeError(error));
     } finally {
@@ -262,6 +342,41 @@ async function waitForRendererText(win: BrowserWindow): Promise<string> {
         await new Promise((done) => setTimeout(done, SMOKE_POLL_INTERVAL_MS));
     }
     return text;
+}
+
+// WR-01: both scripts carry a user gesture so only the guard, never a popup blocker, can refuse; the
+// navigation is read from the guard's own decision, since a refused one and one in flight look alike.
+async function probeContainment(win: BrowserWindow): Promise<{ windowOpenBlocked: boolean; navigationBlocked: boolean }> {
+    const windowsBefore = BrowserWindow.getAllWindows().length;
+    const openedNothing: unknown = await win.webContents.executeJavaScript(
+        'window.open(' + JSON.stringify(SMOKE_ESCAPE_URL) + ') === null', true
+    );
+    const windowOpenBlocked = openedNothing === true && BrowserWindow.getAllWindows().length === windowsBefore;
+
+    const urlBefore = win.webContents.getURL();
+    const decision = new Promise<boolean>((done) => {
+        const timer = setTimeout(() => {
+            win.webContents.off('will-navigate', observe);
+            done(false);
+        }, SMOKE_NAVIGATION_TIMEOUT_MS);
+        // Registered after the guard (web-contents-created ran when the window was constructed),
+        // so the guard has already decided by the time this listener runs.
+        function observe(event: Electron.Event<Electron.WebContentsWillNavigateEventParams>): void {
+            clearTimeout(timer);
+            win.webContents.off('will-navigate', observe);
+            done(event.defaultPrevented);
+        }
+        win.webContents.on('will-navigate', observe);
+    });
+    // Deferred, so this script returns before the page starts leaving.
+    await win.webContents.executeJavaScript(
+        'setTimeout(() => { location.href = ' + JSON.stringify(SMOKE_ESCAPE_URL) + '; }, 0); true', true
+    );
+    const prevented = await decision;
+    await new Promise((done) => setTimeout(done, SMOKE_POLL_INTERVAL_MS * 5));
+    const stillApp = win.webContents.getURL() === urlBefore &&
+        (await waitForRendererText(win)).includes(RENDERER_MARKER_TEXT);
+    return { windowOpenBlocked, navigationBlocked: prevented && stillApp };
 }
 
 /** Writes the report and exits only once stdout has flushed it; pipes are asynchronous on macOS. */
