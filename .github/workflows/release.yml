@@ -15,6 +15,25 @@ jobs:
   verify:
     uses: ./.github/workflows/verify.yml
 
+  # WR-04: installer names and app.getVersion() come from package.json, so a tag must match it.
+  version-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Tag must equal v<package.json version>
+        if: github.ref_type == 'tag'
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json ($expected) - the installers would carry the wrong version"
+            exit 1
+          fi
+          echo "VERSION_GATE_OK $GITHUB_REF_NAME"
+
   # BUILD-10 / D-17: building is delegated to the packaging workflow instead of being carried here
   # as a second matrix. One definition, in package.yml, is what keeps the four legs - Windows and
   # macOS, x64 and arm64 - from drifting apart between the pull-request path and this tag path. The
@@ -23,7 +42,7 @@ jobs:
   #
   # D-20: the checkout and setup-node steps this job used to carry now live in package.yml, on @v5. They are first-party actions on mutable major tags; the commit-hash pinning applied to the third-party release action below is deliberately not required of them.
   build:
-    needs: verify
+    needs: [verify, version-gate]
     uses: ./.github/workflows/package.yml
 
   release:
