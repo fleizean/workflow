@@ -15,9 +15,27 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    # BUILD-11 / D-16: three zones, chosen as a floor rather than a sample. The requirement is at
+    # least one DST-observing zone with a negative UTC offset (America/New_York) and at least one
+    # non-DST zone with a positive offset (Europe/Istanbul); UTC is the reference zone, where the
+    # local and UTC dates never disagree. Europe/Istanbul is the author's own zone and the one
+    # where the date-bug class this milestone closes (B6-B10, the Sheets row misalignment) is
+    # invisible - Turkey has observed no DST since 2016 - so three is the minimum that satisfies
+    # BUILD-11. The matrix multiplies zones, not operating systems: no date behaviour under test
+    # is platform-specific. It stays on this job and is deliberately not multiplied into
+    # packaging, which is timezone-independent - 3 x 2 OS x 2 arch buys no signal over
+    # 3 + (2 x 2) (D-19). fail-fast is off so one zone's failure cannot hide another's.
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: ['UTC', 'America/New_York', 'Europe/Istanbul']
+    # Job-level, so every step in a leg inherits the zone rather than each step setting it.
+    env:
+      TZ: ${{ matrix.tz }}
     steps:
+      # D-20: checkout and setup-node are first-party GitHub actions on mutable major tags, moved @v4 -> @v5 off the deprecated Node 20 runtime; the SHA pinning of the third-party release action is deliberately not required of them.
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # D-03 backstop. .gitignore already excludes these patterns, so this step exists to
       # catch a deliberate 'git add -f'. A real krono.db pushed to a public repository is
@@ -51,10 +69,52 @@ jobs:
           fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '24'          # Node 20 is EOL 2026-03-24 (C9). See .nvmrc.
           cache: 'npm'
+
+      # BUILD-11: prove this leg really runs in its matrix zone before anything expensive happens.
+      # A leg whose TZ never reached the runtime runs every date test in the runner's default zone
+      # and still passes green, reporting coverage it does not have - worse than no matrix at all.
+      # The expected zone is passed separately from the job-level TZ, so deleting or mistyping that
+      # env block fails here instead of being compared against itself. Builtins only, so it runs
+      # before npm ci and fails in seconds, for the same reason the two guards above are early.
+      - name: Prove the matrix timezone is the one the runtime uses
+        env:
+          EXPECTED_TZ: ${{ matrix.tz }}
+        run: node tools/ci/assert-timezone.mjs "$EXPECTED_TZ"
+
+      # BUILD-02: strict mode is why this project is TypeScript at all - the audit's critical bugs
+      # are compile-time-detectable - so switching it off must fail the gate, not pass silently.
+      # Parsed as JSON rather than searched as text: a textual gate in this repository has already
+      # matched prose instead of code, and both split configs are comment-free by contract precisely
+      # so that JSON.parse can read them. tests/tsconfig-strict.test.ts asserts the same property;
+      # this is the cheap duplicate, placed before npm ci where it costs seconds.
+      - name: Fail if strict or noImplicitAny is off in either split tsconfig
+        run: |
+          node -e "
+            const fs = require('fs');
+            let failed = false;
+            for (const file of ['tsconfig.node.json', 'tsconfig.web.json']) {
+              let options;
+              try {
+                options = JSON.parse(fs.readFileSync(file, 'utf8')).compilerOptions || {};
+              } catch (error) {
+                console.log('::error file=' + file + '::cannot be parsed as JSON (' + error.message + '); the split configs are comment-free by contract so this gate can read them');
+                failed = true;
+                continue;
+              }
+              for (const flag of ['strict', 'noImplicitAny']) {
+                if (options[flag] !== true) {
+                  console.log('::error file=' + file + '::' + flag + ' is ' + JSON.stringify(options[flag]) + ' - it must be literally true (BUILD-02)');
+                  failed = true;
+                }
+              }
+            }
+            if (failed) process.exit(1);
+            console.log('TSCONFIG_STRICT_OK tsconfig.node.json tsconfig.web.json');
+          "
 
       # The --ignore-scripts bridge and its expiry guard were removed here, together, by plan
       # 01-07. They existed because better-sqlite3@9.6.0 shipped no prebuild, so its install
@@ -113,6 +173,8 @@ jobs:
       # and the binding that actually loads is one of the shipped prebuilds. If a platform ever
       # lacks a prebuild, or force_build is set, node-gyp emits .o files and
       # build/Release/better_sqlite3.node and the first check fails.
+      #
+      # Phase 2 (plan 02-05, D-21) reviewed this comment and the step below and preserved both unchanged.
       - name: Assert better-sqlite3 loads a shipped prebuild, with nothing compiled locally
         run: |
           test -d node_modules/better-sqlite3/prebuilds || {
@@ -152,6 +214,8 @@ jobs:
         run: npm run lint
 
       # D-10: the gate is lint + type check + unit tests, each able to fail the job.
+      # `npm run typecheck` chains typecheck:node and typecheck:web (plan 02-01), so this one step
+      # covers both halves of the tsconfig split.
       - name: Type check
         run: npm run typecheck
 
