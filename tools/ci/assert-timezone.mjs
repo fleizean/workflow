@@ -89,6 +89,7 @@ export function runtimeProbe(env = process.env) {
     return {
         resolvedZone: String(Intl.DateTimeFormat().resolvedOptions().timeZone),
         tzVariable: env.TZ,
+        // eslint-disable-next-line no-restricted-syntax -- UTC instant, not a calendar day (BUILD-11 zone probe)
         offsetAt: (instant) => new Date(instant).getTimezoneOffset()
     };
 }
@@ -132,7 +133,9 @@ export function checkTimezone(expectedZone, probe = runtimeProbe()) {
         results.push({
             label: 'offsets',
             ok: january === documented.january && july === documented.july,
+            // eslint-disable-next-line no-restricted-syntax -- UTC instant, not a calendar day (BUILD-11 zone probe)
             detail: new Date(JANUARY_INSTANT).toISOString() + ' -> ' + january + ' min (expected ' +
+                // eslint-disable-next-line no-restricted-syntax -- UTC instant, not a calendar day (BUILD-11 zone probe)
                 documented.january + '); ' + new Date(JULY_INSTANT).toISOString() + ' -> ' + july +
                 ' min (expected ' + documented.july + ')'
         });

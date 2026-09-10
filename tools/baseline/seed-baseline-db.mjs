@@ -130,6 +130,7 @@ export function formatLocalDate(date) {
 /* The Monday of the week containing `date`, matching getThisWeekTotal()'s Sunday-is-day-7 rule. */
 export function mondayOf(date) {
     const dayOfWeek = date.getDay();
+    // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
     const monday = new Date(date);
     monday.setDate(date.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
     monday.setHours(0, 0, 0, 0);
@@ -137,6 +138,7 @@ export function mondayOf(date) {
 }
 
 export function addDays(date, days) {
+    // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
     const out = new Date(date);
     out.setDate(out.getDate() + days);
     return out;
@@ -175,6 +177,7 @@ export function addDays(date, days) {
  * both is correct.
  */
 export function seedDates(now = new Date()) {
+    // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
     const today = new Date(now);
     today.setHours(0, 0, 0, 0);
     const lastMonday = addDays(mondayOf(today), -7);
@@ -442,6 +445,7 @@ export function resolveVendored(requestUrl, index = readVendorIndex()) {
 
 async function fetchVendor() {
     const assets = [];
+    // eslint-disable-next-line no-restricted-syntax -- vendor download stamp is a UTC instant
     const downloadedAt = new Date().toISOString().slice(0, 10);
 
     const get = async (url) => {
@@ -678,7 +682,9 @@ function selfTest() {
             todayTotal >= Number(SETTINGS.daily_target),
             `${todayTotal} s vs target ${SETTINGS.daily_target} s`
         );
+        // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
         const thisMonday = mondayOf(new Date(now));
+        // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
         const inThisWeek = dates.lastWeek.filter((d) => new Date(`${d}T00:00:00`) >= thisMonday);
         check(
             'no historical session falls inside the current calendar week',

@@ -33,6 +33,11 @@ const DATE_BANS = [
     'ObjectPattern > Property[key.name=/^(toISOString|getUTCFullYear|getUTCMonth|getUTCDate|getUTCDay)$/]',
     "VariableDeclarator[init.name='Date'] > ObjectPattern > Property[key.name='parse']"
 ].map((selector) => ({ selector, message: DATE_MESSAGE }));
+const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js', 'src/renderer/shared.js', 'src/renderer/timer.js'];
+const FROZEN_DATE_EXEMPT = ['google-apps-script.gs'];
+
+const PROCESS_ENV = { object: 'process', property: 'env', message: 'Read configuration from src/main/config.ts (D-23).' };
+const PROCESS_ARGV = { object: 'process', property: 'argv', message: 'Read launch flags from src/main/config.ts (D-23).' };
 
 module.exports = [
     // .claude/, .gsd/ and .planning/ hold the gitignored GSD runtime, not this repository's source.
@@ -112,7 +117,7 @@ module.exports = [
         files: ['**/*.js', '**/*.cjs', '**/*.mjs', '**/*.gs'],
         rules: {
             'no-restricted-properties': ['error', ...CUSTODY_02],
-            'no-restricted-syntax': ['error', CUSTODY_03]
+            'no-restricted-syntax': ['error', CUSTODY_03, ...DATE_BANS]
         }
     },
     // The sanctioned home of the date constructs keeps CUSTODY-03 alone (D-13).
@@ -120,6 +125,26 @@ module.exports = [
         files: ['src/shared/utils/date.ts'],
         rules: {
             'no-restricted-syntax': ['error', CUSTODY_03]
+        }
+    },
+    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them); the Apps Script is frozen by the brief.
+    {
+        files: [...LEGACY_DATE_EXEMPT, ...FROZEN_DATE_EXEMPT],
+        rules: {
+            'no-restricted-syntax': ['error', CUSTODY_03]
+        }
+    },
+    {
+        files: ['src/**/*.ts', 'src/**/*.mts', 'src/**/*.cts', 'src/**/*.tsx'],
+        rules: {
+            'no-restricted-properties': ['error', ...CUSTODY_02, PROCESS_ENV, PROCESS_ARGV]
+        }
+    },
+    // The one sanctioned env/argv reader restates CUSTODY-02 alone (D-23).
+    {
+        files: ['src/main/config.ts'],
+        rules: {
+            'no-restricted-properties': ['error', ...CUSTODY_02]
         }
     },
     // src/lib and src/shared must load in plain Node under Vitest. A /** glob only adds rules to files an

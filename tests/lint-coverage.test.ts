@@ -170,7 +170,28 @@ const ruleEntry = async (rel: string, rule: string): Promise<unknown> =>
 const CUSTODY_03_TEXT = 'copyFileSync|cp|cpSync|rename|renameSync';
 const DATE_MESSAGE = 'Calendar dates go through src/shared/utils/date.ts (SHARED-03).';
 const TS_PROBE_FILE = 'src/main/index.ts';
-const isTsFile = (file: string): boolean => /\.(ts|mts|cts|tsx)$/.test(file);
+// Never written to disk; any .mjs path lints without a TypeScript program.
+const JS_PROBE_FILE = 'tools/ci/__date_ban_probe__.mjs';
+
+interface DateExemption {
+    expires: string;
+    why: string;
+}
+
+// Rule-level exemptions from the date bans (D-13), kept apart from EXPIRING_EXCLUSIONS, which lists ignored code.
+const DATE_EXEMPTIONS: Record<string, DateExemption> = {
+    'src/shared/utils/date.ts': { expires: 'permanent', why: 'the sanctioned home of the date constructs (D-05)' },
+    'main.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
+    'database/db.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
+    'src/renderer/shared.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
+    'src/renderer/timer.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
+    'google-apps-script.gs': { expires: 'permanent', why: 'frozen by the brief; runs in the Apps Script project\'s own zone' }
+};
+
+const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, file);
+
+const isConfigBypass = (m: Linter.LintMessage): boolean =>
+    m.ruleId === 'no-restricted-properties' && m.message.endsWith('from src/main/config.ts (D-23).');
 
 interface ProbeVerdict {
     missed: string[];
@@ -235,6 +256,13 @@ const KNOWN_GAPS: KnownGap[] = [
         code: 'new globalThis.Date(s);',
         matches: isDateBan,
         why: 'a syntactic rule cannot see through globalThis to the Date constructor'
+    },
+    {
+        file: 'src/main/window.ts',
+        header: [],
+        code: 'void globalThis.process.env.PATH;',
+        matches: isConfigBypass,
+        why: 'no-restricted-properties matches the object name process, not a property chain ending in it'
     }
 ];
 
@@ -384,7 +412,7 @@ describe('the rules the rewrite must not lose', () => {
             'CUSTODY-03 no longer bans fs copies of a SQLite database for ' + file
         ).toContain('copyFileSync|cp|cpSync|rename|renameSync');
 
-        if (isTsFile(file)) {
+        if (!isDateExempt(file)) {
             const dateBans = JSON.stringify(syntax);
             expect(dateBans, 'the date bans do not resolve for ' + file).toContain(DATE_MESSAGE);
             expect(dateBans, 'toISOString is no longer banned for ' + file).toContain('property.name=\'toISOString\'');
@@ -427,7 +455,92 @@ describe('SHARED-03: calendar dates go through src/shared/utils/date.ts', () => 
         expect(flagged, 'allowed date shapes the TypeScript lint reported').toEqual([]);
     }, 60_000);
 
-    it.each(KNOWN_GAPS)('inventories the known gap $code', async (gap) => {
+    it('reports every banned shape and no allowed one in a JavaScript file', async () => {
+        const header = ['const d = new Date();', 'const s = \'2026-09-10\';', 'const parts = [2026, 8];'];
+        const { missed, flagged } = await probe(JS_PROBE_FILE, header, BANNED_DATE_SHAPES, ALLOWED_DATE_SHAPES, isDateBan);
+        expect(missed, 'banned date shapes the JavaScript lint let through').toEqual([]);
+        expect(flagged, 'allowed date shapes the JavaScript lint reported').toEqual([]);
+    }, 60_000);
+
+    it('resolves the date bans on every linted source file except the inventoried exemptions', async () => {
+        const offenders: string[] = [];
+        let checked = 0;
+        for (const file of repositoryFiles().filter((f) => SOURCE_EXTENSIONS.includes(extensionOf(f)))) {
+            if (await eslint.isPathIgnored(path.join(repoRoot, file))) continue;
+            checked++;
+            const syntax = JSON.stringify(await ruleEntry(file, 'no-restricted-syntax'));
+            const banned = syntax.includes(DATE_MESSAGE);
+            if (!syntax.includes(CUSTODY_03_TEXT)) offenders.push(file + ' - CUSTODY-03 does not resolve');
+            if (isDateExempt(file) && banned) offenders.push(file + ' - in DATE_EXEMPTIONS, yet the date bans still apply');
+            if (!isDateExempt(file) && !banned) offenders.push(file + ' - not in DATE_EXEMPTIONS, yet the date bans do not apply');
+        }
+        expect(checked, 'no source file was checked').toBeGreaterThan(0);
+        expect(offenders, 'eslint.config.js and DATE_EXEMPTIONS disagree:\n  ' + offenders.join('\n  ')).toEqual([]);
+    }, 60_000);
+
+    it.each(Object.entries(DATE_EXEMPTIONS))('the date exemption for %s names a file that still exists', (file, ex) => {
+        const gone = ex.expires === 'Phase 7'
+            ? file + ' no longer exists - Phase 7 removed it. Delete it from LEGACY_DATE_EXEMPT in eslint.config.js ' +
+              'and from DATE_EXEMPTIONS here, in this same change.'
+            : file + ' no longer exists, yet it holds a permanent date exemption (' + ex.why + ').';
+        expect(fs.existsSync(path.join(repoRoot, file)), gone).toBe(true);
+    });
+
+    // One directive silences every selector on its line (Pitfall 14), so shipped code is linted with directives off.
+    it('finds no date-ban hit in shipped code with inline configuration disabled', async () => {
+        const strict = new ESLint({ cwd: repoRoot, allowInlineConfig: false });
+        const [control] = await strict.lintText(
+            '// eslint-disable-next-line no-restricted-syntax\nnew Date(process.argv[2]);\n',
+            { filePath: path.join(repoRoot, JS_PROBE_FILE) }
+        );
+        expect(
+            (control?.messages ?? []).some(isDateBan),
+            'allowInlineConfig: false no longer ignores a disable directive, so this pass proves nothing'
+        ).toBe(true);
+
+        const shipped: string[] = [];
+        for (const file of repositoryFiles()) {
+            if (!isUnder(file, 'src') || !SOURCE_EXTENSIONS.includes(extensionOf(file)) || isDateExempt(file)) continue;
+            const abs = path.join(repoRoot, file);
+            if (fs.existsSync(abs) && !(await strict.isPathIgnored(abs))) shipped.push(abs);
+        }
+        const hits = (await strict.lintFiles(shipped)).flatMap((result) =>
+            result.messages.filter(isDateBan).map((m) => path.relative(repoRoot, result.filePath) + ':' + String(m.line)));
+        expect(shipped.length, 'no shipped source file was linted').toBeGreaterThan(0);
+        expect(hits, 'shipped code hides a date-ban hit behind an inline directive; use a date.ts helper').toEqual([]);
+    }, 180_000);
+});
+
+describe('D-23: only src/main/config.ts reads process.env and process.argv', () => {
+    const CONFIG_BYPASS_SHAPES = ['void process.env.PATH;', 'void process[\'env\'];', 'const { env } = process;', 'void process.argv;'];
+
+    it('bans env and argv beside CUSTODY-02 in src/main/window.ts, and lifts only them in config.ts', async () => {
+        const windowRule = JSON.stringify(await ruleEntry('src/main/window.ts', 'no-restricted-properties'));
+        const configRule = JSON.stringify(await ruleEntry('src/main/config.ts', 'no-restricted-properties'));
+        for (const custody of ['"property":"setPath"', '"property":"setName"']) {
+            expect(windowRule, 'CUSTODY-02 lost ' + custody + ' in src/main/window.ts').toContain(custody);
+            expect(configRule, 'CUSTODY-02 lost ' + custody + ' in src/main/config.ts').toContain(custody);
+        }
+        for (const read of ['"property":"env"', '"property":"argv"']) {
+            expect(windowRule, 'src/main/window.ts may read ' + read).toContain(read);
+            expect(configRule, 'src/main/config.ts is banned from ' + read).not.toContain(read);
+        }
+    });
+
+    it('reports every env/argv read outside config.ts', async () => {
+        const { missed, flagged } = await probe('src/main/window.ts', [], CONFIG_BYPASS_SHAPES, ['void process.platform;'], isConfigBypass);
+        expect(missed, 'env/argv reads the lint let through in src/main/window.ts').toEqual([]);
+        expect(flagged, 'the ban reached an unrelated process property').toEqual([]);
+    }, 60_000);
+
+    it('reports none of them in config.ts', async () => {
+        const { flagged } = await probe('src/main/config.ts', [], [], CONFIG_BYPASS_SHAPES, isConfigBypass);
+        expect(flagged, 'config.ts, the one sanctioned reader, is refused its reads').toEqual([]);
+    }, 60_000);
+});
+
+describe('known syntactic gaps', () => {
+    it.each(KNOWN_GAPS)('inventories $code', async (gap) => {
         const { flagged } = await probe(gap.file, gap.header, [], [gap.code], gap.matches);
         expect(
             flagged,

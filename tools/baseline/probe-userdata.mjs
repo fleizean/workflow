@@ -137,6 +137,7 @@ export function fingerprint(file) {
         present: true,
         size: stat.size,
         mtimeMs: stat.mtimeMs,
+        // eslint-disable-next-line no-restricted-syntax -- file mtime is an instant, not a calendar day
         mtimeISO: new Date(stat.mtimeMs).toISOString(),
         sha256: crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
     };
