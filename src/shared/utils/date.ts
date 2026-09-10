@@ -9,6 +9,8 @@ export interface LocalDateParts {
     readonly day: number;
 }
 
+export type WeekBucket = 'thisWeek' | 'lastWeek' | 'older';
+
 // No m flag, so $ cannot match before a trailing newline; no u flag, so \d is ASCII only.
 const LOCAL_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -48,6 +50,47 @@ function describe(value: unknown): string {
     return typeof value;
 }
 
+// Howard Hinnant's days_from_civil / civil_from_days: an integer day serial, 0 = 1970-01-01, no Date involved.
+function dayNumber(parts: LocalDateParts): number {
+    const y = parts.month <= 2 ? parts.year - 1 : parts.year;
+    const era = Math.floor(y / 400);
+    const yoe = y - era * 400;
+    const doy = Math.floor((153 * ((parts.month + 9) % 12) + 2) / 5) + parts.day - 1;
+    const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+    return era * 146097 + doe - 719468;
+}
+
+function fromDayNumber(serial: number): LocalDate {
+    const z = serial + 719468;
+    const era = Math.floor(z / 146097);
+    const doe = z - era * 146097;
+    const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+    const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+    const mp = Math.floor((5 * doy + 2) / 153);
+    const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+    const month = mp < 10 ? mp + 3 : mp - 9;
+    return format(yoe + era * 400 + (month <= 2 ? 1 : 0), month, day);
+}
+
+const MIN_SERIAL = dayNumber({ year: 1, month: 1, day: 1 });
+const MAX_SERIAL = dayNumber({ year: 9999, month: 12, day: 31 });
+
+// The brand is compile-time only; untyped callers reach these functions too.
+function partsOrThrow(value: unknown, fn: string): LocalDateParts {
+    const parts = partsOf(value);
+    if (parts === undefined) throw new Error(fn + ': expected a LocalDate YYYY-MM-DD, got ' + describe(value));
+    return parts;
+}
+
+function serialOf(value: unknown, fn: string): number {
+    return dayNumber(partsOrThrow(value, fn));
+}
+
+// 1 = Monday .. 7 = Sunday; serial 0 was a Thursday.
+function weekdayOf(serial: number): number {
+    return ((serial % 7) + 10) % 7 + 1;
+}
+
 export function isLocalDate(value: unknown): value is LocalDate {
     return partsOf(value) !== undefined;
 }
@@ -71,6 +114,48 @@ export function parseLocalDate(text: string): Date {
     // On a day whose local midnight is skipped this lands at 01:00 of the same day.
     local.setHours(0, 0, 0, 0);
     return local;
+}
+
+export function localDateParts(date: LocalDate): LocalDateParts {
+    return partsOrThrow(date, 'localDateParts');
+}
+
+export function addDays(date: LocalDate, days: number): LocalDate {
+    const start = serialOf(date, 'addDays');
+    if (!Number.isSafeInteger(days)) {
+        throw new Error('addDays: expected a whole number of days, got ' + describe(days));
+    }
+    const serial = start + days;
+    if (serial < MIN_SERIAL || serial > MAX_SERIAL) {
+        throw new Error('addDays: ' + date + ' + ' + String(days) + ' days falls outside 0001-01-01..9999-12-31');
+    }
+    return fromDayNumber(serial);
+}
+
+export function diffDays(later: LocalDate, earlier: LocalDate): number {
+    return serialOf(later, 'diffDays') - serialOf(earlier, 'diffDays');
+}
+
+export function isoWeekday(date: LocalDate): number {
+    return weekdayOf(serialOf(date, 'isoWeekday'));
+}
+
+export function startOfWeek(date: LocalDate): LocalDate {
+    const serial = serialOf(date, 'startOfWeek');
+    return fromDayNumber(serial + 1 - weekdayOf(serial));
+}
+
+export function isSameDay(a: LocalDate, b: LocalDate): boolean {
+    return serialOf(a, 'isSameDay') === serialOf(b, 'isSameDay');
+}
+
+// Total: a date after the current week stays in thisWeek, so no session can vanish from History (D-02).
+export function weekBucketOf(date: LocalDate, today: LocalDate): WeekBucket {
+    const day = serialOf(date, 'weekBucketOf');
+    const now = serialOf(today, 'weekBucketOf');
+    const monday = now + 1 - weekdayOf(now);
+    if (day >= monday) return 'thisWeek';
+    return day >= monday - 7 ? 'lastWeek' : 'older';
 }
 
 /** An instant, never a calendar day (D-05). */
