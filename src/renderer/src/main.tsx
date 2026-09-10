@@ -1,14 +1,14 @@
 /*
- * The renderer bootstrap - deliberately the minimum. No router and no stylesheet yet: the
- * HashRouter shell and the build-time Tailwind pipeline are plan 02-03's. This mounts one element
- * so the packaged smoke launch can prove the bundle loads and runs under the Content-Security-Policy.
+ * The renderer bootstrap - deliberately the minimum. It mounts one element so the packaged smoke
+ * launch can prove the bundle loads and runs under the Content-Security-Policy.
  *
- * The one inline colour exists only so the word is legible against the window's dark background
- * during the manual `npm run dev` check; it goes when plan 02-03's stylesheet lands.
+ * The stylesheet import below is what puts Tailwind's build-time output into the bundle instead of
+ * a CDN fetch. The HashRouter shell replaces the placeholder element in the next step.
  */
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import './styles/globals.css';
 
 const container = document.getElementById('root');
 if (container === null) {
@@ -17,6 +17,6 @@ if (container === null) {
 
 createRoot(container).render(
     <StrictMode>
-        <div style={{ color: '#ffffff' }}>Workflow</div>
+        <div className="font-display dark:text-white">Workflow</div>
     </StrictMode>
 );

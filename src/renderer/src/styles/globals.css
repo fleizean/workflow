@@ -1,0 +1,76 @@
+/* All @import statements must come first. */
+@import "tailwindcss" source(none);
+@import "@fontsource-variable/inter/index.css";
+@import "material-symbols/outlined.css";
+
+/*
+ * src/renderer/src/styles/globals.css - the renderer's one stylesheet, compiled at build time.
+ *
+ * v1.2.1 fetched Tailwind from the Tailwind Play CDN and its two fonts from Google Fonts at runtime
+ * (src/styles/common.css, src/pages/*.html). Offline, every Material Symbol rendered as a literal
+ * word and the layout collapsed (S4), and a remote script origin made any meaningful
+ * Content-Security-Policy impossible (S3). Here Tailwind runs in the Vite build and both font
+ * families come from installed packages: the imports above are resolved by the bundler, which
+ * fingerprints each woff2 and emits it into out/renderer/assets. Never add an absolute remote
+ * address to this file - the CSP in src/renderer/index.html would block it and the icon would
+ * silently vanish.
+ *
+ * Recorded cost, so it is not rediscovered as a surprise: the Material Symbols woff2 is about
+ * 3.97 MB. Subsetting it to the icons the app uses is a deferred item, not this phase's work.
+ */
+
+/* The CDN URL carried ?plugins=forms; dropping it would change how inputs and checkboxes render. */
+@plugin "@tailwindcss/forms";
+
+/*
+ * Explicit scan roots, relative to THIS file. source(none) above disables Tailwind's default scan
+ * of the working directory, so src/main and src/lib are never read for class names.
+ */
+@source "../../index.html";
+@source "../**/*.{ts,tsx}";
+
+/* The v4 spelling of v3's darkMode: 'class' - the app puts `dark` on its html element. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Exactly the tokens src/renderer/tailwind-config.js declared. `static` makes Tailwind emit every
+ * one of them even when no utility uses it yet: the palette is a contract carried over unchanged
+ * from v1.2.1, not something to tree-shake while the routes are still stubs.
+ *
+ * The old borderRadius overrides (DEFAULT .25rem, lg .5rem, xl .75rem, 2xl 1rem, full 9999px)
+ * equal Tailwind's built-in scale and are deliberately not redeclared.
+ */
+@theme static {
+    --color-primary: #13a4ec;
+    --color-background-light: #f6f7f8;
+    --color-background-dark: #101c22;
+    --color-card-light: #ffffff;
+    --color-card-dark: #1a2c35;
+    --color-surface-dark: #1c2a33;
+
+    --font-display: "Inter Variable", "Inter", sans-serif;
+}
+
+/*
+ * v3 -> v4 Preflight compatibility. Tailwind v4 changed two defaults that would alter what the
+ * app renders: the default border colour became currentColor, and buttons lost the pointer cursor.
+ * Both are restored to their v3 values here, because moving from the CDN to a build-time Tailwind
+ * must not change the rendered output.
+ *
+ * Deliberately NOT handled here: the utility-scale renames (rounded, shadow, ring, outline-none)
+ * and the changed ring and placeholder defaults. Those are Phase 7's port and Phase 8's visual diff.
+ */
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
+    }
+
+    button,
+    [role="button"] {
+        cursor: pointer;
+    }
+}
