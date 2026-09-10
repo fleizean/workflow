@@ -374,7 +374,10 @@ describe('inspectPackage - asserts on the artifact, for both platform layouts', 
         expect(inspection.fileCount).toBe(FIXTURE_LISTING.length);
         expect(inspection.totalBytes).toBe(FIXTURE_BYTES);
         expect(inspection.unpackedOnDisk).toEqual([...UNPACKED_ON_DISK].sort());
-        expect(inspection.largest[0]?.path).toBe('out/renderer/index.html');
+        // package.json is the fixture's largest entry at 54 bytes; the list is biggest first.
+        expect(inspection.largest[0]?.path).toBe('package.json');
+        const sizes = inspection.largest.map((entry) => entry.size);
+        expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
         expect(formatReport(inspection)).toMatch(new RegExp('^ALLOWLIST_OK files=' + String(FIXTURE_LISTING.length) + ' bytes=' + String(FIXTURE_BYTES) + ' ', 'm'));
     });
 
