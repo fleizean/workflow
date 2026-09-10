@@ -23,6 +23,9 @@
 *.sh   text eol=lf
 .nvmrc text eol=lf
 
+# Shebang scripts: a CRLF `#!` line breaks Unix `env` and vite's hashbang strip, so vitest can't import them.
+tools/**/*.mjs text eol=lf
+
 # CUSTODY-09 baseline artifacts are written by tools/baseline/inventory.sh, a POSIX shell
 # script, and are re-generated and diffed in Phase 8 to prove behaviour parity. Under the
 # tree-wide `eol=crlf` rule they check out CRLF while the generator writes LF, which leaves
