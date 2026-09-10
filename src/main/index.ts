@@ -74,6 +74,23 @@ if (!holdsInstanceLock) {
         hardenWebContents(contents);
     });
 
+    // WR-07: a second launch quits at the lock above, so this instance surfaces its window instead.
+    app.on('second-instance', () => {
+        if (process.argv.includes(SMOKE_FLAG)) {
+            return; // the smoke window stays hidden
+        }
+        const [win] = BrowserWindow.getAllWindows();
+        if (win === undefined) {
+            showRenderer(createMainWindow({ show: true }));
+            return;
+        }
+        if (win.isMinimized()) {
+            win.restore();
+        }
+        win.show();
+        win.focus();
+    });
+
     app.on('window-all-closed', () => {
         if (process.platform !== 'darwin') {
             app.quit();
