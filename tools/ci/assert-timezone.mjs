@@ -71,7 +71,17 @@ export const JULY_INSTANT = Date.UTC(2026, 6, 15, 12, 0, 0);
 export const ZONE_OFFSETS = Object.freeze({
     'UTC': Object.freeze({ january: 0, july: 0 }),
     'America/New_York': Object.freeze({ january: 300, july: 240 }),
-    'Europe/Istanbul': Object.freeze({ january: -180, july: -180 })
+    'Europe/Istanbul': Object.freeze({ january: -180, july: -180 }),
+    // Zone-sweep rows for tests/date-zone-sweep.test.ts (Phase 3 D-07/D-08), not CI legs.
+    'America/Santiago': Object.freeze({ january: 180, july: 240 }),
+    'Pacific/Kiritimati': Object.freeze({ january: -840, july: -840 }),
+    'Pacific/Pago_Pago': Object.freeze({ january: 660, july: 660 }),
+    'Etc/GMT+12': Object.freeze({ january: 720, july: 720 }),
+    'Asia/Kolkata': Object.freeze({ january: -330, july: -330 }),
+    'Asia/Kathmandu': Object.freeze({ january: -345, july: -345 }),
+    'Australia/Lord_Howe': Object.freeze({ january: -660, july: -630 }),
+    'Pacific/Auckland': Object.freeze({ january: -780, july: -720 }),
+    'Pacific/Chatham': Object.freeze({ january: -825, july: -765 })
 });
 
 /* What the running process actually reports. Injectable so checkTimezone() stays a pure function. */
