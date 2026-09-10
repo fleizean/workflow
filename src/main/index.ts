@@ -36,25 +36,12 @@ import { app, BrowserWindow, type WebContents } from 'electron';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
+import {
+    MAIN_WINDOW, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
+    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, mainConfig
+} from './config';
 import { applyUnpackagedUserDataPath } from './userdata-path';
-
-const SMOKE_FLAG = '--smoke';
-const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
-// Set by `electron-vite dev` to the renderer dev server's address.
-const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
-// The key src/preload/index.ts exposes its placeholder bridge under.
-const SHELL_BRIDGE_KEY = 'workflowShell';
-// The heading the renderer's index route renders (src/renderer/src/routes/Home.tsx); the smoke
-// launch waits for it. The bottom navigation carries the same word, so this proves the React tree
-// mounted - not, on its own, which route resolved.
-const RENDERER_MARKER_TEXT = 'Home';
-const SMOKE_RENDER_TIMEOUT_MS = 20_000;
-const SMOKE_POLL_INTERVAL_MS = 100;
-// If stdout never reports the write as flushed, exit anyway rather than hang.
-const SMOKE_EXIT_FALLBACK_MS = 3_000;
-// WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
-const SMOKE_ESCAPE_URL = 'https://example.invalid/';
-const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 
 // Step 2: before anything else, a development build gets its own userData directory, or the one an
 // explicit --user-data-dir names (WR-06).
@@ -76,7 +63,7 @@ if (!holdsInstanceLock) {
 
     // WR-07: a second launch quits at the lock above, so this instance surfaces its window instead.
     app.on('second-instance', () => {
-        if (process.argv.includes(SMOKE_FLAG)) {
+        if (mainConfig.smoke) {
             return; // the smoke window stays hidden
         }
         const [win] = BrowserWindow.getAllWindows();
@@ -106,7 +93,7 @@ if (!holdsInstanceLock) {
 async function main(): Promise<void> {
     await app.whenReady();
 
-    if (process.argv.includes(SMOKE_FLAG)) {
+    if (mainConfig.smoke) {
         finishSmoke(await runSmoke());
         return;
     }
@@ -148,13 +135,13 @@ function isSupersededNavigation(error: unknown): boolean {
 function createMainWindow(options: { show: boolean }): BrowserWindow {
     const isMac = process.platform === 'darwin';
     return new BrowserWindow({
-        width: 430,
-        height: isMac ? 800 : 932,
+        width: MAIN_WINDOW.width,
+        height: isMac ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height,
         resizable: true,
         frame: false,
         autoHideMenuBar: true,
-        backgroundColor: '#101c22',
-        title: 'Workflow',
+        backgroundColor: MAIN_WINDOW.backgroundColor,
+        title: MAIN_WINDOW.title,
         show: options.show,
         webPreferences: {
             // Resolved from this file's own location, never from the working directory (Y8).
@@ -181,8 +168,7 @@ function loadRenderer(win: BrowserWindow): Promise<void> {
 }
 
 function rendererDevServerUrl(): string | undefined {
-    const devServerUrl = process.env[RENDERER_URL_ENV];
-    return !app.isPackaged && devServerUrl !== undefined && devServerUrl !== '' ? devServerUrl : undefined;
+    return !app.isPackaged ? mainConfig.rendererDevUrl : undefined;
 }
 
 function rendererIndexPath(): string {
@@ -265,7 +251,7 @@ async function runSmoke(): Promise<SmokeOutcome> {
     ];
     const fail = (reason: string): SmokeOutcome => ({ ok: false, lines: [...lines, 'SMOKE_FAIL=' + reason] });
 
-    const dbPath = process.env[SMOKE_DB_ENV];
+    const dbPath = mainConfig.smokeDbPath;
     if (dbPath === undefined || dbPath.trim() === '') {
         return fail(SMOKE_DB_ENV + ' is not set; smoke mode opens only an injected database path');
     }
