@@ -1,44 +1,12 @@
-/*
- * tests/lock-ordering.test.ts
- *
- * The standing proof for BUILD-03 (D-15) and BUILD-04: the single-instance lock is acquired
- * before any database-touching module is loaded, and the database client opens nothing when it is
- * loaded.
- *
- * The failure this prevents is two processes on one SQLite file. v1.2.1 has it today: main.js
- * requires database/db.js on its sixth line, that module opens krono.db at module load (db.js line
- * 10), and a top-level require runs before any lifecycle hook - so a second copy of the app,
- * launched while the first is running, has already opened the user's database before it can find
- * out that it is the second copy and must quit. Two writers on one file is how a SQLite database
- * holding every session a user ever tracked gets corrupted, on a machine the owner cannot reach.
- *
- * WHY THIS IS A STRUCTURAL TEST OVER SOURCE TEXT, NOT A RUNTIME TEST. The main process cannot be
- * imported outside Electron. And D-15 is explicit that the failure is an ORDERING failure, which
- * is invisible to a search for the lock call on its own: the call can be present, correct, and
- * still run after the database has opened. So this file computes two positions and compares them.
- *
- * WHY COMMENTS AND STRING LITERALS ARE REMOVED FIRST. A textual gate in this repository has
- * already matched prose (plan 01-08's module-shape gate matched a comment describing a path
- * accessor), and src/main/index.ts deliberately carries a header explaining why its import order
- * is the contract - a header that, if it named the client module by path, would sit textually
- * ahead of the lock. The removal uses the TypeScript parser rather than a regular expression:
- * comments are trivia and never tokens, and string, template and regular-expression literals are
- * token kinds of their own, so nothing a person writes in prose can land in the analysed text.
- * String literals are removed from that text, and the only strings the test reads back are those
- * whose ENTIRE value is a database-layer module specifier - a module reference, not prose.
- *
- * Each assertion was turned red by a deliberate mutation of src/main/index.ts or
- * src/lib/db/client.ts before this file was committed, and the file restored byte-identically
- * (plan 02-02's SUMMARY records the hashes).
- */
+// BUILD-03 / D-15 and BUILD-04: the single-instance lock is taken before anything loads the database layer, and
+// loading the database client opens nothing. Two processes on one krono.db is how v1.2.1 corrupts it.
 
 import { describe, expect, it } from 'vitest';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import {
+    eagerImports, findAll, read, readAliases, resolveModuleFile, resolveSpecifier, runsAtModuleLoad, scriptKindFor,
+    stripCommentsAndStrings
+} from './helpers/ts-imports';
 
 const ENTRY = 'src/main/index.ts';
 const CLIENT = 'src/lib/db/client.ts';
@@ -53,72 +21,8 @@ const TWO_PROCESSES =
     'krono.db (main.js line 6 -> database/db.js line 10). The single-instance lock must come first ' +
     '(BUILD-03, D-15).';
 
-const read = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
-
-interface StringToken {
-    value: string;
-    start: number;
-}
-
-interface StrippedSource {
-    /** The source with every comment and every string-like literal blanked; offsets unchanged. */
-    code: string;
-    /** Plain string literals, with their values and offsets, recovered from the parser. */
-    strings: StringToken[];
-    sourceFile: ts.SourceFile;
-}
-
-const STRING_LIKE = new Set<ts.SyntaxKind>([
-    ts.SyntaxKind.StringLiteral,
-    ts.SyntaxKind.NoSubstitutionTemplateLiteral,
-    ts.SyntaxKind.TemplateHead,
-    ts.SyntaxKind.TemplateMiddle,
-    ts.SyntaxKind.TemplateTail,
-    ts.SyntaxKind.RegularExpressionLiteral
-]);
-
-const isJsDoc = (node: ts.Node): boolean =>
-    node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode;
-
-/*
- * Removes comments and string literals from TypeScript source, keeping every offset.
- *
- * The output starts as all blanks (line breaks kept, so offsets and line numbers survive) and only
- * the characters of real code tokens are copied back. Comments are never tokens, so they stay
- * blank. JSDoc blocks are attached to the tree as nodes and are skipped explicitly. String-like
- * literals are tokens, but their characters are not copied: their values are handed back
- * separately, so a caller can look for module specifiers without prose inside a string ever
- * appearing as code.
- */
-export function stripCommentsAndStrings(fileName: string, source: string): StrippedSource {
-    const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const out: string[] = source.split('').map((ch) => (ch === '\n' || ch === '\r' ? ch : ' '));
-    const strings: StringToken[] = [];
-
-    const visit = (node: ts.Node): void => {
-        if (isJsDoc(node)) {
-            return;
-        }
-        const children = node.getChildren(sourceFile);
-        if (children.length > 0) {
-            children.forEach(visit);
-            return;
-        }
-        const start = node.getStart(sourceFile);
-        if (STRING_LIKE.has(node.kind)) {
-            if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
-                strings.push({ value: node.text, start });
-            }
-            return;
-        }
-        for (let i = start; i < node.getEnd(); i++) {
-            out[i] = source.charAt(i);
-        }
-    };
-    visit(sourceFile);
-
-    return { code: out.join(''), strings, sourceFile };
-}
+const VITE_CONFIG = 'electron.vite.config.ts';
+const MAIN_ALIASES = readAliases(VITE_CONFIG, ['main', 'resolve', 'alias']);
 
 /*
  * Whether `specifier`, written in `fromFile`, names the database layer or its driver.
@@ -134,156 +38,12 @@ function isDatabaseSpecifier(fromFile: string, specifier: string): boolean {
     if (specifier === DRIVER || specifier.startsWith(DRIVER + '/')) {
         return true;
     }
-    const target = resolveSpecifier(fromFile, specifier);
+    const target = resolveSpecifier(fromFile, specifier, MAIN_ALIASES);
     if (target !== undefined) {
         return target === DATABASE_LAYER_DIR || target.startsWith(DATABASE_LAYER_DIR + '/');
     }
     // An alias the build config does not define: match the tail, counting `@` as a boundary (WR-02).
     return /(^|[/@])lib\/db(\/|$)/.test(specifier);
-}
-
-/** The repository path a relative or main-aliased specifier names, or undefined for a package. */
-function resolveSpecifier(fromFile: string, specifier: string): string | undefined {
-    if (specifier.startsWith('.')) {
-        return path.posix.normalize(path.posix.join(path.posix.dirname(fromFile), specifier));
-    }
-    for (const [alias, target] of MAIN_ALIASES) {
-        if (specifier === alias || specifier.startsWith(alias + '/')) {
-            return path.posix.normalize(target + specifier.slice(alias.length));
-        }
-    }
-    return undefined;
-}
-
-const VITE_CONFIG = 'electron.vite.config.ts';
-
-const propertyNameText = (name: ts.PropertyName | undefined): string | undefined =>
-    name !== undefined && (ts.isIdentifier(name) || ts.isStringLiteral(name)) ? name.text : undefined;
-
-// WR-02: the main target's aliases, read from the build config so the gate resolves what the build
-// resolves. A shape this reader does not know fails loudly instead of silently resolving nothing.
-function readMainAliases(): Map<string, string> {
-    const sourceFile = ts.createSourceFile(VITE_CONFIG, read(VITE_CONFIG), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const unreadable = (what: string): Error =>
-        new Error(VITE_CONFIG + ': ' + what + '; teach readMainAliases in tests/lock-ordering.test.ts this shape');
-    const objectAt = (object: ts.ObjectLiteralExpression, name: string): ts.ObjectLiteralExpression | undefined => {
-        if (object.properties.some(ts.isSpreadAssignment)) {
-            throw unreadable('a spread sits beside `' + name + '`');
-        }
-        const property = object.properties.find((p) => propertyNameText(p.name) === name);
-        if (property === undefined) {
-            return undefined;
-        }
-        if (!ts.isPropertyAssignment(property) || !ts.isObjectLiteralExpression(property.initializer)) {
-            throw unreadable('`' + name + '` is not a plain object literal');
-        }
-        return property.initializer;
-    };
-
-    const calls = findAll(sourceFile, (n): n is ts.CallExpression =>
-        ts.isCallExpression(n) && ts.isIdentifier(n.expression) && n.expression.text === 'defineConfig');
-    const config = calls[0]?.arguments[0];
-    if (calls.length !== 1 || config === undefined || !ts.isObjectLiteralExpression(config)) {
-        throw unreadable('expected exactly one defineConfig({ ... }) call');
-    }
-    const main = objectAt(config, 'main');
-    const resolveBlock = main === undefined ? undefined : objectAt(main, 'resolve');
-    const alias = resolveBlock === undefined ? undefined : objectAt(resolveBlock, 'alias');
-
-    const aliases = new Map<string, string>();
-    for (const property of alias?.properties ?? []) {
-        const key = propertyNameText(property.name);
-        const value = ts.isPropertyAssignment(property) ? property.initializer : undefined;
-        const target = value !== undefined && ts.isCallExpression(value)
-            ? value.arguments[value.arguments.length - 1]
-            : undefined;
-        if (key === undefined || target === undefined || !ts.isStringLiteral(target)) {
-            throw unreadable('alias `' + property.getText(sourceFile) + '` is not `key: resolve(..., \'dir\')`');
-        }
-        aliases.set(key, path.posix.normalize(target.text));
-    }
-    return aliases;
-}
-
-const MAIN_ALIASES = readMainAliases();
-
-/** Whether `node` executes while its module is being loaded, rather than when a function runs. */
-function runsAtModuleLoad(node: ts.Node): boolean {
-    for (let p = node.parent; p !== undefined; p = p.parent) {
-        if (ts.isFunctionLike(p)) {
-            return false;
-        }
-        // An instance field initialiser runs at construction, not at module load.
-        if (ts.isPropertyDeclaration(p) &&
-            !(ts.getCombinedModifierFlags(p) & ts.ModifierFlags.Static)) {
-            return false;
-        }
-    }
-    return true;
-}
-
-interface RuntimeImport {
-    specifier: string;
-    start: number;
-}
-
-/*
- * The module specifiers a file loads, eagerly, while it is itself being loaded: static imports
- * that are not type-only, re-exports, `import x = require()`, and module-scope require() calls.
- * A dynamic import() is not eager and is deliberately not listed - that is the sanctioned way to
- * reach the database layer after the lock.
- */
-function eagerImports(sourceFile: ts.SourceFile, includeLoadTimeImportCalls = false): RuntimeImport[] {
-    const found: RuntimeImport[] = [];
-    const add = (literal: ts.Expression | undefined): void => {
-        if (literal !== undefined && ts.isStringLiteral(literal)) {
-            found.push({ specifier: literal.text, start: literal.getStart(sourceFile) });
-        }
-    };
-    for (const statement of sourceFile.statements) {
-        if (ts.isImportDeclaration(statement)) {
-            if (statement.importClause?.isTypeOnly !== true) {
-                add(statement.moduleSpecifier);
-            }
-        } else if (ts.isExportDeclaration(statement)) {
-            if (!statement.isTypeOnly) {
-                add(statement.moduleSpecifier);
-            }
-        } else if (ts.isImportEqualsDeclaration(statement) &&
-            ts.isExternalModuleReference(statement.moduleReference)) {
-            add(statement.moduleReference.expression);
-        }
-    }
-    const visit = (node: ts.Node): void => {
-        // WR-02: an import() at load time in a module the entry imports runs before the entry's lock.
-        const isRequire = ts.isCallExpression(node) && ts.isIdentifier(node.expression) &&
-            node.expression.text === 'require';
-        const isImportCall = includeLoadTimeImportCalls && ts.isCallExpression(node) &&
-            node.expression.kind === ts.SyntaxKind.ImportKeyword;
-        if ((isRequire || isImportCall) && runsAtModuleLoad(node)) {
-            add(node.arguments[0]);
-        }
-        ts.forEachChild(node, visit);
-    };
-    visit(sourceFile);
-    return found;
-}
-
-const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs', '/index.ts'];
-
-/** Resolves a relative or main-aliased specifier to a repository file, or undefined if none exists. */
-function resolveModuleFile(fromFile: string, specifier: string): string | undefined {
-    const base = resolveSpecifier(fromFile, specifier);
-    if (base === undefined) {
-        return undefined;
-    }
-    for (const candidate of [base, ...RESOLVE_EXTENSIONS.map((ext) => base + ext)]) {
-        const abs = path.join(repoRoot, candidate);
-        if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
-            return candidate;
-        }
-    }
-    return undefined;
 }
 
 /*
@@ -299,13 +59,13 @@ function eagerChainsToDatabase(entry: string): string[] {
             return;
         }
         seen.add(file);
-        const sourceFile = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const sourceFile = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, scriptKindFor(file));
         for (const { specifier } of eagerImports(sourceFile, file !== entry)) {
             const step = [...trail, file + " imports '" + specifier + "'"];
             if (isDatabaseSpecifier(file, specifier)) {
                 chains.push(step.join(' -> '));
             } else {
-                const next = resolveModuleFile(file, specifier);
+                const next = resolveModuleFile(file, specifier, MAIN_ALIASES);
                 if (next !== undefined) {
                     walk(next, step);
                 }
@@ -314,19 +74,6 @@ function eagerChainsToDatabase(entry: string): string[] {
     };
     walk(entry, []);
     return chains;
-}
-
-/** Nodes under `root` (itself included) matching `predicate`, in source order. */
-function findAll<T extends ts.Node>(root: ts.Node, predicate: (n: ts.Node) => n is T): T[] {
-    const found: T[] = [];
-    const visit = (node: ts.Node): void => {
-        if (predicate(node)) {
-            found.push(node);
-        }
-        ts.forEachChild(node, visit);
-    };
-    visit(root);
-    return found;
 }
 
 const isLockCall = (node: ts.Node): node is ts.CallExpression =>
@@ -350,7 +97,7 @@ function preLockViolations(fileName: string, sourceFile: ts.SourceFile): string[
     const allowed = new Set<string>();
     for (const statement of sourceFile.statements) {
         const bindings = ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) &&
-            resolveSpecifier(fileName, statement.moduleSpecifier.text) === PRE_LOCK_MODULE
+            resolveSpecifier(fileName, statement.moduleSpecifier.text, MAIN_ALIASES) === PRE_LOCK_MODULE
             ? statement.importClause?.namedBindings
             : undefined;
         if (bindings !== undefined && ts.isNamedImports(bindings)) {
@@ -437,7 +184,7 @@ describe('the analysis itself: comments and strings never reach the analysed tex
 
     it('resolves the main target aliases from the build config itself (WR-02)', () => {
         expect(MAIN_ALIASES.size, VITE_CONFIG + ' defines main aliases, but the reader found none').toBeGreaterThan(0);
-        expect(resolveSpecifier(ENTRY, '@lib/db/client'), 'the @lib alias no longer resolves through ' + VITE_CONFIG)
+        expect(resolveSpecifier(ENTRY, '@lib/db/client', MAIN_ALIASES), 'the @lib alias no longer resolves through ' + VITE_CONFIG)
             .toBe('src/lib/db/client');
     });
 
