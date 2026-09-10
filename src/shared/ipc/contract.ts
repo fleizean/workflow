@@ -1,6 +1,8 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
-import { DurationSecondsSchema, IdSchema, LocalDateSchema, WorkSessionSchema } from '@shared/schemas';
+import {
+    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, SheetsTargetSchema, WorkSessionSchema
+} from '@shared/schemas';
 import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
 type ChannelName = `${string}:${string}`;
@@ -53,7 +55,28 @@ export const ipcContract = {
     'sessions:create': { input: z.strictObject(sessionFields), output: WorkSessionSchema },
     'sessions:update': { input: z.strictObject({ id: IdSchema, ...sessionFields }), output: WorkSessionSchema },
     'sessions:delete': { input: z.strictObject({ id: IdSchema }), output: z.void() },
-    'sessions:deleteAll': { input: z.void(), output: z.void() }
+    'sessions:deleteAll': { input: z.void(), output: z.void() },
+    'companies:list': { input: z.void(), output: z.array(CompanySchema) },
+    'companies:get': { input: z.strictObject({ id: IdSchema }), output: CompanySchema.nullable() },
+    'companies:create': {
+        input: z.strictObject({ name: z.string().min(1), noteRequired: z.boolean() }),
+        output: CompanySchema
+    },
+    'companies:update': {
+        input: z.strictObject({ id: IdSchema, name: z.string().min(1), noteRequired: z.boolean(), sheets: SheetsTargetSchema }),
+        output: CompanySchema
+    },
+    'companies:updateSheetsTarget': {
+        input: z.strictObject({ id: IdSchema, sheets: SheetsTargetSchema }),
+        output: CompanySchema
+    },
+    // The delete reports how many sessions went with the company (COMP-05).
+    'companies:delete': {
+        input: z.strictObject({ id: IdSchema }),
+        output: z.strictObject({ deletedSessionCount: z.int().nonnegative() })
+    },
+    'settings:get': { input: z.void(), output: SettingsSchema },
+    'settings:update': { input: SettingsSchema.partial(), output: SettingsSchema }
 } as const satisfies ContractMap;
 
 export type IpcContract = typeof ipcContract;

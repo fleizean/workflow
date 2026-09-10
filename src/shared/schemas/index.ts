@@ -21,3 +21,42 @@ export const WorkSessionSchema = z.strictObject({
     // v1.2.1 shows a session's creation time on Work History.
     createdAt: EpochMsSchema
 });
+
+// The Google Sheets target, grouped so the Phase 5 export seam can own it without renaming Company (D-20).
+export const SheetsTargetSchema = z.strictObject({
+    excelColumn: z.string().nullable(),
+    noteColumn: z.string().nullable()
+});
+
+export const CompanySchema = z.strictObject({
+    id: IdSchema,
+    name: z.string().min(1),
+    noteRequired: z.boolean(),
+    sheets: SheetsTargetSchema,
+    // v1.2.1 shows a company's creation date on Companies.
+    createdAt: EpochMsSchema
+});
+
+// No createdAt: v1.2.1 displays no pomodoro record.
+export const PomodoroSessionSchema = z.strictObject({
+    id: IdSchema,
+    date: LocalDateSchema,
+    companyId: IdSchema.nullable(),
+    pomodorosCompleted: z.int().nonnegative()
+});
+
+// Exactly the 12 keys v1.2.1 reads or writes (D-20); the two seeded-but-unread keys stay out.
+export const SettingsSchema = z.strictObject({
+    dailyTargetSeconds: z.int().positive(),
+    goalNotification: z.boolean(),
+    excludeWeekendsFromStreak: z.boolean(),
+    pomodoroEnabled: z.boolean(),
+    pomodoroWorkSeconds: z.int().positive(),
+    pomodoroShortBreakSeconds: z.int().positive(),
+    pomodoroLongBreakSeconds: z.int().positive(),
+    pomodoroSessionsUntilLongBreak: z.int().positive(),
+    pomodoroAutoStartBreaks: z.boolean(),
+    pomodoroAutoStartWork: z.boolean(),
+    exportHalfHourPrecision: z.boolean(),
+    scriptUrl: z.string()
+});
