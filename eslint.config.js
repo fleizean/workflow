@@ -3,6 +3,7 @@
 const globals = require('globals');
 const js = require('@eslint/js');
 const tseslint = require('typescript-eslint');
+const { builtinModules } = require('node:module');
 
 const CUSTODY_02 = [
     {
@@ -38,6 +39,35 @@ const FROZEN_DATE_EXEMPT = ['google-apps-script.gs'];
 
 const PROCESS_ENV = { object: 'process', property: 'env', message: 'Read configuration from src/main/config.ts (D-23).' };
 const PROCESS_ARGV = { object: 'process', property: 'argv', message: 'Read launch flags from src/main/config.ts (D-23).' };
+
+const ELECTRON_MESSAGE = 'src/lib and src/shared must stay loadable in plain Node under Vitest - inject the dependency instead of importing electron.';
+const ELECTRON_PATHS = [{ name: 'electron', message: ELECTRON_MESSAGE }];
+const ELECTRON_PATTERNS = [{ group: ['electron/*'], message: ELECTRON_MESSAGE }];
+
+const SHARED_LAYER_MESSAGE = 'src/shared is the bottom layer: no main/lib/preload/renderer, no node builtins, no electron, no database driver (D-15).';
+const SHARED_LAYER_PATHS = [
+    ...ELECTRON_PATHS,
+    { name: 'better-sqlite3', message: SHARED_LAYER_MESSAGE },
+    ...builtinModules.map((name) => ({ name, message: SHARED_LAYER_MESSAGE }))
+];
+const SHARED_LAYER_PATTERNS = [
+    ...ELECTRON_PATTERNS,
+    { regex: '^node:', message: SHARED_LAYER_MESSAGE },
+    { regex: '^(\\.\\./)+(main|lib|preload|renderer)(/|$)', message: SHARED_LAYER_MESSAGE },
+    { regex: '^@(main|lib|renderer)(/|$)', message: SHARED_LAYER_MESSAGE }
+];
+
+const ZOD_TYPE_ONLY_MESSAGE = 'zod is value-imported only in src/shared/schemas and src/shared/ipc; use import type here (SHARED-07).';
+const ZOD_TYPE_ONLY_PATH = { name: 'zod', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true };
+const ZOD_BEARING_SHARED_PATTERNS = [
+    { regex: '^@shared/(schemas|ipc)(/|$)', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true },
+    { regex: '(^|/)shared/(schemas|ipc)(/|$)', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true }
+];
+// allowTypeImports accepts an all-inline `import { type X }`, which still loads the module; these two refuse it (Pitfall 5).
+const TYPE_IMPORT_RULES = {
+    '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports', fixStyle: 'separate-type-imports' }],
+    '@typescript-eslint/no-import-type-side-effects': 'error'
+};
 
 module.exports = [
     // .claude/, .gsd/ and .planning/ hold the gitignored GSD runtime, not this repository's source.
@@ -147,21 +177,32 @@ module.exports = [
             'no-restricted-properties': ['error', ...CUSTODY_02]
         }
     },
-    // src/lib and src/shared must load in plain Node under Vitest. A /** glob only adds rules to files an
-    // extension block already matched, so .sql and .json stay out of lint.
+    // A /** glob only adds rules to files an extension block already matched, so .sql, .json and .css stay out of lint.
+    // src/lib keeps node:fs, node:path and the driver; only src/shared gets the layer bans (Pitfall 2).
     {
-        files: ['src/lib/**', 'src/shared/**'],
+        files: ['src/lib/**'],
         rules: {
-            'no-restricted-imports': ['error', {
-                paths: [{
-                    name: 'electron',
-                    message: 'src/lib and src/shared must stay loadable in plain Node under Vitest - inject the dependency instead of importing electron.'
-                }],
-                patterns: [{
-                    group: ['electron/*'],
-                    message: 'src/lib and src/shared must stay loadable in plain Node under Vitest - inject the dependency instead of importing electron.'
-                }]
-            }]
+            'no-restricted-imports': ['error', { paths: ELECTRON_PATHS, patterns: ELECTRON_PATTERNS }]
+        }
+    },
+    {
+        files: ['src/shared/**'],
+        rules: {
+            'no-restricted-imports': ['error', { paths: SHARED_LAYER_PATHS, patterns: SHARED_LAYER_PATTERNS }]
+        }
+    },
+    {
+        files: ['src/shared/utils/**', 'src/shared/constants/**', 'src/shared/types/**'],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': ['error', { paths: [ZOD_TYPE_ONLY_PATH] }],
+            ...TYPE_IMPORT_RULES
+        }
+    },
+    {
+        files: ['src/renderer/src/**'],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': ['error', { paths: [ZOD_TYPE_ONLY_PATH], patterns: ZOD_BEARING_SHARED_PATTERNS }],
+            ...TYPE_IMPORT_RULES
         }
     }
 ];

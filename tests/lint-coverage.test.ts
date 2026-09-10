@@ -193,6 +193,8 @@ const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, f
 const isConfigBypass = (m: Linter.LintMessage): boolean =>
     m.ruleId === 'no-restricted-properties' && m.message.endsWith('from src/main/config.ts (D-23).');
 
+const byRule = (...ruleIds: string[]) => (m: Linter.LintMessage): boolean => m.ruleId !== null && ruleIds.includes(m.ruleId);
+
 interface ProbeVerdict {
     missed: string[];
     flagged: string[];
@@ -437,6 +439,15 @@ describe('the rules the rewrite must not lose', () => {
             'the main process is where electron is supposed to be imported.'
         ).toBe(0);
     });
+
+    it('keeps node builtins and the driver legal in src/lib and bans them in src/shared', async () => {
+        const lib = JSON.stringify(await ruleEntry('src/lib/db/client.ts', 'no-restricted-imports'));
+        const shared = JSON.stringify(await ruleEntry('src/shared/probe.ts', 'no-restricted-imports'));
+        expect(lib, 'the shared-layer bans reached src/lib, which must import node:* (Pitfall 2)').not.toContain('^node:');
+        expect(lib, 'the shared-layer bans reached src/lib, which must import the driver (Pitfall 2)').not.toContain('"name":"better-sqlite3"');
+        expect(shared, 'src/shared may import node:* builtins (D-15)').toContain('^node:');
+        expect(shared, 'src/shared may import the database driver (D-15)').toContain('"name":"better-sqlite3"');
+    });
 });
 
 describe('SHARED-03: calendar dates go through src/shared/utils/date.ts', () => {
@@ -536,6 +547,49 @@ describe('D-23: only src/main/config.ts reads process.env and process.argv', () 
     it('reports none of them in config.ts', async () => {
         const { flagged } = await probe('src/main/config.ts', [], [], CONFIG_BYPASS_SHAPES, isConfigBypass);
         expect(flagged, 'config.ts, the one sanctioned reader, is refused its reads').toEqual([]);
+    }, 60_000);
+});
+
+describe('D-15 and D-14: import boundaries', () => {
+    const SHARED_PROBE_FILE = 'src/shared/utils/date.ts';
+
+    it('refuses upward, node, electron and driver imports in src/shared', async () => {
+        const banned = [
+            'import fs from \'node:fs\';',
+            'import Database from \'better-sqlite3\';',
+            'import { app } from \'electron\';',
+            'import { mainConfig } from \'../../main/config\';',
+            'import { openDatabase } from \'@lib/db/client\';'
+        ];
+        const allowed = ['import type { Settings } from \'@shared/types\';'];
+        const { missed, flagged } = await probe(SHARED_PROBE_FILE, [], banned, allowed, byRule('no-restricted-imports'));
+        expect(missed, 'imports src/shared was allowed to make').toEqual([]);
+        expect(flagged, 'the layer ban refused an import within src/shared').toEqual([]);
+    }, 60_000);
+
+    it('refuses a value import of zod in a renderer-safe shared module', async () => {
+        const { missed, flagged } = await probe(
+            SHARED_PROBE_FILE, [], ['import { z } from \'zod\';'], ['import type { ZodType } from \'zod\';'],
+            byRule('@typescript-eslint/no-restricted-imports')
+        );
+        expect(missed, 'a value import of zod passed in src/shared/utils').toEqual([]);
+        expect(flagged, 'a type-only import of zod was refused in src/shared/utils').toEqual([]);
+    }, 60_000);
+
+    it('lets zod and the zod-bearing shared modules into the renderer only as types', async () => {
+        const banned = [
+            'import { z } from \'zod\';',
+            'import { SettingsSchema } from \'@shared/schemas\';',
+            'import { ipcContract } from \'../../shared/ipc/contract\';',
+            'import { type ZodType } from \'zod\';'
+        ];
+        const allowed = ['import type { ZodType } from \'zod\';', 'import type { Company } from \'@shared/types\';'];
+        const { missed, flagged } = await probe(
+            'src/renderer/src/App.tsx', [], banned, allowed,
+            byRule('@typescript-eslint/no-restricted-imports', '@typescript-eslint/no-import-type-side-effects')
+        );
+        expect(missed, 'value imports that would ship zod to the renderer').toEqual([]);
+        expect(flagged, 'type-only imports the renderer was refused').toEqual([]);
     }, 60_000);
 });
 
