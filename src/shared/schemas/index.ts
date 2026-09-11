@@ -60,3 +60,7 @@ export const SettingsSchema = z.strictObject({
     exportHalfHourPrecision: z.boolean(),
     scriptUrl: z.string()
 });
+
+// Where settings:update may point the export (WR-06): unset, or https to the Apps Script host with no port, credentials
+// or whitespace. Reads keep z.string(), so a stored v1.2.1 value can never make every setting unreadable.
+export const ScriptUrlSchema = z.union([z.literal(''), z.string().regex(/^https:\/\/script\.google\.com\/[\x21-\x7E]*$/)]);

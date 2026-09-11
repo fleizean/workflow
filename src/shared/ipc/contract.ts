@@ -1,7 +1,8 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
 import {
-    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, SheetsTargetSchema, WorkSessionSchema
+    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, ScriptUrlSchema, SettingsSchema, SheetsTargetSchema,
+    WorkSessionSchema
 } from '@shared/schemas';
 import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
@@ -80,7 +81,8 @@ export const ipcContract = {
         output: z.strictObject({ deletedSessionCount: z.int().nonnegative() })
     },
     'settings:get': { input: z.void(), output: SettingsSchema },
-    'settings:update': { input: SettingsSchema.partial(), output: SettingsSchema }
+    // Strict on write, lenient on read (WR-06).
+    'settings:update': { input: SettingsSchema.extend({ scriptUrl: ScriptUrlSchema }).partial(), output: SettingsSchema }
 } as const satisfies ContractMap;
 
 export type IpcContract = typeof ipcContract;

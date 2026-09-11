@@ -24,7 +24,7 @@ const CHANNELS = [
 const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
-    'SettingsSchema', 'SheetsTargetSchema', 'WorkSessionSchema'
+    'ScriptUrlSchema', 'SettingsSchema', 'SheetsTargetSchema', 'WorkSessionSchema'
 ];
 
 const isoOnTheWire: unknown = JSON.parse(JSON.stringify(new Date()));
@@ -255,6 +255,46 @@ describe('WR-05: sessions:deleteAll cannot erase every session by accident', () 
         for (const value of [undefined, {}, { deletedSessionCount: -1 }, { deletedSessionCount: 1.5 }] as unknown[]) {
             expect(output.safeParse(value).success, 'WR-05: deleteAll reported ' + String(JSON.stringify(value))).toBe(false);
         }
+    });
+});
+
+describe('WR-06: settings:update constrains where the export is sent', () => {
+    const update = ipcContract['settings:update'].input;
+    const ACCEPTED_SCRIPT_URLS = [
+        '',
+        'https://script.google.com/macros/s/AKfycbx0/exec',
+        'https://script.google.com/a/macros/example.com/s/AKfycbx0/exec'
+    ];
+    const REJECTED_SCRIPT_URLS: [string, string][] = [
+        ['plaintext http', 'http://script.google.com/macros/s/AKfycbx0/exec'],
+        ['a file URL', 'file:///C:/Users/x/exfil.txt'],
+        ['another host', 'https://attacker.example/macros/s/AKfycbx0/exec'],
+        ['a look-alike host', 'https://script.google.com.attacker.example/exec'],
+        ['credentials before the host', 'https://user@script.google.com/macros/s/AKfycbx0/exec'],
+        ['an explicit port', 'https://script.google.com:8443/macros/s/AKfycbx0/exec'],
+        ['the bare host', 'https://script.google.com'],
+        ['leading whitespace', ' https://script.google.com/macros/s/AKfycbx0/exec'],
+        ['trailing whitespace', 'https://script.google.com/macros/s/AKfycbx0/exec '],
+        ['an embedded tab', 'https://script.google.com/macros/s/AKfy\tcbx0/exec'],
+        ['an embedded newline', 'https://script.google.com/macros/s/AKfy\ncbx0/exec'],
+        ['not a URL', 'not a url']
+    ];
+
+    it.each(ACCEPTED_SCRIPT_URLS)('accepts %j and returns it unchanged', (scriptUrl) => {
+        const parsed = update.safeParse({ scriptUrl });
+        expect(parsed.success, 'WR-06: settings:update refused ' + JSON.stringify(scriptUrl)).toBe(true);
+        expect(parsed.data, 'D-19: the boundary rewrote the value instead of validating it').toEqual({ scriptUrl });
+    });
+
+    it.each(REJECTED_SCRIPT_URLS)('rejects %s', (_label, scriptUrl) => {
+        expect(update.safeParse({ scriptUrl }).success,
+            'WR-06: settings:update would direct every exported session to ' + JSON.stringify(scriptUrl)).toBe(false);
+    });
+
+    it('stays lenient on read, so a stored v1.2.1 value never makes every setting unreadable', () => {
+        const legacy = { ...DEFAULT_SETTINGS, scriptUrl: ' http://legacy.example/exec' };
+        expect(ipcContract['settings:get'].output.safeParse(legacy).success,
+            'WR-06: settings:get refused a legacy scriptUrl, so no setting could be read at all').toBe(true);
     });
 });
 
