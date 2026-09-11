@@ -63,6 +63,8 @@ const ZOD_BEARING_SHARED_PATTERNS = [
     { regex: '^@shared/(schemas|ipc)(/|$)', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true },
     { regex: '(^|/)shared/(schemas|ipc)(/|$)', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true }
 ];
+// Inside src/shared the zod-bearing modules are also reachable as siblings, e.g. '../schemas' (WR-02).
+const ZOD_BEARING_SIBLING_PATTERN = { regex: '^(\\.\\./)+(schemas|ipc)(/|$)', message: ZOD_TYPE_ONLY_MESSAGE, allowTypeImports: true };
 // allowTypeImports accepts an all-inline `import { type X }`, which still loads the module; these two refuse it (Pitfall 5).
 const TYPE_IMPORT_RULES = {
     '@typescript-eslint/consistent-type-imports': ['error', { prefer: 'type-imports', fixStyle: 'separate-type-imports' }],
@@ -194,7 +196,9 @@ module.exports = [
     {
         files: ['src/shared/utils/**', 'src/shared/constants/**', 'src/shared/types/**'],
         rules: {
-            '@typescript-eslint/no-restricted-imports': ['error', { paths: [ZOD_TYPE_ONLY_PATH] }],
+            '@typescript-eslint/no-restricted-imports': ['error', {
+                paths: [ZOD_TYPE_ONLY_PATH], patterns: [...ZOD_BEARING_SHARED_PATTERNS, ZOD_BEARING_SIBLING_PATTERN]
+            }],
             ...TYPE_IMPORT_RULES
         }
     },

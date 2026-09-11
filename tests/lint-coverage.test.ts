@@ -567,13 +567,21 @@ describe('D-15 and D-14: import boundaries', () => {
         expect(flagged, 'the layer ban refused an import within src/shared').toEqual([]);
     }, 60_000);
 
-    it('refuses a value import of zod in a renderer-safe shared module', async () => {
-        const { missed, flagged } = await probe(
-            SHARED_PROBE_FILE, [], ['import { z } from \'zod\';'], ['import type { ZodType } from \'zod\';'],
-            byRule('@typescript-eslint/no-restricted-imports')
-        );
-        expect(missed, 'a value import of zod passed in src/shared/utils').toEqual([]);
-        expect(flagged, 'a type-only import of zod was refused in src/shared/utils').toEqual([]);
+    it('refuses a value import of zod or a zod-bearing module in a renderer-safe shared module', async () => {
+        const banned = [
+            'import { z } from \'zod\';',
+            'import { SettingsSchema } from \'@shared/schemas\';',
+            'import { ipcContract } from \'../ipc/contract\';',
+            'import { LocalDateSchema } from \'../schemas\';'
+        ];
+        const allowed = [
+            'import type { ZodType } from \'zod\';',
+            'import type { IpcContract } from \'../ipc/contract\';',
+            'import type { CompanySchema } from \'@shared/schemas\';'
+        ];
+        const { missed, flagged } = await probe(SHARED_PROBE_FILE, [], banned, allowed, byRule('@typescript-eslint/no-restricted-imports'));
+        expect(missed, 'WR-02: value imports that would ship zod through a renderer-safe shared module').toEqual([]);
+        expect(flagged, 'type-only imports refused in src/shared/utils').toEqual([]);
     }, 60_000);
 
     it('lets zod and the zod-bearing shared modules into the renderer only as types', async () => {
