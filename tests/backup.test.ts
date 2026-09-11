@@ -1,27 +1,5 @@
-/*
- * tests/backup.test.ts
- *
- * Plan 01-07 creates this file with the FIXTURE-INVARIANT block only. Plan 01-08 adds the
- * backup and restore blocks to this same file, which is what binds the validation strategy's
- * per-requirement commands to real tests.
- *
- * Reading order, because the blocks are not independent. The fixture invariants come first and
- * everything below them is worthless without them; then the module contract of
- * src/lib/db/backup.ts; then the three requirement-titled blocks whose titles carry the words
- * the validation strategy's name filters select on - 'uncheckpointed' for CUSTODY-03 and
- * 'restore' for CUSTODY-05.
- *
- * Why the invariants live here rather than beside the generator: the fixture corpus is not an
- * incidental test helper, it is the evidence. CUSTODY-03's whole proof - that fs.copyFileSync
- * is not a backup and db.backup() is - is vacuous unless one fixture holds committed rows that
- * its main database file does not contain. A fixture whose -wal is silently empty passes that
- * proof forever without ever being able to fail it. So the fixture's own properties are asserted
- * first, in the same file as the thing they underwrite.
- *
- * The owner's own machine is the cautionary example: their krono.db-wal is 0 bytes, because the
- * app was closed cleanly. A naive file-copy backup tests green against that database and loses
- * data for a user whose app was killed from the tray.
- */
+// Fixture invariants first (the backup proofs are vacuous without them), then the backup module contract and the
+// CUSTODY-03/04/05 blocks, whose titles the validation strategy's -t filters select on.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -39,6 +17,7 @@ import {
     restoreDatabase,
     verifyBackup
 } from '../src/lib/db/backup';
+import type { BackupVerification } from '../src/lib/db/backup';
 
 import {
     assertWalNonEmpty,
@@ -51,6 +30,7 @@ import {
     readV121Ddl,
     schemaOf
 } from './fixtures/seed';
+import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
 import { instantFromEpochMs } from '@shared/utils/date';
 
 function at(h: number, m: number, s: number): Date {
@@ -59,6 +39,7 @@ function at(h: number, m: number, s: number): Date {
 
 afterAll(() => {
     cleanupFixtures();
+    cleanupLegacyFixtures();
 });
 
 const REAL_SCHEMA = path.resolve(
@@ -893,5 +874,56 @@ describe('backup retention', () => {
 
         expect(pruneBackups(dir, 1)).toHaveLength(1);
         expect(fs.existsSync(stranger)).toBe(true);
+    });
+});
+
+// F1 (DATA-03): v1.0.0-1.2.0 databases have no pomodoro_sessions, and a failed backup means no migration runs (D-22).
+// Counts are restated here, never imported from the generator.
+describe('F1: presence-aware verification on v1.x shapes', () => {
+    it('backs up and verifies a shape-A database, reporting its absent pomodoro_sessions as null', async () => {
+        const fx = buildLegacyFixture('A');
+
+        const result = await backupDatabase(fx, backupDirFor(fx));
+
+        expect(result.verification.integrity).toBe('ok');
+        expect(result.verification.rows).toEqual({
+            companies: 2,
+            work_sessions: 3,
+            settings: 4,
+            pomodoro_sessions: null
+        });
+        expect(result.verification.totalDuration).toBe(9000);
+        expect(verifyBackup(result.backupPath)).toEqual(readDatabaseStats(fx));
+    });
+
+    const counted: BackupVerification = {
+        integrity: 'ok',
+        rows: { companies: 2, work_sessions: 3, settings: 4, pomodoro_sessions: 0 },
+        totalDuration: 9000
+    };
+
+    it('reports a table absent on one side and empty on the other as exactly one mismatch naming it', () => {
+        const absent: BackupVerification = { ...counted, rows: { ...counted.rows, pomodoro_sessions: null } };
+
+        const mismatches = describeVerificationMismatches(counted, absent);
+
+        expect(mismatches).toHaveLength(1);
+        expect(mismatches[0]).toContain('pomodoro_sessions');
+        expect(mismatches[0]).toContain('holds null rows, expected 0');
+    });
+
+    it('names a missing duration without inventing a difference', () => {
+        const noSessions: BackupVerification = {
+            ...counted,
+            rows: { ...counted.rows, work_sessions: null },
+            totalDuration: null
+        };
+
+        const mismatches = describeVerificationMismatches(counted, noSessions);
+
+        expect(mismatches).toEqual([
+            'table "work_sessions" holds null rows, expected 3',
+            'work_sessions sum(duration) is null, expected 9000'
+        ]);
     });
 });
