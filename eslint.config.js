@@ -38,7 +38,6 @@ const DATE_BANS = [
     "VariableDeclarator[init.name='Date'] > ObjectPattern > Property[key.name='parse']"
 ].map((selector) => ({ selector, message: DATE_MESSAGE }));
 const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js', 'src/renderer/shared.js', 'src/renderer/timer.js'];
-const FROZEN_DATE_EXEMPT = ['google-apps-script.gs'];
 
 const PROCESS_ENV = { object: 'process', property: 'env', message: 'Read configuration from src/main/config.ts (D-23).' };
 const PROCESS_ARGV = { object: 'process', property: 'argv', message: 'Read launch flags from src/main/config.ts (D-23).' };
@@ -98,10 +97,7 @@ module.exports = [
                 ...globals.node,
                 ...globals.browser,
                 ...globals.es2021,
-                tailwind: 'readonly',
-                SpreadsheetApp: 'readonly',
-                ContentService: 'readonly',
-                Logger: 'readonly'
+                tailwind: 'readonly'
             }
         },
         rules: {
@@ -162,9 +158,9 @@ module.exports = [
             'no-restricted-syntax': ['error', CUSTODY_03]
         }
     },
-    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them); the Apps Script is frozen by the brief.
+    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them).
     {
-        files: [...LEGACY_DATE_EXEMPT, ...FROZEN_DATE_EXEMPT],
+        files: LEGACY_DATE_EXEMPT,
         rules: {
             'no-restricted-syntax': ['error', CUSTODY_03]
         }

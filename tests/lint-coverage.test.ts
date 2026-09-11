@@ -184,8 +184,7 @@ const DATE_EXEMPTIONS: Record<string, DateExemption> = {
     'main.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
     'database/db.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
     'src/renderer/shared.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'src/renderer/timer.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'google-apps-script.gs': { expires: 'permanent', why: 'frozen by the brief; runs in the Apps Script project\'s own zone' }
+    'src/renderer/timer.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' }
 };
 
 const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, file);
@@ -292,7 +291,6 @@ describe('BUILD-13 / D-04: lint reaches every source file this repository owns',
             'untracked, so its absence means untracked files are invisible - and the newcomer the ' +
             'guard exists to catch would be invisible with them.'
         ).toBe(true);
-        expect(files.includes('google-apps-script.gs'), 'The Apps Script is missing from the enumeration.').toBe(true);
         expect(
             source.some((file) => extensionOf(file) === '.tsx'),
             'No .tsx file in the enumeration - coverage of that extension would be verified vacuously.'
