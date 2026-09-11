@@ -87,6 +87,24 @@ describe('strict parsing (SHARED-01, D-04)', () => {
         expect(() => formatLocalDate('2026-09-05' as unknown as Date), 'SHARED-01: string cast to Date')
             .toThrow(/^formatLocalDate: expected a valid Date/);
     });
+
+    // WR-01: the inside edges, 0001-01-01 and 9999-12-31, round-trip in ACCEPTED above.
+    it('formatLocalDate refuses an instant whose local year falls outside 0001..9999', () => {
+        const yearZero = new Date(2000, 0, 1);
+        yearZero.setFullYear(0, 5, 15);
+        const year10000 = new Date(2000, 0, 1);
+        year10000.setFullYear(10000, 0, 1);
+        const outside: [string, Date][] = [
+            ['year 0', yearZero],
+            ['year 10000', year10000],
+            ['the last valid instant', instantFromEpochMs(8.64e15)],
+            ['the first valid instant', instantFromEpochMs(-8.64e15)]
+        ];
+        for (const [label, instant] of outside) {
+            expect(() => formatLocalDate(instant), 'WR-01: ' + label + ' would mint a LocalDate isLocalDate rejects')
+                .toThrow(/^formatLocalDate: local year -?\d+ falls outside 0001\.\.9999$/);
+        }
+    });
 });
 
 describe('calendar arithmetic (SHARED-02, D-03)', () => {
@@ -241,6 +259,15 @@ describe('instant helpers (D-05)', () => {
             .toThrow(/^instantFromEpochMs: expected a finite number/);
         expect(() => utcIsoTimestamp(new Date(Number.NaN, 0)), 'D-05: invalid Date')
             .toThrow(/^utcIsoTimestamp: expected a valid Date/);
+    });
+
+    it('refuses an epoch value outside the Date range instead of returning an Invalid Date (WR-01)', () => {
+        expect(instantFromEpochMs(8.64e15).getTime(), 'WR-01: the last valid instant').toBe(8.64e15);
+        expect(instantFromEpochMs(-8.64e15).getTime(), 'WR-01: the first valid instant').toBe(-8.64e15);
+        for (const ms of [8.64e15 + 1, -8.64e15 - 1, 1e16, -1e16]) {
+            expect(() => instantFromEpochMs(ms), 'WR-01: ' + String(ms) + ' ms is outside the Date range')
+                .toThrow(/^instantFromEpochMs: expected a finite number/);
+        }
     });
 });
 

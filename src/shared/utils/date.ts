@@ -99,7 +99,12 @@ export function formatLocalDate(instant: Date): LocalDate {
     if (!(instant instanceof Date) || Number.isNaN(instant.getTime())) {
         throw new Error('formatLocalDate: expected a valid Date, got ' + describe(instant));
     }
-    return format(instant.getFullYear(), instant.getMonth() + 1, instant.getDate());
+    const year = instant.getFullYear();
+    // The addDays bound: every LocalDate this module mints must pass isLocalDate.
+    if (year < 1 || year > 9999) {
+        throw new Error('formatLocalDate: local year ' + String(year) + ' falls outside 0001..9999');
+    }
+    return format(year, instant.getMonth() + 1, instant.getDate());
 }
 
 /** Local midnight of the day, for Intl and display APIs only - never for arithmetic. */
@@ -166,10 +171,13 @@ export function utcIsoTimestamp(instant: Date): string {
     return instant.toISOString();
 }
 
+// Beyond the ECMAScript time range new Date() returns an Invalid Date rather than throwing.
+const MAX_EPOCH_MS = 8.64e15;
+
 /** An instant, never a calendar day (D-05). */
 export function instantFromEpochMs(ms: number): Date {
-    if (typeof ms !== 'number' || !Number.isFinite(ms)) {
-        throw new Error('instantFromEpochMs: expected a finite number, got ' + describe(ms));
+    if (typeof ms !== 'number' || !Number.isFinite(ms) || Math.abs(ms) > MAX_EPOCH_MS) {
+        throw new Error('instantFromEpochMs: expected a finite number within +/-8.64e15 ms, got ' + describe(ms));
     }
     return new Date(ms);
 }
