@@ -54,6 +54,9 @@ baselines/**/*.png binary
 # the Ubuntu CI runner alike.
 tests/fixtures/*.sql text eol=lf
 
+# Migration SQL is SHA-256 pinned (D-09), so its bytes must not depend on the checkout.
+src/lib/db/migrations/** text eol=lf
+
 # Vendored capture assets (plan 01-05). These are not source: they are byte-exact copies of what
 # cdn.tailwindcss.com and fonts.googleapis.com served on a particular day, and their SHA-256 is
 # recorded in baselines/v1.2.1/MANIFEST.md so that a Phase 8 re-capture is diffed against a fixed

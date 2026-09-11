@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import type DatabaseType from 'better-sqlite3';
 import { isLocalDate } from '@shared/utils/date';
 import { backupDatabase, DEFAULT_RETAINED_BACKUPS, pruneBackups, type BackupOptions } from './backup';
+import { applyV121Baseline } from './baseline-v121';
 import type { DbClass } from './classify';
+import { MIGRATIONS } from './migrations/registry';
 
 export const STATEMENT_BREAKPOINT = '--> statement-breakpoint';
 
@@ -29,7 +31,9 @@ export interface MigrationOptions {
     dbClass: DbClass;
     fromVersion: number;
     backupDir: string;
-    steps: readonly MigrationStep[];
+    // Both default to production: the real registry and the D-13 replay. An explicit
+    // `applyBaseline: undefined` still means "no baseline supplied".
+    steps?: readonly MigrationStep[];
     applyBaseline?: (db: DatabaseType.Database) => void;
     now?: Date;
     hooks?: RunnerHooks;
@@ -164,14 +168,19 @@ function expectedClassFor(fromVersion: number, latest: number): readonly DbClass
     return ['current-behind'];
 }
 
-function applyStep(db: DatabaseType.Database, step: MigrationStep, options: MigrationOptions): void {
+function applyStep(
+    db: DatabaseType.Database,
+    step: MigrationStep,
+    applyBaseline: ((db: DatabaseType.Database) => void) | undefined,
+    hooks: RunnerHooks | undefined
+): void {
     const violationsBefore = violationTables(db).length;
     db.transaction(() => {
         if (step.kind === 'baseline') {
-            if (options.applyBaseline === undefined) {
+            if (applyBaseline === undefined) {
                 throw new Error('Version 1 is the baseline step, and no baseline was supplied.');
             }
-            options.applyBaseline(db);
+            applyBaseline(db);
         } else {
             for (const chunk of splitStatements(step.sql)) {
                 db.prepare(chunk).run();
@@ -185,12 +194,14 @@ function applyStep(db: DatabaseType.Database, step: MigrationStep, options: Migr
             );
         }
         db.pragma('user_version = ' + String(step.version));
-        options.hooks?.insideTransaction?.(step.version);
+        hooks?.insideTransaction?.(step.version);
     }).immediate();
 }
 
 export async function migrateDatabase(db: DatabaseType.Database, options: MigrationOptions): Promise<MigrationReport> {
-    const { dbPath, dbClass, fromVersion, steps, hooks } = options;
+    const { dbPath, dbClass, fromVersion, hooks } = options;
+    const steps = options.steps ?? MIGRATIONS;
+    const applyBaseline = 'applyBaseline' in options ? options.applyBaseline : applyV121Baseline;
     validateSteps(steps);
     const latest = steps.length;
 
@@ -212,7 +223,7 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
 
     const pending = steps.filter((step) => step.version > fromVersion);
     const baseline = pending.find((step) => step.kind === 'baseline');
-    if (baseline !== undefined && options.applyBaseline === undefined) {
+    if (baseline !== undefined && applyBaseline === undefined) {
         throw new MigrationFailedError(
             baseline.version, null, new Error('Version 1 is the baseline step, and no baseline was supplied.')
         );
@@ -236,7 +247,7 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
     const applied: number[] = [];
     for (const step of pending) {
         try {
-            applyStep(db, step, options);
+            applyStep(db, step, applyBaseline, hooks);
         } catch (error) {
             throw new MigrationFailedError(step.version, backupPath, error);
         }
