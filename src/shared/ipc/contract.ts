@@ -55,7 +55,11 @@ export const ipcContract = {
     'sessions:create': { input: z.strictObject(sessionFields), output: WorkSessionSchema },
     'sessions:update': { input: z.strictObject({ id: IdSchema, ...sessionFields }), output: WorkSessionSchema },
     'sessions:delete': { input: z.strictObject({ id: IdSchema }), output: z.void() },
-    'sessions:deleteAll': { input: z.void(), output: z.void() },
+    // Irreversible, so the caller must spell the confirmation and learns what it removed (WR-05).
+    'sessions:deleteAll': {
+        input: z.strictObject({ confirm: z.literal('DELETE_ALL_SESSIONS') }),
+        output: z.strictObject({ deletedSessionCount: z.int().nonnegative() })
+    },
     'companies:list': { input: z.void(), output: z.array(CompanySchema) },
     'companies:get': { input: z.strictObject({ id: IdSchema }), output: CompanySchema.nullable() },
     'companies:create': {

@@ -21,7 +21,7 @@ const CHANNELS = [
     'sessions:delete', 'sessions:deleteAll', 'companies:list', 'companies:get', 'companies:create', 'companies:update',
     'companies:updateSheetsTarget', 'companies:delete', 'settings:get', 'settings:update'
 ];
-const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:deleteAll', 'sessions:list', 'settings:get'];
+const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
     'SettingsSchema', 'SheetsTargetSchema', 'WorkSessionSchema'
@@ -236,6 +236,28 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
     });
 });
 
+describe('WR-05: sessions:deleteAll cannot erase every session by accident', () => {
+    const { input, output } = ipcContract['sessions:deleteAll'];
+
+    it('demands the exact confirmation literal and nothing else', () => {
+        expect(input.safeParse({ confirm: 'DELETE_ALL_SESSIONS' }).success).toBe(true);
+        const refused: unknown[] = [
+            undefined, {}, { confirm: 'yes' }, { confirm: 'delete_all_sessions' }, { confirm: true },
+            { confirm: 'DELETE_ALL_SESSIONS', extra: 1 }
+        ];
+        for (const value of refused) {
+            expect(input.safeParse(value).success, 'WR-05: deleteAll accepted ' + String(JSON.stringify(value))).toBe(false);
+        }
+    });
+
+    it('reports a whole, non-negative count of deleted sessions', () => {
+        expect(output.safeParse({ deletedSessionCount: 3 }).success).toBe(true);
+        for (const value of [undefined, {}, { deletedSessionCount: -1 }, { deletedSessionCount: 1.5 }] as unknown[]) {
+            expect(output.safeParse(value).success, 'WR-05: deleteAll reported ' + String(JSON.stringify(value))).toBe(false);
+        }
+    });
+});
+
 describe('D-19: no date, coercion, catch-all, transform or default anywhere in the shared schemas', () => {
     it('the walk finds every banned construct in a probe schema (negative control)', () => {
         const probe = z.object({
@@ -340,10 +362,18 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
     // @ts-expect-error a handler must return the contract's output
     const wrongOutput: IpcHandlers['companies:list'] = () => [{ id: 'one' }];
     const unknownHandled: Pick<IpcHandlers, 'sessions:deleteAll'> = {
-        'sessions:deleteAll': () => undefined,
+        'sessions:deleteAll': () => ({ deletedSessionCount: 0 }),
         // @ts-expect-error navigate is not a channel
         navigate: () => undefined
     };
+    // @ts-expect-error WR-05: deleteAll must report how many sessions it removed
+    const silentDeleteAll: IpcHandlers['sessions:deleteAll'] = () => undefined;
+    // @ts-expect-error WR-05: deleteAll cannot be called without its confirmation
+    void api['sessions:deleteAll']();
+    // @ts-expect-error WR-05: only the exact confirmation literal is accepted
+    void api['sessions:deleteAll']({ confirm: 'yes' });
+    void api['sessions:deleteAll']({ confirm: 'DELETE_ALL_SESSIONS' });
+    void silentDeleteAll;
     // @ts-expect-error navigate is not a channel
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call -- the call is the proof; it must not compile
     void api['navigate']();
