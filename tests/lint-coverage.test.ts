@@ -445,10 +445,11 @@ describe('the rules the rewrite must not lose', () => {
 
     it('does not ban electron in src/main, which legitimately imports it', async () => {
         expect(
-            severityOf(await ruleEntry('src/main/index.ts', 'no-restricted-imports')),
-            'no-restricted-imports reaches src/main. The ban belongs to src/lib and src/shared only; ' +
-            'the main process is where electron is supposed to be imported.'
-        ).toBe(0);
+            JSON.stringify(await ruleEntry('src/main/index.ts', 'no-restricted-imports') ?? null),
+            'no-restricted-imports names electron for src/main. D-08 added a src/** import-restriction block for the ' +
+            'drizzle tooling bans only; the electron ban belongs to src/lib and src/shared, and the main process is ' +
+            'where electron is supposed to be imported.'
+        ).not.toContain('"name":"electron"');
     });
 
     it('keeps node builtins and the driver legal in src/lib and bans them in src/shared', async () => {
@@ -610,6 +611,33 @@ describe('D-15 and D-14: import boundaries', () => {
         expect(missed, 'value imports that would ship zod to the renderer').toEqual([]);
         expect(flagged, 'type-only imports the renderer was refused').toEqual([]);
     }, 60_000);
+
+    describe('D-08: drizzle tooling is banned everywhere under src/', () => {
+        const banned = [
+            'import { defineConfig } from \'drizzle-kit\';',
+            'import { migrate } from \'drizzle-orm/better-sqlite3/migrator\';',
+            'import { migrate as migrateCore } from \'drizzle-orm/migrator\';',
+            'import * as kitApi from \'drizzle-kit/api\';'
+        ];
+        const allowed = ['import { sqliteTable } from \'drizzle-orm/sqlite-core\';'];
+
+        it.each(['src/main/index.ts', 'src/lib/db/client.ts'])('refuses drizzle-kit and the migrators, and allows sqlite-core, in %s', async (file) => {
+            const { missed, flagged } = await probe(file, [], banned, allowed, byRule('no-restricted-imports'));
+            expect(missed, 'drizzle tooling imports the lint let through in ' + file).toEqual([]);
+            expect(flagged, 'the D-08 ban refused drizzle-orm/sqlite-core in ' + file).toEqual([]);
+        }, 60_000);
+
+        // Flat config replaces a rule's options wholesale, so each block that sets either rule must restate the ban.
+        it.each([
+            { file: SHARED_PROBE_FILE, rule: 'no-restricted-imports' },
+            { file: SHARED_PROBE_FILE, rule: '@typescript-eslint/no-restricted-imports' },
+            { file: 'src/renderer/src/App.tsx', rule: 'no-restricted-imports' },
+            { file: 'src/renderer/src/App.tsx', rule: '@typescript-eslint/no-restricted-imports' }
+        ])('refuses drizzle-kit and the migrators in $file through $rule', async ({ file, rule }) => {
+            const { missed } = await probe(file, [], banned, [], byRule(rule));
+            expect(missed, 'drizzle tooling imports ' + rule + ' let through in ' + file).toEqual([]);
+        }, 60_000);
+    });
 });
 
 describe('known syntactic gaps', () => {

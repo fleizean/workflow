@@ -26,6 +26,7 @@ const MOVED_MODULES = ['src/main/window.ts', 'src/main/smoke.ts', 'src/main/life
 const MAIN_ALIASES = readAliases('electron.vite.config.ts', ['main', 'resolve', 'alias']);
 const DATABASE_LAYER = 'src/lib/db';
 const DRIVER = 'better-sqlite3';
+const DRIZZLE = 'drizzle-orm';
 
 const parse = (file: string, source: string = read(file)): ts.SourceFile =>
     ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, file.endsWith('.mjs') ? ts.ScriptKind.JS : scriptKindFor(file));
@@ -61,6 +62,9 @@ const callsIn = (node: ts.Node): string[] =>
 
 const isDatabaseSpecifier = (fromFile: string, specifier: string): boolean => {
     if (specifier === DRIVER || specifier.startsWith(DRIVER + '/')) {
+        return true;
+    }
+    if (specifier === DRIZZLE || specifier.startsWith(DRIZZLE + '/')) {
         return true;
     }
     const target = resolveSpecifier(fromFile, specifier, MAIN_ALIASES);

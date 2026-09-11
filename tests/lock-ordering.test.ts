@@ -11,9 +11,10 @@ import {
 const ENTRY = 'src/main/index.ts';
 const CLIENT = 'src/lib/db/client.ts';
 
-// Everything under src/lib/db opens or copies SQLite files; better-sqlite3 is the driver itself.
+// Everything under src/lib/db opens or copies SQLite files; better-sqlite3 is the driver and drizzle-orm sits on it (D-10).
 const DATABASE_LAYER_DIR = 'src/lib/db';
 const DRIVER = 'better-sqlite3';
+const DRIZZLE = 'drizzle-orm';
 
 const TWO_PROCESSES =
     'A second copy of the app launched alongside the first would load the database layer before ' +
@@ -38,6 +39,9 @@ function isDatabaseSpecifier(fromFile: string, specifier: string): boolean {
     if (specifier === DRIVER || specifier.startsWith(DRIVER + '/')) {
         return true;
     }
+    if (specifier === DRIZZLE || specifier.startsWith(DRIZZLE + '/')) {
+        return true;
+    }
     const target = resolveSpecifier(fromFile, specifier, MAIN_ALIASES);
     if (target !== undefined) {
         return target === DATABASE_LAYER_DIR || target.startsWith(DATABASE_LAYER_DIR + '/');
@@ -48,8 +52,8 @@ function isDatabaseSpecifier(fromFile: string, specifier: string): boolean {
 
 /*
  * Every chain of eager imports, starting at `entry` and following relative specifiers through the
- * repository, that ends at the database layer. Packages other than the driver are not followed:
- * electron and node builtins are not ours to walk, and the driver is caught by name.
+ * repository, that ends at the database layer. Packages other than the driver and drizzle-orm are not
+ * followed: electron and node builtins are not ours to walk, and those two are caught by name.
  */
 function eagerChainsToDatabase(entry: string): string[] {
     const chains: string[] = [];
@@ -174,9 +178,15 @@ describe('the analysis itself: comments and strings never reach the analysed tex
         // WR-02: the alias electron.vite.config.ts actually defines for the main target.
         expect(isDatabaseSpecifier(ENTRY, '@lib/db/client')).toBe(true);
         expect(isDatabaseSpecifier(ENTRY, '@lib/db')).toBe(true);
+        // D-10: drizzle-orm and every subpath of it are the database layer too.
+        expect(isDatabaseSpecifier(ENTRY, 'drizzle-orm')).toBe(true);
+        expect(isDatabaseSpecifier(ENTRY, 'drizzle-orm/sqlite-core')).toBe(true);
+        expect(isDatabaseSpecifier(ENTRY, 'drizzle-orm/better-sqlite3')).toBe(true);
         // Prose that merely mentions them, and modules that are not the database layer.
         expect(isDatabaseSpecifier(ENTRY, 'the lock precedes ../lib/db/client')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, 'better-sqlite3 is loaded later')).toBe(false);
+        expect(isDatabaseSpecifier(ENTRY, 'drizzle-orm is loaded later')).toBe(false);
+        expect(isDatabaseSpecifier(ENTRY, 'drizzle-orm-extra')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, './userdata-path')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, '@main/userdata-path')).toBe(false);
         expect(isDatabaseSpecifier(ENTRY, 'electron')).toBe(false);

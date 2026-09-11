@@ -46,6 +46,13 @@ const ELECTRON_MESSAGE = 'src/lib and src/shared must stay loadable in plain Nod
 const ELECTRON_PATHS = [{ name: 'electron', message: ELECTRON_MESSAGE }];
 const ELECTRON_PATTERNS = [{ group: ['electron/*'], message: ELECTRON_MESSAGE }];
 
+const DRIZZLE_TOOLING_MESSAGE = 'drizzle-kit and the drizzle migrators are authoring tooling; the project runner alone applies migrations (D-08).';
+const DRIZZLE_TOOLING_PATHS = [{ name: 'drizzle-kit', message: DRIZZLE_TOOLING_MESSAGE }];
+const DRIZZLE_TOOLING_PATTERNS = [{
+    group: ['drizzle-kit/*', 'drizzle-orm/migrator', 'drizzle-orm/*/migrator', 'drizzle-orm/**/migrator'],
+    message: DRIZZLE_TOOLING_MESSAGE
+}];
+
 const SHARED_LAYER_MESSAGE = 'src/shared is the bottom layer: no main/lib/preload/renderer, no node builtins, no electron, no database driver (D-15).';
 const SHARED_LAYER_PATHS = [
     ...ELECTRON_PATHS,
@@ -179,24 +186,38 @@ module.exports = [
         }
     },
     // A /** glob only adds rules to files an extension block already matched, so .sql, .json and .css stay out of lint.
+    // D-08 reaches src/main, src/preload and src/renderer here; the more specific blocks below restate it.
+    {
+        files: ['src/**'],
+        rules: {
+            'no-restricted-imports': ['error', { paths: DRIZZLE_TOOLING_PATHS, patterns: DRIZZLE_TOOLING_PATTERNS }]
+        }
+    },
     // src/lib keeps node:fs, node:path and the driver; only src/shared gets the layer bans (Pitfall 2).
     {
         files: ['src/lib/**'],
         rules: {
-            'no-restricted-imports': ['error', { paths: ELECTRON_PATHS, patterns: ELECTRON_PATTERNS }]
+            'no-restricted-imports': ['error', {
+                paths: [...ELECTRON_PATHS, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...ELECTRON_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }]
         }
     },
     {
         files: ['src/shared/**'],
         rules: {
-            'no-restricted-imports': ['error', { paths: SHARED_LAYER_PATHS, patterns: SHARED_LAYER_PATTERNS }]
+            'no-restricted-imports': ['error', {
+                paths: [...SHARED_LAYER_PATHS, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...SHARED_LAYER_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }]
         }
     },
     {
         files: ['src/shared/utils/**', 'src/shared/constants/**', 'src/shared/types/**'],
         rules: {
             '@typescript-eslint/no-restricted-imports': ['error', {
-                paths: [ZOD_TYPE_ONLY_PATH], patterns: [...ZOD_BEARING_SHARED_PATTERNS, ZOD_BEARING_SIBLING_PATTERN]
+                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ZOD_BEARING_SIBLING_PATTERN, ...DRIZZLE_TOOLING_PATTERNS]
             }],
             ...TYPE_IMPORT_RULES
         }
@@ -204,7 +225,10 @@ module.exports = [
     {
         files: ['src/renderer/src/**'],
         rules: {
-            '@typescript-eslint/no-restricted-imports': ['error', { paths: [ZOD_TYPE_ONLY_PATH], patterns: ZOD_BEARING_SHARED_PATTERNS }],
+            '@typescript-eslint/no-restricted-imports': ['error', {
+                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }],
             ...TYPE_IMPORT_RULES
         }
     }
