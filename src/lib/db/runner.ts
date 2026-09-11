@@ -1,10 +1,17 @@
 // Brings a classified database to the last injected step, one immediate transaction per step (D-07).
 // Steps, baseline, backup directory and clock are injected (D-10); the runner never renames, replaces or restores a file.
 
+import fs from 'node:fs';
 import type DatabaseType from 'better-sqlite3';
+import { isLocalDate } from '@shared/utils/date';
+import { backupDatabase, DEFAULT_RETAINED_BACKUPS, pruneBackups, type BackupOptions } from './backup';
 import type { DbClass } from './classify';
 
 export const STATEMENT_BREAKPOINT = '--> statement-breakpoint';
+
+// Module constants, never caller text: they are interpolated into SQL (T-04-19).
+const DATE_TABLES = ['work_sessions', 'pomodoro_sessions'] as const;
+const SESSIONS_TABLE = 'work_sessions';
 
 export type MigrationStep =
     | { readonly version: 1; readonly tag: string; readonly kind: 'baseline' }
@@ -14,6 +21,7 @@ export interface RunnerHooks {
     // Test-only kill points.
     insideTransaction?: (version: number) => void;
     afterCommit?: (version: number) => void;
+    onBackupProgress?: BackupOptions['onProgress'];
 }
 
 export interface MigrationOptions {
@@ -27,12 +35,22 @@ export interface MigrationOptions {
     hooks?: RunnerHooks;
 }
 
+// Counted before the first step and never repaired (D-15).
+export interface AnomalyCounts {
+    foreignKeyViolations: number;
+    orphanedSessions: number;
+    malformedDates: number;
+    invalidDurations: number;
+}
+
 export interface MigrationReport {
     dbClass: DbClass;
     fromVersion: number;
     toVersion: number;
     applied: number[];
     backupPath: string | null;
+    pruned: string[];
+    anomalies: AnomalyCounts;
 }
 
 function describeCause(cause: unknown): string {
@@ -65,18 +83,18 @@ export function splitStatements(sql: string): string[] {
 function validateSteps(steps: readonly MigrationStep[]): void {
     steps.forEach((step, index) => {
         const expected = index + 1;
-        if (!Number.isSafeInteger(step.version) || step.version !== expected) {
+        const version: number = step.version;
+        if (!Number.isSafeInteger(version) || version !== expected) {
             throw new Error(
                 'Migration steps must be numbered 1..' + String(steps.length) + ' without gaps or duplicates; ' +
-                'position ' + String(expected) + ' holds version ' + String(step.version) + ' (' + step.tag + ').'
+                'position ' + String(expected) + ' holds version ' + String(version) + ' (' + step.tag + ').'
             );
         }
-        const version: number = step.version;
         if (step.kind === 'baseline' && version !== 1) {
             throw new Error('Only version 1 may be the baseline step; version ' + String(version) + ' is one.');
         }
         if (step.kind === 'sql' && splitStatements(step.sql).length === 0) {
-            throw new Error('Migration version ' + String(step.version) + ' (' + step.tag + ') has no statements.');
+            throw new Error('Migration version ' + String(version) + ' (' + step.tag + ') has no statements.');
         }
     });
 }
@@ -89,22 +107,65 @@ function readUserVersion(db: DatabaseType.Database): number {
     return version;
 }
 
+// The table named by each foreign_key_check row; the count is the violation total.
+function violationTables(db: DatabaseType.Database): string[] {
+    const rows = db.pragma('foreign_key_check');
+    if (!Array.isArray(rows)) {
+        throw new Error('PRAGMA foreign_key_check returned ' + typeof rows + ', expected rows.');
+    }
+    return (rows as readonly unknown[]).map((row) => {
+        const table = (row as { table?: unknown }).table;
+        return typeof table === 'string' ? table : '';
+    });
+}
+
+function presentTables(db: DatabaseType.Database): Set<string> {
+    const rows = db.prepare<[], { name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'").all();
+    return new Set(rows.map((row) => row.name));
+}
+
+function countAnomalies(db: DatabaseType.Database): AnomalyCounts {
+    const present = presentTables(db);
+    const tables = violationTables(db);
+
+    let malformedDates = 0;
+    for (const table of DATE_TABLES) {
+        if (!present.has(table)) continue;
+        for (const row of db.prepare<[], { date: unknown }>('SELECT date FROM "' + table + '"').iterate()) {
+            if (!isLocalDate(row.date)) malformedDates += 1;
+        }
+    }
+
+    let invalidDurations = 0;
+    if (present.has(SESSIONS_TABLE)) {
+        const counted = db.prepare<[], { c: number }>(
+            'SELECT count(*) AS c FROM "' + SESSIONS_TABLE + '" ' +
+            "WHERE typeof(duration) <> 'integer' OR duration < 0"
+        ).get();
+        invalidDurations = counted?.c ?? 0;
+    }
+
+    return {
+        foreignKeyViolations: tables.length,
+        orphanedSessions: tables.filter((table) => table === SESSIONS_TABLE).length,
+        malformedDates,
+        invalidDurations
+    };
+}
+
+const sizeOf = (file: string): number => (fs.existsSync(file) ? fs.statSync(file).size : 0);
+
+// A file with nothing in it has nothing to back up; committed rows may still live only in the -wal.
+const hasContent = (dbPath: string): boolean => sizeOf(dbPath) > 0 || sizeOf(dbPath + '-wal') > 0;
+
 function expectedClassFor(fromVersion: number, latest: number): readonly DbClass[] {
     if (fromVersion === 0) return ['fresh', 'legacy'];
     if (fromVersion === latest) return ['current'];
     return ['current-behind'];
 }
 
-function countViolations(db: DatabaseType.Database): number {
-    const rows = db.pragma('foreign_key_check');
-    if (!Array.isArray(rows)) {
-        throw new Error('PRAGMA foreign_key_check returned ' + typeof rows + ', expected rows.');
-    }
-    return rows.length;
-}
-
 function applyStep(db: DatabaseType.Database, step: MigrationStep, options: MigrationOptions): void {
-    const violationsBefore = countViolations(db);
+    const violationsBefore = violationTables(db).length;
     db.transaction(() => {
         if (step.kind === 'baseline') {
             if (options.applyBaseline === undefined) {
@@ -116,7 +177,7 @@ function applyStep(db: DatabaseType.Database, step: MigrationStep, options: Migr
                 db.prepare(chunk).run();
             }
         }
-        const violationsAfter = countViolations(db);
+        const violationsAfter = violationTables(db).length;
         if (violationsAfter > violationsBefore) {
             throw new Error(
                 'Version ' + String(step.version) + ' raised foreign_key_check violations from ' +
@@ -129,7 +190,7 @@ function applyStep(db: DatabaseType.Database, step: MigrationStep, options: Migr
 }
 
 export async function migrateDatabase(db: DatabaseType.Database, options: MigrationOptions): Promise<MigrationReport> {
-    const { dbPath, dbClass, fromVersion, steps } = options;
+    const { dbPath, dbClass, fromVersion, steps, hooks } = options;
     validateSteps(steps);
     const latest = steps.length;
 
@@ -150,7 +211,28 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
     }
 
     const pending = steps.filter((step) => step.version > fromVersion);
-    const backupPath: string | null = null;
+    const baseline = pending.find((step) => step.kind === 'baseline');
+    if (baseline !== undefined && options.applyBaseline === undefined) {
+        throw new MigrationFailedError(
+            baseline.version, null, new Error('Version 1 is the baseline step, and no baseline was supplied.')
+        );
+    }
+
+    const anomalies = countAnomalies(db);
+
+    let backupPath: string | null = null;
+    const firstPending = pending[0];
+    if (firstPending !== undefined && (dbClass === 'legacy' || dbClass === 'current-behind') && hasContent(dbPath)) {
+        const backupOptions: BackupOptions = {};
+        if (options.now !== undefined) backupOptions.now = options.now;
+        if (hooks?.onBackupProgress !== undefined) backupOptions.onProgress = hooks.onBackupProgress;
+        try {
+            backupPath = (await backupDatabase(dbPath, options.backupDir, backupOptions)).backupPath;
+        } catch (error) {
+            throw new MigrationFailedError(firstPending.version, null, error);
+        }
+    }
+
     const applied: number[] = [];
     for (const step of pending) {
         try {
@@ -159,9 +241,9 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
             throw new MigrationFailedError(step.version, backupPath, error);
         }
         applied.push(step.version);
-        options.hooks?.afterCommit?.(step.version);
+        hooks?.afterCommit?.(step.version);
     }
 
-    await Promise.resolve();
-    return { dbClass, fromVersion, toVersion: readUserVersion(db), applied, backupPath };
+    const pruned = backupPath === null ? [] : pruneBackups(options.backupDir, DEFAULT_RETAINED_BACKUPS);
+    return { dbClass, fromVersion, toVersion: readUserVersion(db), applied, backupPath, pruned, anomalies };
 }
