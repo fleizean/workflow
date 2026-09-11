@@ -6,6 +6,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import type DatabaseType from 'better-sqlite3';
 import { utcIsoTimestamp } from '@shared/utils/date';
+import { assertForeignKeysOn } from './client';
 
 // The v1.2.1 tables. Interpolated into SQL, so never caller input (T-01-35); app_state is deliberately not counted.
 const COUNTED_TABLES = ['companies', 'work_sessions', 'settings', 'pomodoro_sessions'] as const;
@@ -55,6 +56,7 @@ function countRows(db: DatabaseType.Database, table: CountedTable): number {
 export function readDatabaseStats(dbPath: string): BackupVerification {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     try {
+        assertForeignKeysOn(db, dbPath);
         const integrity = db.pragma('integrity_check', { simple: true });
         if (typeof integrity !== 'string') {
             throw new Error(
@@ -159,6 +161,7 @@ export async function backupDatabase(
     let expected: BackupVerification;
     let totalPages: number;
     try {
+        assertForeignKeysOn(source, sourcePath);
         expected = readDatabaseStats(sourcePath);
         const startedAt = Date.now();
         const progress = await source.backup(backupPath, {
