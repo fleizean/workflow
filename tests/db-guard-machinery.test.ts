@@ -172,9 +172,13 @@ describe('D-25: the six negative controls', () => {
     it('control 3 - a NOT NULL tightening without a default is rejected', () => {
         const sql = 'ALTER TABLE work_sessions ADD COLUMN x INTEGER NOT NULL';
         expect(staticViolations(sql).length).toBeGreaterThan(0);
-        // SQLite refuses this one itself, which is the second independent layer for this control.
+        // Measured: SQLite 3.53.4 ACCEPTS this on an empty table, so the engine is not the backstop.
+        // The semantic delta is the second independent layer for this control.
         const applied = applyOne(v121Database('notnull'), sql);
-        expect(applied.threw, 'SQLite must refuse a NOT NULL column with no default').toContain('NOT NULL');
+        expect(applied.threw, 'SQLite accepted the ALTER, as measured').toBeNull();
+        expect(applied.violations, 'a new NOT NULL column with no default').toContain(
+            'a new NOT NULL column with no default'
+        );
     });
 
     it('control 4 - the rebuild sequence is rejected', () => {
