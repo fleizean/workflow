@@ -65,8 +65,8 @@ export function applyUnpackagedUserDataPath(app: UnpackagedUserDataApp): string 
     return explicit;
 }
 
-/** Whether `child` is `parent` or inside it, case-folded where the filesystem usually ignores case. */
-function isSameOrInside(parent: string, child: string): boolean {
+/** Whether `child` is `parent` or inside it, case-folded where the filesystem usually ignores case. smoke.ts guards with it too (WR-04). */
+export function isSameOrInside(parent: string, child: string): boolean {
     const fold = (p: string): string =>
         process.platform === 'win32' || process.platform === 'darwin' ? resolve(p).toLowerCase() : resolve(p);
     const rel = relative(fold(parent), fold(child));

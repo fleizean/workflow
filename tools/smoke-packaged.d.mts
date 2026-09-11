@@ -7,3 +7,4 @@ export declare const SMOKE_DB_ENV: string;
 export declare const SMOKE_DB_NAME: string;
 export declare const RENDERER_MARKER_TEXT: string;
 export declare const DEFAULT_TIMEOUT_MS: number;
+export declare function isWithin(parent: string, child: string): boolean;

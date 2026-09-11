@@ -87,10 +87,11 @@ export function expectedProductionUserDataDir(platform = process.platform, home 
     throw new Error(SCRIPT_NAME + ': no production userData location is defined for ' + platform);
 }
 
-/** Whether `child` is `parent` or lies inside it. */
+/** isSameOrInside from src/main/userdata-path.ts, restated for plain Node; tests/userdata-path.test.ts holds the two together (WR-04). */
 export function isWithin(parent, child) {
-    const rel = path.relative(path.resolve(parent), path.resolve(child));
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    const fold = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? path.resolve(p).toLowerCase() : path.resolve(p));
+    const rel = path.relative(fold(parent), fold(child));
+    return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
 }
 
 /*

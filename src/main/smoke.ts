@@ -2,7 +2,7 @@
 // The database layer arrives as runSmoke's argument, so loading this module never loads it.
 
 import { app, BrowserWindow } from 'electron';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import type { openDatabase, closeDatabase } from '../lib/db/client';
@@ -11,6 +11,7 @@ import {
     SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, mainConfig
 } from './config';
 import { describeError } from './errors';
+import { isSameOrInside } from './userdata-path';
 import { createMainWindow, loadRenderer } from './window';
 
 export interface SmokeDatabase {
@@ -21,12 +22,6 @@ export interface SmokeDatabase {
 interface SmokeOutcome {
     ok: boolean;
     lines: string[];
-}
-
-/** Whether `child` is `parent` or lies inside it. */
-function isWithin(parent: string, child: string): boolean {
-    const rel = relative(resolve(parent), resolve(child));
-    return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
 }
 
 export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
@@ -50,11 +45,11 @@ export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
     if (!isAbsolute(dbPath)) {
         return fail(SMOKE_DB_ENV + ' must be an absolute path, got ' + dbPath);
     }
-    if (isWithin(productionUserData, userData)) {
+    if (isSameOrInside(productionUserData, userData)) {
         return fail('userData resolves inside the production directory ' + productionUserData +
             '; smoke mode requires --user-data-dir pointing somewhere else');
     }
-    if (isWithin(productionUserData, dbPath)) {
+    if (isSameOrInside(productionUserData, dbPath)) {
         return fail(SMOKE_DB_ENV + ' points inside the production directory ' + productionUserData);
     }
     if (fs.existsSync(dbPath)) {

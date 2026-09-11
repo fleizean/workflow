@@ -40,8 +40,10 @@ import {
     applyDevelopmentUserDataPath,
     applyUnpackagedUserDataPath,
     devUserDataPath,
+    isSameOrInside,
     type UnpackagedUserDataApp
 } from '../src/main/userdata-path';
+import { isWithin } from '../tools/smoke-packaged.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODULE = 'src/main/userdata-path.ts';
@@ -248,5 +250,41 @@ describe('WR-06: an explicit --user-data-dir in an unpackaged build', () => {
             expect(() => applyUnpackagedUserDataPath(app)).toThrow(/D-09/);
             expect(app.setPathCalls).toEqual([]);
         }
+    });
+});
+
+// WR-04: the smoke launch's guards and the harness verdict must agree with this module's rule.
+describe('WR-04: one containment rule for every production-directory guard', () => {
+    const production = path.join(APP_DATA, STUB_NAME);
+    // `..smoke` and `..x.db` are children whose names start with two dots, not parent references.
+    const INSIDE = [production, path.join(production, 'sub'), path.join(production, '..smoke'), path.join(production, '..x.db')];
+    const OUTSIDE = [APP_DATA, production + '-fixture', path.join(APP_DATA, 'other', 'ud'), path.join(production, '..', 'sibling')];
+    const GUARDS: [string, (parent: string, child: string) => boolean][] = [
+        ['isSameOrInside in ' + MODULE, isSameOrInside],
+        ['isWithin in tools/smoke-packaged.mjs', isWithin]
+    ];
+
+    it.each(GUARDS)('%s counts the directory and every child as inside, and nothing else', (label, inside) => {
+        for (const child of INSIDE) {
+            expect(inside(production, child), 'WR-04: ' + label + ' let ' + child + ' out of ' + production).toBe(true);
+        }
+        for (const child of OUTSIDE) {
+            expect(inside(production, child), 'WR-04: ' + label + ' pulled ' + child + ' into ' + production).toBe(false);
+        }
+    });
+
+    it.runIf(process.platform === 'win32' || process.platform === 'darwin')(
+        'ignores case in both guards, where the filesystem does', () => {
+            for (const [label, inside] of GUARDS) {
+                expect(inside(production, production.toUpperCase()), 'WR-04: ' + label + ' is case-sensitive').toBe(true);
+            }
+        });
+
+    it('smoke.ts takes its guard from ' + MODULE + ' instead of keeping a second rule', () => {
+        const smoke = fs.readFileSync(path.join(repoRoot, 'src/main/smoke.ts'), 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+        expect(/import\s*\{[^}]*\bisSameOrInside\b[^}]*\}\s*from\s*'\.\/userdata-path'/.test(smoke),
+            'WR-04: src/main/smoke.ts no longer imports isSameOrInside from ./userdata-path').toBe(true);
+        expect(/\brelative\s*\(/.test(smoke), 'WR-04: src/main/smoke.ts computes containment itself again').toBe(false);
     });
 });
