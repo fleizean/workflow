@@ -28,6 +28,7 @@
         "src/shared/**/*",
         "tests/**/*",
         "vitest.config.mts",
-        "electron.vite.config.ts"
+        "electron.vite.config.ts",
+        "drizzle.config.ts"
     ]
 }
