@@ -238,7 +238,12 @@ const BANNED_DATE_SHAPES = [
     'd.getUTCDate();',
     'd.getUTCDay();',
     'const { toISOString } = d;',
-    'const { parse } = Date;'
+    'const { parse } = Date;',
+    // WR-03: toJSON() is toISOString() under another name.
+    'd.toJSON();',
+    'd?.toJSON();',
+    'd[\'toJSON\']();',
+    'const { toJSON } = d;'
 ];
 const ALLOWED_DATE_SHAPES = ['new Date();', 'new Date(2026, 8, 10);', 'Date.UTC(2026, 8, 10);', 'Date.now();', 'd.getUTCHours();'];
 
@@ -258,6 +263,13 @@ const KNOWN_GAPS: KnownGap[] = [
         code: 'new globalThis.Date(s);',
         matches: isDateBan,
         why: 'a syntactic rule cannot see through globalThis to the Date constructor'
+    },
+    {
+        file: TS_PROBE_FILE,
+        header: ['declare const d: Date;'],
+        code: 'JSON.stringify(d);',
+        matches: isDateBan,
+        why: 'a syntactic rule cannot know the argument is a Date'
     },
     {
         file: 'src/main/window.ts',
@@ -418,6 +430,7 @@ describe('the rules the rewrite must not lose', () => {
             const dateBans = JSON.stringify(syntax);
             expect(dateBans, 'the date bans do not resolve for ' + file).toContain(DATE_MESSAGE);
             expect(dateBans, 'toISOString is no longer banned for ' + file).toContain('property.name=\'toISOString\'');
+            expect(dateBans, 'toJSON is no longer banned for ' + file).toContain('property.name=\'toJSON\'');
             expect(dateBans, 'one-argument Date construction is no longer banned for ' + file).toContain('arguments.length=1');
         }
     });

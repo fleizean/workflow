@@ -26,12 +26,15 @@ const DATE_MESSAGE = 'Calendar dates go through src/shared/utils/date.ts (SHARED
 const DATE_BANS = [
     "MemberExpression[property.name='toISOString']",
     "MemberExpression[computed=true][property.value='toISOString']",
+    // toJSON() returns toISOString(), the same UTC-day trap (WR-03).
+    "MemberExpression[property.name='toJSON']",
+    "MemberExpression[computed=true][property.value='toJSON']",
     "MemberExpression[object.name='Date'][property.name='parse']",
     "MemberExpression[object.name='Date'][computed=true][property.value='parse']",
     "NewExpression[callee.name='Date'][arguments.length=1]",
     "NewExpression[callee.name='Date'] > SpreadElement",
     'MemberExpression[property.name=/^getUTC(FullYear|Month|Date|Day)$/]',
-    'ObjectPattern > Property[key.name=/^(toISOString|getUTCFullYear|getUTCMonth|getUTCDate|getUTCDay)$/]',
+    'ObjectPattern > Property[key.name=/^(toISOString|toJSON|getUTCFullYear|getUTCMonth|getUTCDate|getUTCDay)$/]',
     "VariableDeclarator[init.name='Date'] > ObjectPattern > Property[key.name='parse']"
 ].map((selector) => ({ selector, message: DATE_MESSAGE }));
 const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js', 'src/renderer/shared.js', 'src/renderer/timer.js'];
