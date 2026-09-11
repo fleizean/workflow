@@ -896,6 +896,21 @@ describe('F1: presence-aware verification on v1.x shapes', () => {
         expect(verifyBackup(result.backupPath)).toEqual(readDatabaseStats(fx));
     });
 
+    it('backs up and verifies a shape-B database (v1.2.0 era), reporting its absent pomodoro_sessions as null', async () => {
+        const fx = buildLegacyFixture('B');
+
+        const result = await backupDatabase(fx, backupDirFor(fx));
+
+        expect(result.verification.integrity).toBe('ok');
+        expect(result.verification.rows).toEqual({
+            companies: 2,
+            work_sessions: 3,
+            settings: 4,
+            pomodoro_sessions: null
+        });
+        expect(result.verification.totalDuration).toBe(9000);
+    });
+
     const counted: BackupVerification = {
         integrity: 'ok',
         rows: { companies: 2, work_sessions: 3, settings: 4, pomodoro_sessions: 0 },
