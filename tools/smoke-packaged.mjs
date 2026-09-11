@@ -1,38 +1,6 @@
 #!/usr/bin/env node
-/*
- * BUILD-05 / BUILD-06 (D-13, D-14) - launch the PACKAGED, unpacked build and prove it opens a
- * SQLite database through the application's own path.
- *
- * A probe that merely require()s better-sqlite3 proves the driver loads. It does not prove that
- * the application's own resolution survives packaging: __dirname inside app.asar, the
- * app.asar.unpacked rewrite for the native addon, the renderer and preload paths, and the lazy
- * connection are all properties of the app's path, and each one works unpackaged and can break
- * packaged. So the packaged binary does the work itself - src/main/index.ts's --smoke branch opens
- * the database through src/lib/db/client.ts, writes a row, reads it back, loads its own renderer
- * through its own preload - and this script launches it and checks what it reports.
- *
- * It also checks the one number this milestone cannot afford to get wrong: the application name
- * the packaged app reports, from which Electron resolves userData. join(appData, name) must equal
- * the directory every installed v1.2.1 keeps krono.db in, byte for byte.
- *
- * What it never does: write to, read from, or delete anything under the real userData directory.
- * The app is launched with --user-data-dir pointing at a fresh mkdtemp directory, the database
- * path is injected through WORKFLOW_SMOKE_DB and points inside that directory, and the app itself
- * refuses to open a file that already exists.
- *
- * The child environment comes from tools/baseline/probe-userdata.mjs's childEnvironment(), which
- * strips ELECTRON_RUN_AS_NODE and NODE_OPTIONS. With ELECTRON_RUN_AS_NODE=1 inherited - and it
- * does leak into agent and tool sessions - the binary boots as plain Node, prints "bad option"
- * and exits 9, which looks exactly like a packaging failure. That lesson is reused, not relearned.
- *
- * The pure pieces are exported, as the probe's are, so a later plan can test them without a
- * packaged binary present.
- *
- * Usage:
- *   node tools/smoke-packaged.mjs              launch, report, exit 0 or 1
- *   node tools/smoke-packaged.mjs --keep       leave the fixture directory on disk
- *   node tools/smoke-packaged.mjs --dist=PATH  look for the unpacked build under PATH (default dist/)
- */
+// BUILD-05/06 (D-13, D-14): launches the packaged build against a temp userData and checks what it reports.
+// Usage: node tools/smoke-packaged.mjs [--keep] [--dist=PATH]
 
 import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -59,10 +27,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 /* Pure pieces                                                                              */
 /* ---------------------------------------------------------------------------------------- */
 
-/*
- * Where electron-builder --dir puts the executable for a platform and architecture. x64 builds
- * land in the unsuffixed directory; every other architecture carries its name.
- */
+// Where electron-builder --dir puts the executable; only x64 lands in the unsuffixed directory.
 export function unpackedBinaryPath(distDir, platform, arch) {
     if (platform === 'win32') {
         const dir = arch === 'x64' ? 'win-unpacked' : 'win-' + arch + '-unpacked';
@@ -75,29 +40,34 @@ export function unpackedBinaryPath(distDir, platform, arch) {
     throw new Error(SCRIPT_NAME + ': no packaged smoke launch is defined for ' + platform);
 }
 
-/*
- * The production userData directory - the one that must NOT be touched, and that the packaged
- * app's reported name must resolve to. On Windows this is realUserDataDir() from the Phase 1 probe,
- * the directory every installed v1.2.1 uses. That helper is Windows-shaped (it reads %APPDATA%), so
- * macOS resolves Electron's own appData location instead.
- */
+// The production userData directory: never touched, and the reported app name must resolve to it.
 export function expectedProductionUserDataDir(platform = process.platform, home = os.homedir()) {
     if (platform === 'win32') return realUserDataDir();
     if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', EXPECTED_APP_NAME);
     throw new Error(SCRIPT_NAME + ': no production userData location is defined for ' + platform);
 }
 
+// canonicalPath from src/main/userdata-path.ts: the nearest existing ancestor goes through realpath (IN-06).
+function canonicalPath(p) {
+    const tail = [];
+    let existing = path.resolve(p);
+    while (!fs.existsSync(existing)) {
+        const parent = path.dirname(existing);
+        if (parent === existing) return path.resolve(p);
+        tail.unshift(path.basename(existing));
+        existing = parent;
+    }
+    return path.join(fs.realpathSync.native(existing), ...tail);
+}
+
 /** isSameOrInside from src/main/userdata-path.ts, restated for plain Node; tests/userdata-path.test.ts holds the two together (WR-04). */
 export function isWithin(parent, child) {
-    const fold = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? path.resolve(p).toLowerCase() : path.resolve(p));
+    const fold = (p) => (process.platform === 'win32' || process.platform === 'darwin' ? canonicalPath(p).toLowerCase() : canonicalPath(p));
     const rel = path.relative(fold(parent), fold(child));
     return rel === '' || (rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel));
 }
 
-/*
- * Two spellings of one directory. path.resolve first; realpath as a fallback, because Windows can
- * hand out an 8.3 short name for the temp directory and macOS puts /var behind a symlink.
- */
+// Two spellings of one directory; realpath catches Windows 8.3 names and macOS's /var symlink.
 export function sameDirectory(a, b) {
     if (path.resolve(a) === path.resolve(b)) return true;
     try {
@@ -122,17 +92,7 @@ export function parseSmokeReport(stdout) {
     return report;
 }
 
-/*
- * Every assertion, as { label, pass, detail }. Pure: the caller supplies what was observed.
- *
- *   exit          { code, signal, timedOut }
- *   report        parseSmokeReport(stdout)
- *   childEnv      the environment object the child was spawned with
- *   fixtureDir    the --user-data-dir that was passed
- *   fixtureDb     the WORKFLOW_SMOKE_DB that was passed
- *   fixtureDbSize the database file's size after the run (0 if absent)
- *   productionDir expectedProductionUserDataDir()
- */
+// Every assertion as { label, pass, detail }. Pure: the caller supplies what was observed.
 export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, fixtureDbSize, productionDir }) {
     const checks = [];
     const check = (label, pass, detail) => checks.push({ label, pass: Boolean(pass), detail });

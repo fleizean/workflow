@@ -19,6 +19,8 @@ export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
 /** The Chromium switch a launcher uses to name the userData directory explicitly. */
 export const USER_DATA_DIR_SWITCH = 'user-data-dir';
+// D-36: while false, a packaged non-smoke launch refuses the production krono.db. Only Phase 10 (REL-04) flips it.
+export const PRODUCTION_DATA_DOOR_OPEN = false;
 
 // minWidth/minHeight are declared, not applied: enforcing a minimum size is IPC-05 (Phase 6).
 export const MAIN_WINDOW = Object.freeze({

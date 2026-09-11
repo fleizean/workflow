@@ -1,7 +1,8 @@
-// Gives an unpackaged build its own userData directory, so it never opens a real krono.db (BUILD-12, D-07).
-// Electron is a type import only: every function takes the app object, so tests run it against a stand-in.
+// Where userData may point: an unpackaged build gets its own directory (BUILD-12, D-07), and the D-36 door decides
+// whether a packaged launch may open the production one. Electron is a type import only, so tests pass stand-ins.
 
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { App, CommandLine } from 'electron';
 import { DEVELOPMENT_USER_DATA_SUFFIX, USER_DATA_DIR_SWITCH } from './config';
 
@@ -40,8 +41,7 @@ export function applyDevelopmentUserDataPath(app: UserDataApp): string {
 
     const target = devUserDataPath(app.getPath('appData'), app.getName());
 
-    // D-08: the repository's only sanctioned userData relocation - unreachable when packaged, and it can only
-    // point away from the directory real users' data lives in. tests/app-identity.test.ts allowlists it.
+    // D-08: the only sanctioned userData relocation; tests/app-identity.test.ts allowlists it.
     // eslint-disable-next-line no-restricted-properties
     app.setPath('userData', target);
 
@@ -65,10 +65,38 @@ export function applyUnpackagedUserDataPath(app: UnpackagedUserDataApp): string 
     return explicit;
 }
 
-/** Whether `child` is `parent` or inside it, case-folded where the filesystem usually ignores case. smoke.ts guards with it too (WR-04). */
+/** resolve(p) with its nearest existing ancestor passed through realpath, so a junction, symlink or 8.3 name reads as its target (IN-06). */
+export function canonicalPath(p: string): string {
+    const tail: string[] = [];
+    let existing = resolve(p);
+    while (!existsSync(existing)) {
+        const parent = dirname(existing);
+        if (parent === existing) {
+            return resolve(p);
+        }
+        tail.unshift(basename(existing));
+        existing = parent;
+    }
+    return join(realpathSync.native(existing), ...tail);
+}
+
+/** Whether `child` is `parent` or inside it, as canonical paths case-folded where the filesystem usually ignores case (WR-04). */
 export function isSameOrInside(parent: string, child: string): boolean {
     const fold = (p: string): string =>
-        process.platform === 'win32' || process.platform === 'darwin' ? resolve(p).toLowerCase() : resolve(p);
+        process.platform === 'win32' || process.platform === 'darwin' ? canonicalPath(p).toLowerCase() : canonicalPath(p);
     const rel = relative(fold(parent), fold(child));
     return rel === '' || (rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel));
+}
+
+export interface DoorInput {
+    readonly isPackaged: boolean;
+    readonly smoke: boolean;
+    readonly doorOpen: boolean;
+    readonly userDataDir: string;
+    readonly productionDir: string;
+}
+
+/** D-36: a packaged, non-smoke launch must not open the production krono.db while the door is closed. */
+export function productionDataDoorRefuses(input: DoorInput): boolean {
+    return input.isPackaged && !input.smoke && !input.doorOpen && isSameOrInside(input.productionDir, input.userDataDir);
 }

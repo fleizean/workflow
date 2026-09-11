@@ -1,52 +1,32 @@
-/*
- * tests/userdata-path.test.ts
- *
- * The standing proof for D-09 and BUILD-12: a development build gets its own userData directory,
- * and that relocation can never happen in a packaged build.
- *
- * The failure this file prevents is silent and one-way. src/main/userdata-path.ts is the only
- * module in the repository allowed to move userData. If its development branch were ever reached
- * by an installed build, the app would open <appData>/<name>-dev instead of <appData>/<name>: no
- * crash, no warning, just an application that looks freshly installed, while every session the
- * user ever tracked sits orphaned in the directory next to it. There is no server and no
- * telemetry, so nobody would find out until users did - on machines the owner cannot reach.
- *
- * Three properties carry that, and each is asserted by running the module, not by reading it:
- *
- *   1. The development directory is derived from the manifest name it is given, never from a
- *      literal. A hard-coded directory name is a second source of truth that drifts from
- *      package.json the day someone touches either.
- *   2. With isPackaged true the module throws, and it throws BEFORE it touches the path setter.
- *      A throw that came after the relocation would be a crash report about damage already done.
- *   3. With isPackaged false it relocates exactly once, to exactly the derived directory.
- *
- * The module imports Electron for its type only and takes the app object as an argument, which is
- * what lets this run in plain Node - the same property src/lib/db/backup.ts was written to
- * demonstrate. The stand-ins below are plain objects with a call recorder. The electron module is
- * deliberately NOT mocked: a mock would prove the test agrees with the mock.
- *
- * Every assertion here was turned red by a deliberate mutation of the module before this file was
- * committed, and the module restored byte-identically (plan 02-02's SUMMARY records the hashes).
- */
+// D-09/BUILD-12: a development build gets its own userData and a packaged one never relocates it; WR-06, WR-04 and the
+// D-36 door guard the production directory through one realpath-aware rule. Plain stand-ins: electron is never mocked.
 
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
+import { PRODUCTION_DATA_DOOR_OPEN } from '../src/main/config';
 import {
     DEVELOPMENT_USER_DATA_SUFFIX,
     USER_DATA_DIR_SWITCH,
     applyDevelopmentUserDataPath,
     applyUnpackagedUserDataPath,
+    canonicalPath,
     devUserDataPath,
     isSameOrInside,
+    productionDataDoorRefuses,
+    type DoorInput,
     type UnpackagedUserDataApp
 } from '../src/main/userdata-path';
 import { isWithin } from '../tools/smoke-packaged.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MODULE = 'src/main/userdata-path.ts';
+const CONFIG = 'src/main/config.ts';
 const moduleSource = fs.readFileSync(path.join(repoRoot, MODULE), 'utf8');
 const pkg = JSON.parse(
     fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')
@@ -55,13 +35,13 @@ const pkg = JSON.parse(
 // The name Electron resolves at runtime, read from the manifest rather than restated here.
 const MANIFEST_NAME = String(pkg['name']);
 
-// Forward slashes on purpose: path.join normalises them on Windows and leaves them alone on the
-// Linux CI runner, so the parent is compared through path.normalize rather than as a raw string.
+// A stand-in that exists on no machine; forward slashes so path.join normalises it on every platform.
 const APP_DATA = 'C:/Users/x/AppData/Roaming';
 
-// Deliberately NOT the manifest name, so a module that ignored its argument and used a literal
-// could not pass the relocation test by coincidence.
+// Not the manifest name, so a module that used a literal could not pass by coincidence.
 const STUB_NAME = 'stub-app-name';
+
+const CASE_INSENSITIVE = process.platform === 'win32' || process.platform === 'darwin';
 
 interface SetPathCall {
     name: string;
@@ -72,14 +52,12 @@ interface RecordingApp extends UnpackagedUserDataApp {
     readonly setPathCalls: SetPathCall[];
 }
 
-/*
- * A stand-in for Electron's app object. getPath('userData') starts where Electron would put it -
- * <appData>/<name>, or the --user-data-dir it was given - and moves only if setPath is called.
- */
-function recordingApp(options: { isPackaged: boolean; name: string; userDataDir?: string }): RecordingApp {
+// Electron's app object, with userData at <appData>/<name> (or the --user-data-dir given) until setPath moves it.
+function recordingApp(options: { isPackaged: boolean; name: string; userDataDir?: string; appData?: string }): RecordingApp {
+    const appData = options.appData ?? APP_DATA;
     const paths: Record<string, string> = {
-        appData: APP_DATA,
-        userData: options.userDataDir ?? path.join(APP_DATA, options.name)
+        appData,
+        userData: options.userDataDir ?? path.join(appData, options.name)
     };
     const setPathCalls: SetPathCall[] = [];
     return {
@@ -103,14 +81,42 @@ function recordingApp(options: { isPackaged: boolean; name: string; userDataDir?
     };
 }
 
-/*
- * The module's source with block and line comments removed, for PRESENCE checks only. A comment
- * saying app.getName() must not be able to satisfy "the path is derived from app.getName()". The
- * crude stripper is adequate here because the module holds no string that contains a comment
- * marker; the absence check below reads the raw text instead, where prose can only ever make the
- * test stricter, never let it pass.
- */
+// For presence checks only, so a comment cannot satisfy them; the absence check reads the raw text.
 const moduleCode = moduleSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+// cmd without the variables that would turn a child Electron into plain Node; verbatim so quotes reach cmd intact.
+function cmd(line: string): string {
+    const env = { ...process.env };
+    delete env['ELECTRON_RUN_AS_NODE'];
+    delete env['NODE_OPTIONS'];
+    const result = spawnSync('cmd', ['/d', '/c', line], { env, encoding: 'utf8', windowsHide: true, windowsVerbatimArguments: true });
+    if (result.status !== 0) {
+        throw new Error('cmd /c ' + line + ' failed: ' + (result.stderr || String(result.error)));
+    }
+    return result.stdout.trim();
+}
+
+// A fresh temp root holding a long-named "production" directory. Links are unlinked before the root is removed,
+// so the recursive removal can never walk through one into its target.
+function withProductionFixture(run: (fixture: { root: string; target: string; addLink: (link: string) => void }) => void): void {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-spelling-'));
+    const target = path.join(root, 'Production Dir');
+    fs.mkdirSync(target);
+    const links: string[] = [];
+    try {
+        run({ root, target, addLink: (link) => links.push(link) });
+    } finally {
+        for (const link of links) {
+            fs.unlinkSync(link);
+        }
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function junction(link: string, target: string): void {
+    cmd('mklink /J "' + link + '" "' + target + '"');
+    expect(fs.realpathSync.native(link), 'the junction ' + link + ' was not created').toBe(fs.realpathSync.native(target));
+}
 
 describe('D-09 / BUILD-12: the development userData directory', () => {
     it('lives directly under appData and is named after the application plus the suffix', () => {
@@ -190,10 +196,7 @@ describe('D-09: the production name comes from the manifest at runtime, not from
     });
 
     it('never spells the manifest name, not even in a comment', () => {
-        // Raw text, deliberately. A literal in code is a second source of truth for the directory
-        // every user's data lives in. A literal in prose is harmless but indistinguishable to a
-        // text gate, and this repository's precedent (src/lib/db/backup.ts) is to write the prose
-        // around such gates rather than loosen them.
+        // Raw text on purpose: a literal anywhere is a second source of truth for where every user's data lives.
         expect(
             moduleSource.includes(MANIFEST_NAME),
             MODULE + ' contains the literal "' + MANIFEST_NAME + '". Derive it from app.getName(); ' +
@@ -230,13 +233,24 @@ describe('WR-06: an explicit --user-data-dir in an unpackaged build', () => {
         }
     });
 
-    it.runIf(process.platform === 'win32' || process.platform === 'darwin')(
+    it.runIf(CASE_INSENSITIVE)(
         'refuses the production directory spelled in another case, where the filesystem ignores case', () => {
             const app = recordingApp({
                 isPackaged: false, name: STUB_NAME, userDataDir: path.join(APP_DATA, STUB_NAME.toUpperCase())
             });
             expect(() => applyUnpackagedUserDataPath(app)).toThrow(/WR-06/);
         });
+
+    it.runIf(process.platform === 'win32')('refuses a junction to the production directory (IN-06)', () => {
+        withProductionFixture(({ root, target, addLink }) => {
+            const link = path.join(root, 'link');
+            junction(link, target);
+            addLink(link);
+            const app = recordingApp({ isPackaged: false, name: path.basename(target), appData: root, userDataDir: link });
+            expect(() => applyUnpackagedUserDataPath(app), MODULE + ' accepted a junction to ' + target).toThrow(/WR-06/);
+            expect(app.setPathCalls).toEqual([]);
+        });
+    });
 
     it('accepts a sibling whose name merely starts with the production name', () => {
         const sibling = production + '-fixture';
@@ -273,12 +287,91 @@ describe('WR-04: one containment rule for every production-directory guard', () 
         }
     });
 
-    it.runIf(process.platform === 'win32' || process.platform === 'darwin')(
+    it.runIf(CASE_INSENSITIVE)(
         'ignores case in both guards, where the filesystem does', () => {
             for (const [label, inside] of GUARDS) {
                 expect(inside(production, production.toUpperCase()), 'WR-04: ' + label + ' is case-sensitive').toBe(true);
             }
         });
+
+    for (const [label, inside] of GUARDS) {
+        it.runIf(process.platform === 'win32')(label + ' sees through a junction, including to a leaf that does not exist yet', () => {
+            withProductionFixture(({ root, target, addLink }) => {
+                const link = path.join(root, 'link');
+                junction(link, target);
+                addLink(link);
+                expect(fs.existsSync(path.join(target, 'krono.db')), 'the fixture must not hold the leaf').toBe(false);
+                expect(inside(target, link), 'IN-06: ' + label + ' let the junction ' + link + ' out').toBe(true);
+                expect(inside(target, path.join(link, 'krono.db')), 'IN-06: ' + label + ' let link\\krono.db out').toBe(true);
+                expect(inside(link, target), 'IN-06: ' + label + ' does not canonicalize the parent side').toBe(true);
+                expect(inside(target, path.join(root, 'elsewhere')), label + ' pulled a sibling in').toBe(false);
+            });
+        });
+
+        it.runIf(CASE_INSENSITIVE)(label + ' treats an upper-cased spelling of a real directory as the same one', () => {
+            withProductionFixture(({ target }) => {
+                expect(inside(target, target.toUpperCase()), label + ' is case-sensitive on a real path').toBe(true);
+                expect(inside(target.toUpperCase(), path.join(target, 'krono.db')), label + ' is case-sensitive on the parent').toBe(true);
+            });
+        });
+
+        it.runIf(process.platform !== 'win32')(label + ' sees through a symlink to the production directory', () => {
+            withProductionFixture(({ root, target, addLink }) => {
+                const link = path.join(root, 'link');
+                fs.symlinkSync(target, link, 'dir');
+                addLink(link);
+                expect(inside(target, link), 'IN-06: ' + label + ' let the symlink ' + link + ' out').toBe(true);
+                expect(inside(target, path.join(link, 'krono.db')), 'IN-06: ' + label + ' let link/krono.db out').toBe(true);
+                expect(inside(link, target), 'IN-06: ' + label + ' does not canonicalize the parent side').toBe(true);
+            });
+        });
+    }
+
+    // Computed once at collection: an 8.3 name exists only where the volume generates them.
+    const shortName = ((): { root: string; long: string; short: string } | null => {
+        if (process.platform !== 'win32') {
+            return null;
+        }
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-short-'));
+        const long = path.join(root, 'Production Directory');
+        fs.mkdirSync(long);
+        let short = long;
+        try {
+            short = cmd('for %I in ("' + long + '") do @echo %~sI');
+        } catch {
+            // No short name to test; the skip below says so.
+        }
+        return { root, long, short };
+    })();
+    afterAll(() => {
+        if (shortName !== null) {
+            fs.rmSync(shortName.root, { recursive: true, force: true });
+        }
+    });
+    const skipReason = shortName === null ? ' (skipped: 8.3 names exist only on Windows)'
+        : shortName.short === shortName.long ? ' (skipped: this volume produces no 8.3 short name)' : '';
+
+    for (const [label, inside] of GUARDS) {
+        it.skipIf(skipReason !== '')(label + ' sees an 8.3 short name of the production directory as inside it' + skipReason, () => {
+            if (shortName === null) {
+                throw new Error('unreachable: the 8.3 case runs only when a short name exists');
+            }
+            const { long, short } = shortName;
+            expect(short, 'the short name must differ, or this proves nothing').not.toBe(long);
+            expect(fs.realpathSync.native(short)).toBe(fs.realpathSync.native(long));
+            expect(inside(long, short), 'IN-06: ' + label + ' let the 8.3 name ' + short + ' out').toBe(true);
+            expect(inside(long, path.join(short, 'krono.db')), 'IN-06: ' + label + ' let an 8.3 leaf out').toBe(true);
+            expect(inside(short, path.join(long, 'krono.db')), 'IN-06: ' + label + ' does not canonicalize the parent side').toBe(true);
+        });
+    }
+
+    it('canonicalPath keeps a missing tail and resolves the part that exists', () => {
+        withProductionFixture(({ target }) => {
+            expect(canonicalPath(path.join(target, 'missing', 'krono.db')))
+                .toBe(path.join(fs.realpathSync.native(target), 'missing', 'krono.db'));
+            expect(canonicalPath(target)).toBe(fs.realpathSync.native(target));
+        });
+    });
 
     it('smoke.ts takes its guard from ' + MODULE + ' instead of keeping a second rule', () => {
         const smoke = fs.readFileSync(path.join(repoRoot, 'src/main/smoke.ts'), 'utf8')
@@ -286,5 +379,60 @@ describe('WR-04: one containment rule for every production-directory guard', () 
         expect(/import\s*\{[^}]*\bisSameOrInside\b[^}]*\}\s*from\s*'\.\/userdata-path'/.test(smoke),
             'WR-04: src/main/smoke.ts no longer imports isSameOrInside from ./userdata-path').toBe(true);
         expect(/\brelative\s*\(/.test(smoke), 'WR-04: src/main/smoke.ts computes containment itself again').toBe(false);
+    });
+});
+
+describe('D-36: the production-data door', () => {
+    const production = path.join(APP_DATA, STUB_NAME);
+    const ROWS = [false, true].flatMap((isPackaged) => [false, true].flatMap((smoke) => [false, true].flatMap((doorOpen) =>
+        [false, true].map((inside) => ({ isPackaged, smoke, doorOpen, inside })))));
+    const REFUSING = { isPackaged: true, smoke: false, doorOpen: false, inside: true };
+    const input = (row: (typeof ROWS)[number], userDataDir?: string): DoorInput => ({
+        isPackaged: row.isPackaged,
+        smoke: row.smoke,
+        doorOpen: row.doorOpen,
+        productionDir: production,
+        userDataDir: userDataDir ?? (row.inside ? production : production + '-fixture')
+    });
+
+    it('covers all 16 combinations and refuses exactly one', () => {
+        expect(new Set(ROWS.map((row) => JSON.stringify(row))).size).toBe(16);
+        expect(ROWS.filter((row) => productionDataDoorRefuses(input(row)))).toEqual([REFUSING]);
+    });
+
+    it.each(ROWS)('isPackaged=$isPackaged smoke=$smoke doorOpen=$doorOpen inside=$inside', (row) => {
+        const expected = JSON.stringify(row) === JSON.stringify(REFUSING);
+        expect(productionDataDoorRefuses(input(row)), 'D-36: wrong verdict for ' + JSON.stringify(row)).toBe(expected);
+    });
+
+    it('refuses a child and another-case spelling of the production directory too', () => {
+        expect(productionDataDoorRefuses(input(REFUSING, path.join(production, 'sub')))).toBe(true);
+        if (CASE_INSENSITIVE) {
+            expect(productionDataDoorRefuses(input(REFUSING, production.toUpperCase()))).toBe(true);
+        }
+    });
+
+    it.runIf(process.platform === 'win32')('refuses a packaged non-smoke launch whose userData is a junction to the production directory', () => {
+        withProductionFixture(({ root, target, addLink }) => {
+            const link = path.join(root, 'link');
+            junction(link, target);
+            addLink(link);
+            const door = { isPackaged: true, smoke: false, doorOpen: false, productionDir: target };
+            expect(productionDataDoorRefuses({ ...door, userDataDir: link }), 'D-36: the door opened for a junction').toBe(true);
+            expect(productionDataDoorRefuses({ ...door, userDataDir: path.join(root, 'elsewhere') })).toBe(false);
+        });
+    });
+
+    it('ships closed: PRODUCTION_DATA_DOOR_OPEN is the literal false in ' + CONFIG, () => {
+        const sourceFile = ts.createSourceFile(CONFIG, fs.readFileSync(path.join(repoRoot, CONFIG), 'utf8'), ts.ScriptTarget.Latest, true);
+        const declarations = sourceFile.statements
+            .filter((statement): statement is ts.VariableStatement => ts.isVariableStatement(statement))
+            .filter((statement) => (statement.declarationList.flags & ts.NodeFlags.Const) !== 0)
+            .flatMap((statement) => [...statement.declarationList.declarations])
+            .filter((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === 'PRODUCTION_DATA_DOOR_OPEN');
+        expect(declarations.map((declaration) => declaration.initializer?.kind),
+            'D-36: the door may only open in a Phase 10 REL-04 change behind its own checkpoint, and that change updates this test')
+            .toEqual([ts.SyntaxKind.FalseKeyword]);
+        expect(PRODUCTION_DATA_DOOR_OPEN).toBe(false);
     });
 });
