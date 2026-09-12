@@ -154,6 +154,15 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('the fixture database exists with a non-zero size', fixtureDbSize > 0,
         String(fixtureDbSize) + ' bytes at ' + fixtureDb);
 
+    // ARCH-01: the composition root and its adapters, built inside the packaged app. The repository read is the
+    // only thing in this harness that runs the bundled drizzle-orm chunk.
+    check('the composition root built all four ports', f.SMOKE_CONTAINER_PORTS === 'bus,clock,notifier,sound',
+        'reported ' + JSON.stringify(f.SMOKE_CONTAINER_PORTS));
+    check('a repository read through Drizzle in the packaged app',
+        /^\d+$/.test(f.SMOKE_CONTAINER_COMPANIES ?? '') && Number(f.SMOKE_CONTAINER_TARGET) > 0,
+        'companies=' + JSON.stringify(f.SMOKE_CONTAINER_COMPANIES) +
+        ' dailyTarget=' + JSON.stringify(f.SMOKE_CONTAINER_TARGET));
+
     check('the renderer loaded and rendered "' + RENDERER_MARKER_TEXT + '"',
         typeof f.SMOKE_RENDERER_TEXT === 'string' && f.SMOKE_RENDERER_TEXT.includes(RENDERER_MARKER_TEXT),
         'reported ' + JSON.stringify(f.SMOKE_RENDERER_TEXT));

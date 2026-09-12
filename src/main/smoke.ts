@@ -11,8 +11,9 @@ import {
     PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
     SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS, mainConfig
 } from './config';
+import { createContainer } from './container';
 import { startDatabase } from './database-startup';
-import type { LegacyImportStatus } from './database-startup';
+import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
 import { LEGACY_STORAGE_PAGE, readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
@@ -112,6 +113,12 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
     lines.push('SMOKE_TIMER_IMPORT=' + describeLegacyImport(started.legacyImport));
 
     try {
+        // BUILD-06: the composition root, the adapters and one Drizzle read, inside the packaged app. Nothing else
+        // here exercises the bundled drizzle-orm chunk, so a bundling fault in it would otherwise wait for Phase 7.
+        const containerFailure = checkContainer(layer, started.db, lines);
+        if (containerFailure !== null) {
+            return fail(containerFailure);
+        }
         // BUILD-06: the injected, brand-new database, through the same driver the bootstrap just used.
         const databaseFailure = checkInjectedDatabase(layer, dbPath, lines);
         if (databaseFailure !== null) {
@@ -153,6 +160,23 @@ async function seedLegacyTimerState(raw: string): Promise<string | null> {
         return 'seed: ' + describeError(error);
     } finally {
         win.destroy();
+    }
+    return null;
+}
+
+/** Returns the failure reason, or null when the container built and read through a repository. */
+function checkContainer(layer: SmokeDatabase, connection: StartedDatabase['db'], lines: string[]): string | null {
+    try {
+        const container = createContainer({
+            layer,
+            connection,
+            log: (line) => lines.push('SMOKE_CONTAINER_LOG=' + line)
+        });
+        lines.push('SMOKE_CONTAINER_PORTS=' + Object.keys(container.ports).sort().join(','));
+        lines.push('SMOKE_CONTAINER_COMPANIES=' + String(container.repositories.companies.list().length));
+        lines.push('SMOKE_CONTAINER_TARGET=' + String(container.repositories.settings.get().dailyTargetSeconds));
+    } catch (error) {
+        return 'container: ' + describeError(error);
     }
     return null;
 }
