@@ -19,16 +19,24 @@ import { findAll, read, repoRoot, stripCommentsAndStrings } from './helpers/ts-i
 const CHANNELS = [
     'sessions:list', 'sessions:listByDateRange', 'sessions:listByDateAndCompany', 'sessions:create', 'sessions:update',
     'sessions:delete', 'sessions:deleteAll', 'companies:list', 'companies:get', 'companies:create', 'companies:update',
-    'companies:delete', 'settings:get', 'settings:update'
+    'companies:delete', 'settings:get', 'settings:update', 'timer:getSnapshot', 'timer:start', 'timer:pause',
+    'timer:reset', 'timer:setMode', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause', 'pomodoro:abort',
+    'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress',
+    'window:minimize', 'window:close'
 ];
-const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
+const VOID_INPUT_CHANNELS = [
+    'companies:list', 'pomodoro:abort', 'pomodoro:counts', 'pomodoro:getSnapshot', 'pomodoro:pause', 'pomodoro:skipBreak',
+    'pomodoro:start', 'sessions:list', 'settings:get', 'stats:streak', 'stats:weekTotals', 'timer:getSnapshot',
+    'timer:pause', 'timer:reset', 'timer:start', 'window:close', 'window:minimize'
+];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
-const EVENTS = ['app:playSound', 'timer:tick'];
+const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick'];
 const EXPORTED_SCHEMAS = [
-    'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
-    'SettingsSchema', 'SoundIdSchema', 'TimerModeSchema', 'TimerSnapshotSchema', 'TimerStatusSchema',
-    'WorkSessionSchema'
+    'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema',
+    'PomodoroCountsSchema', 'PomodoroIntervalSchema', 'PomodoroSessionSchema', 'PomodoroSnapshotSchema',
+    'PomodoroStatusSchema', 'SettingsSchema', 'SoundIdSchema', 'StreakSchema', 'TimerModeSchema',
+    'TimerSnapshotSchema', 'TimerStatusSchema', 'WeekTotalsSchema', 'WorkSessionSchema'
 ];
 
 const isoOnTheWire: unknown = JSON.parse(JSON.stringify(new Date()));
@@ -218,7 +226,7 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         expect(voidInputs, 'D-16: a channel without input must still declare z.void()').toEqual(VOID_INPUT_CHANNELS);
     });
 
-    it('holds exactly the 14 proving channels, each named domain:action, none of them navigate', () => {
+    it('holds exactly the channels channels.ts declares, each named domain:action, none of them navigate', () => {
         const keys = Object.keys(ipcContract);
         expect([...keys].sort(), 'D-20: the proving catalogue changed').toEqual([...CHANNELS].sort());
         for (const key of keys) {
@@ -453,7 +461,23 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'companies:update': reject,
         'companies:delete': reject,
         'settings:get': reject,
-        'settings:update': reject
+        'settings:update': reject,
+        'timer:getSnapshot': reject,
+        'timer:start': reject,
+        'timer:pause': reject,
+        'timer:reset': reject,
+        'timer:setMode': reject,
+        'pomodoro:getSnapshot': reject,
+        'pomodoro:start': reject,
+        'pomodoro:pause': reject,
+        'pomodoro:abort': reject,
+        'pomodoro:skipBreak': reject,
+        'pomodoro:counts': reject,
+        'stats:streak': reject,
+        'stats:weekTotals': reject,
+        'stats:dayProgress': reject,
+        'window:minimize': reject,
+        'window:close': reject
     };
     void wrongOutput;
     void unknownHandled;

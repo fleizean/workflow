@@ -54,8 +54,8 @@ export const SettingsSchema = z.strictObject({
 });
 
 // The sounds main asks the renderer to play. Main owns the decision and the clock; the renderer owns the audio
-// element, as v1.2.1's `new Audio(...)` did. Slice E adds the pomodoro sound with the cycle that raises it.
-export const SoundIdSchema = z.enum(['goalReached']);
+// element, as v1.2.1's `new Audio(...)` did.
+export const SoundIdSchema = z.enum(['goalReached', 'pomodoroCompleted']);
 
 // The timer's own vocabulary. Status and mode are separate axes, which is what lets a mode change leave what has
 // already been counted alone (CORE-14, CB-1).
@@ -70,4 +70,43 @@ export const TimerSnapshotSchema = z.strictObject({
     elapsedSeconds: DurationSecondsSchema,
     // G3/G4: time carried over from a previous launch is offered for saving or discarding, never auto-resumed.
     restoredFromPreviousLaunch: z.boolean()
+});
+
+// The pomodoro cycle's vocabulary. The interval names are the state machine's, and completedToday is read from the
+// database for the day it names - never a number the renderer increments (CORE-12).
+export const PomodoroIntervalSchema = z.enum(['work', 'shortBreak', 'longBreak']);
+export const PomodoroStatusSchema = z.enum(['idle', 'running', 'paused']);
+
+export const PomodoroSnapshotSchema = z.strictObject({
+    interval: PomodoroIntervalSchema,
+    status: PomodoroStatusSchema,
+    elapsedSeconds: DurationSecondsSchema,
+    targetSeconds: DurationSecondsSchema,
+    remainingSeconds: DurationSecondsSchema,
+    date: LocalDateSchema,
+    completedToday: z.int().nonnegative(),
+    sessionsUntilLongBreak: z.int().positive()
+});
+
+// POMO-09: how many pomodoros the day and the Monday-to-Sunday week hold.
+export const PomodoroCountsSchema = z.strictObject({
+    date: LocalDateSchema,
+    todayCount: z.int().nonnegative(),
+    thisWeekCount: z.int().nonnegative()
+});
+
+// CORE-08: the streak, the two week totals and one day's progress - each a whole day's total against the target,
+// never a single session's duration (B7).
+export const StreakSchema = z.strictObject({ date: LocalDateSchema, days: z.int().nonnegative() });
+
+export const WeekTotalsSchema = z.strictObject({
+    thisWeekSeconds: DurationSecondsSchema,
+    lastWeekSeconds: DurationSecondsSchema
+});
+
+export const DayProgressSchema = z.strictObject({
+    date: LocalDateSchema,
+    totalSeconds: DurationSecondsSchema,
+    dailyTargetSeconds: z.int().positive(),
+    goalMet: z.boolean()
 });
