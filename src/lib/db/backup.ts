@@ -292,8 +292,31 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
     return restored;
 }
 
+const SQLITE_HEADER = Buffer.from('SQLite format 3\u0000', 'latin1');
+
+// Reads the 16-byte header only: enough to tell a database from a clobbered or truncated file, and it opens no
+// connection, so it costs nothing on a 300 MB backup (WR-02).
+function looksLikeADatabase(file: string): boolean {
+    let handle: number;
+    try {
+        handle = fs.openSync(file, 'r');
+    } catch {
+        return false;
+    }
+    try {
+        const head = Buffer.alloc(SQLITE_HEADER.length);
+        return fs.readSync(handle, head, 0, head.length, 0) === head.length && head.equals(SQLITE_HEADER);
+    } catch {
+        return false;
+    } finally {
+        fs.closeSync(handle);
+    }
+}
+
 // Deletes all but the `keep` newest backups, ordered by filename stamp rather than mtime, and returns what it
-// deleted. The newest always survives, whatever `keep` says.
+// deleted. WR-02: a file that does not read as a database ranks below every one that does, whatever its stamp,
+// so retention can never spend a slot on a corrupt copy while deleting a good one. The newest database-shaped
+// backup always survives, whatever `keep` says.
 export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_BACKUPS): string[] {
     if (!fs.existsSync(backupDir)) return [];
 
@@ -303,8 +326,14 @@ export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_
         .sort()
         .reverse();
 
+    const readable = new Map(newestFirst.map((name) => [name, looksLikeADatabase(path.join(backupDir, name))]));
+    const ranked = [
+        ...newestFirst.filter((name) => readable.get(name) === true),
+        ...newestFirst.filter((name) => readable.get(name) !== true)
+    ];
+
     const retained = Math.max(1, Math.trunc(keep));
-    const doomed = newestFirst.slice(retained);
+    const doomed = ranked.slice(retained);
 
     const deleted: string[] = [];
     for (const name of doomed) {

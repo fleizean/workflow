@@ -863,6 +863,29 @@ describe('backup retention', () => {
         expect(fs.existsSync(byStamp.get('10:00:04') ?? '')).toBe(true);
     });
 
+    // WR-02: retention read filenames alone, so a .bak that is not a database took a slot from one that is.
+    it('spends no retention slot on a backup that does not read as a database', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const good = [at(10, 0, 0), at(10, 0, 1), at(10, 0, 2)];
+        const kept: string[] = [];
+        for (const now of good) {
+            kept.push((await backupDatabase(fx, dir, { now })).backupPath);
+        }
+
+        // A validly named .bak whose stamp is the newest of all, and which is not a database.
+        const corrupt = path.join(dir, path.basename(fx) + '.2026-09-12T10-00-09-000Z.bak');
+        fs.writeFileSync(corrupt, 'this was never a database');
+
+        const deleted = pruneBackups(dir, 3);
+
+        expect(deleted, 'the corrupt backup was not the one deleted').toEqual([corrupt]);
+        expect(fs.existsSync(corrupt)).toBe(false);
+        for (const survivor of kept) {
+            expect(fs.existsSync(survivor), 'a verified backup was evicted by a corrupt one').toBe(true);
+        }
+    });
+
     it('ignores files that are not backups it wrote', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);
