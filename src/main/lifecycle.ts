@@ -4,6 +4,7 @@
 import { app, dialog } from 'electron';
 import { join } from 'node:path';
 import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
+import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer } from './database-startup';
 import { describeError } from './errors';
@@ -65,6 +66,8 @@ export function registerDatabaseCloser(close: () => void): void {
 export function closeDatabaseNow(): void {
     const close = databaseCloser;
     databaseCloser = undefined;
+    // Before the close, so nothing can be handed a repository over a connection on its way out.
+    clearActiveContainer();
     if (close === undefined) {
         return;
     }
@@ -104,6 +107,13 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
 
     if (started !== null) {
         registerDatabaseCloser(started.close);
+        // After startDatabase, which owns the door, the classification and the migration; the container only wires
+        // what that left open. The main window already exists, so the bus has somewhere to deliver to.
+        setActiveContainer(createContainer({
+            layer: database,
+            connection: started.db,
+            log: (line) => { console.log(line); }
+        }));
     }
 }
 
