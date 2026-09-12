@@ -617,6 +617,27 @@ describe('D-33/DATA-10: the legacy timer import runs after the migration and bef
     });
 });
 
+describe('WR-04: an adopted database that already carries a v2 object name is still migrated', () => {
+    it('adopts a legacy database holding work_sessions_date_idx instead of failing on every launch', async () => {
+        const h = harness('name-collision');
+        writeLegacyDatabase(h.dbPath);
+        const db = new Database(h.dbPath);
+        try {
+            // What a user with a SQLite browser, or a future third-party tool, leaves behind. classify
+            // fingerprints columns only, so this file is accepted and then has to survive the v2 step.
+            db.exec('CREATE INDEX work_sessions_date_idx ON work_sessions (date)');
+        } finally {
+            db.close();
+        }
+
+        const started = await run(h);
+
+        expect(h.recorder.reports, 'a pre-existing index name failed the whole v2 transaction').toEqual([]);
+        expect(started?.report.applied).toEqual([1, 2]);
+        expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
+    });
+});
+
 describe('WR-01: nothing writes to the user\'s file before the backup of it exists', () => {
     it('leaves a delete-journal database byte-identical until migrateDatabase has it, then puts it in WAL',
         async () => {
