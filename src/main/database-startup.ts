@@ -109,6 +109,41 @@ function reportFailure(
     ports.exit(EXIT_CODES.databaseFailed);
 }
 
+// D-33: best effort. A read that fails or times out is logged by reason and retried on the next launch, and the
+// log carries outcomes only - never the saved timer string (T-01-37). The caller releases the returned session.
+async function importLegacyTimer(
+    layer: DatabaseLayer,
+    db: DatabaseHandle,
+    env: StartupEnvironment,
+    ports: StartupPorts
+): Promise<LegacyStorageSession | null> {
+    let session: LegacyStorageSession;
+    try {
+        session = await ports.readLegacyStorage();
+    } catch (error) {
+        ports.log('legacy timer: not read - ' + describeError(error) + '; the next launch retries');
+        return null;
+    }
+
+    const { read } = session;
+    if (!read.ok) {
+        ports.log('legacy timer: not read - ' + read.reason + '; the next launch retries');
+        return session;
+    }
+
+    try {
+        const outcome = layer.importLegacyState(db, {
+            timerState: read.timerState,
+            lastGoalNotificationDate: read.lastGoalNotificationDate
+        }, env.now);
+        ports.log('legacy timer: timerState ' + outcome.timerState + ', goalDate ' + outcome.goalDate);
+    } catch (error) {
+        // The database is migrated and intact; only the import is skipped.
+        ports.log('legacy timer: not imported - ' + describeError(error) + '; the next launch retries');
+    }
+    return session;
+}
+
 /** Returns the open connection, or null when startup reported and exited. Never creates a replacement database. */
 export async function startDatabase(
     layer: DatabaseLayer,
@@ -179,7 +214,11 @@ export async function startDatabase(
     }
     ports.log(summaryLine(report));
 
+    const session = await importLegacyTimer(layer, db, env, ports);
+
     ports.openMainWindow();
+    // Pitfall 4: destroying the extractor before a main window exists fires window-all-closed, which quits the app.
+    session?.release();
 
     return { db, report, close: (): void => { closeHandle(layer, db); } };
 }
