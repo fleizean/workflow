@@ -12,7 +12,8 @@ export const APP_STATE_KEYS = Object.freeze({
     legacyTimerState: 'legacy.v121.timerState',
     legacyGoalDate: 'legacy.v121.lastGoalNotificationDate',
     timerState: 'timer.state',
-    goalNotifiedDate: 'goal.lastNotifiedDate'
+    goalNotifiedDate: 'goal.lastNotifiedDate',
+    windowBounds: 'window.bounds'
 } as const);
 
 export const LegacyTimerRecordSchema = z.strictObject({
@@ -46,11 +47,23 @@ export const GoalNotifiedRecordSchema = z.strictObject({
     notifiedAt: z.string()
 });
 
+// IPC-05: where the window was, in the database rather than in a JSON file beside it - one thing to back up, one
+// thing to migrate, and no second store that can disagree with the first. x and y are signed: a display to the left
+// of the primary one has negative coordinates, and refusing them would be refusing a legitimate position.
+export const WindowBoundsRecordSchema = z.strictObject({
+    x: z.int(),
+    y: z.int(),
+    width: z.int().positive(),
+    height: z.int().positive(),
+    updatedAt: z.string()
+});
+
 const SCHEMAS = {
     'legacy.v121.timerState': LegacyTimerRecordSchema,
     'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema,
     'timer.state': TimerStateRecordSchema,
-    'goal.lastNotifiedDate': GoalNotifiedRecordSchema
+    'goal.lastNotifiedDate': GoalNotifiedRecordSchema,
+    'window.bounds': WindowBoundsRecordSchema
 } as const;
 
 export type AppStateKey = keyof typeof SCHEMAS;
@@ -176,6 +189,23 @@ export function readGoalNotifiedDate(db: DatabaseType.Database): LocalDate | nul
 
 export function writeGoalNotifiedDate(db: DatabaseType.Database, date: LocalDate, now: Date): void {
     writeAppState(db, APP_STATE_KEYS.goalNotifiedDate, { date, notifiedAt: utcIsoTimestamp(now) }, now);
+}
+
+export interface StoredWindowBounds {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+}
+
+/** Where the window was when it was last put away, or null - including when the stored value no longer parses. */
+export function readWindowBounds(db: DatabaseType.Database): StoredWindowBounds | null {
+    const stored = recorded(db, APP_STATE_KEYS.windowBounds);
+    return stored === null ? null : { x: stored.x, y: stored.y, width: stored.width, height: stored.height };
+}
+
+export function writeWindowBounds(db: DatabaseType.Database, bounds: StoredWindowBounds, now: Date): void {
+    writeAppState(db, APP_STATE_KEYS.windowBounds, { ...bounds, updatedAt: utcIsoTimestamp(now) }, now);
 }
 
 // The raw string decides whenever either side carries no lastUpdated to compare (D-34).

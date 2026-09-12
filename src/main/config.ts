@@ -39,7 +39,8 @@ export const EXIT_CODES = Object.freeze({
     databaseFailed: 6
 });
 
-// minWidth/minHeight are declared, not applied: enforcing a minimum size is IPC-05 (Phase 6).
+// IPC-05: the width and height a new window opens at, and the size below which it cannot be resized. Phase 10's
+// responsive matrix starts at 380x600, which is where the minimum comes from.
 export const MAIN_WINDOW = Object.freeze({
     width: 430,
     height: 932,
@@ -49,6 +50,12 @@ export const MAIN_WINDOW = Object.freeze({
     backgroundColor: '#101c22',
     title: 'Workflow'
 });
+
+// IPC-05: a resize fires many times a second, so the bounds are written this long after the last one.
+export const WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
+// Windows draws a full-size PNG in the notification area as a smear; v1.2.1 resized to 16 too (main.js:104).
+export const TRAY_ICON_SIZE = 16;
+export const TRAY_TOOLTIP = 'Workflow';
 
 export interface MainConfig {
     readonly smoke: boolean;
