@@ -15,7 +15,8 @@ if (!zone) {
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const date = await import(pathToFileURL(path.join(repoRoot, 'src', 'shared', 'utils', 'date.ts')).href);
 const {
-    addDays, diffDays, formatLocalDate, instantFromEpochMs, isLocalDate, isoWeekday, parseLocalDate, weekBucketOf
+    addDays, diffDays, epochMsFromSqlTimestamp, formatLocalDate, instantFromEpochMs, isLocalDate, isoWeekday,
+    parseLocalDate, weekBucketOf
 } = date;
 
 const DAY_MS = 86_400_000;
@@ -111,6 +112,8 @@ process.stdout.write(JSON.stringify({
         spring: naiveAddDays('2026-03-09', -7),
         fallBucket: parseLocalDate('2026-10-26').getTime() >= naiveLastMonday ? 'lastWeek' : 'older'
     },
+    // A stored created_at is UTC: the same text must yield the same instant in every zone.
+    sqlTimestamp: epochMsFromSqlTimestamp('2026-10-26 00:30:00'),
     correct: {
         fall: addDays('2026-10-26', 7),
         spring: addDays('2026-03-09', -7),

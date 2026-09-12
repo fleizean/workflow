@@ -28,6 +28,8 @@ const SWEEP_ZONES = [
 ];
 const DST_ZONES = new Set(['America/New_York', 'America/Santiago', 'Australia/Lord_Howe', 'Pacific/Auckland', 'Pacific/Chatham']);
 const CORRECT = { fall: '2026-11-02', spring: '2026-03-02', fallBucket: 'lastWeek', springBucket: 'lastWeek' };
+// Date.UTC, an oracle independent of date.ts: 2026-10-26 00:30:00 UTC.
+const SQL_TIMESTAMP_MS = Date.UTC(2026, 9, 26, 0, 30, 0);
 
 interface SweepReport {
     zone: string;
@@ -43,6 +45,7 @@ interface SweepReport {
     hourlyChecks: number;
     hourlyFailures: string[];
     oracleError: string | null;
+    sqlTimestamp: number;
     naive: { fall: string; spring: string; fallBucket: string };
     correct: { fall: string; spring: string; fallBucket: string; springBucket: string };
 }
@@ -108,6 +111,10 @@ describe('date.ts zone sweep', () => {
             expect(report.skippedMidnights, 'Santiago skips local midnight (D-03)').toBeGreaterThan(0);
         }
         expect(report.correct, 'SHARED-02: date.ts week arithmetic across the 169- and 167-hour weeks').toEqual(CORRECT);
+        // A created_at is a UTC instant, so its text must read the same everywhere; a zone-dependent parse would
+        // put a session's creation time on the wrong side of midnight for half the world (D-05).
+        expect(report.sqlTimestamp, 'D-05: epochMsFromSqlTimestamp read a stored UTC timestamp through the host zone')
+            .toBe(SQL_TIMESTAMP_MS);
     }, 120_000);
 
     it('D-09 counterexample: the naive epoch-millisecond week is wrong in America/New_York', () => {

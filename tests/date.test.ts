@@ -8,6 +8,7 @@ import { read } from './helpers/ts-imports';
 import {
     addDays,
     diffDays,
+    epochMsFromSqlTimestamp,
     formatLocalDate,
     instantFromEpochMs,
     isLocalDate,
@@ -268,6 +269,52 @@ describe('instant helpers (D-05)', () => {
             expect(() => instantFromEpochMs(ms), 'WR-01: ' + String(ms) + ' ms is outside the Date range')
                 .toThrow(/^instantFromEpochMs: expected a finite number/);
         }
+    });
+});
+
+
+describe('stored SQLite timestamps (D-05)', () => {
+    // Date.UTC is an oracle independent of date.ts: it never consults the host zone.
+    const CASES: [string, number][] = [
+        ['2026-01-05 09:00:00', Date.UTC(2026, 0, 5, 9, 0, 0)],
+        ['2026-12-31 23:59:59', Date.UTC(2026, 11, 31, 23, 59, 59)],
+        ['1970-01-01 00:00:00', 0],
+        ['2024-02-29 12:00:00', Date.UTC(2024, 1, 29, 12, 0, 0)],
+        ['2026-01-05T09:00:00Z', Date.UTC(2026, 0, 5, 9, 0, 0)],
+        ['2026-01-05T09:00:00.250Z', Date.UTC(2026, 0, 5, 9, 0, 0, 250)],
+        ['2026-01-05 09:00:00.5', Date.UTC(2026, 0, 5, 9, 0, 0, 500)]
+    ];
+
+    it.each(CASES)('reads %s as the UTC instant it is', (text, expected) => {
+        expect(epochMsFromSqlTimestamp(text)).toBe(expected);
+    });
+
+    it('agrees with instantFromEpochMs on the round trip', () => {
+        expect(utcIsoTimestamp(instantFromEpochMs(epochMsFromSqlTimestamp('2026-09-06 10:00:00'))))
+            .toBe('2026-09-06T10:00:00.000Z');
+    });
+
+    it('does not shift a year below 0100 (the Date.UTC two-digit-year trap)', () => {
+        expect(epochMsFromSqlTimestamp('0099-01-01 00:00:00'), 'Date.UTC(99, ...) would mean 1999')
+            .toBeLessThan(epochMsFromSqlTimestamp('1900-01-01 00:00:00'));
+    });
+
+    const REJECTED: [string, unknown][] = [
+        ['a calendar day alone', '2026-01-05'],
+        ['an unpadded hour', '2026-01-05 9:00:00'],
+        ['a day that does not exist', '2026-02-30 09:00:00'],
+        ['hour 24', '2026-01-05 24:00:00'],
+        ['minute 60', '2026-01-05 09:60:00'],
+        ['second 60', '2026-01-05 09:00:60'],
+        ['a US date', '05/01/2026 09:00:00'],
+        ['an empty string', ''],
+        ['a trailing newline', '2026-01-05 09:00:00\n'],
+        ['a number', 20260105],
+        ['null', null]
+    ];
+
+    it.each(REJECTED)('refuses %s rather than inventing an instant', (_label, value) => {
+        expect(() => epochMsFromSqlTimestamp(value as string)).toThrow(/^epochMsFromSqlTimestamp:/);
     });
 });
 

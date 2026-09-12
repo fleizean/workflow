@@ -181,3 +181,28 @@ export function instantFromEpochMs(ms: number): Date {
     }
     return new Date(ms);
 }
+
+// SQLite's CURRENT_TIMESTAMP text: 'YYYY-MM-DD HH:MM:SS' in UTC, which is what every created_at and updated_at in
+// krono.db holds. Liberal on read - a 'T' separator, fractional seconds and a trailing Z are accepted - because a
+// third-party tool may have written one of those forms; nothing in this project writes anything but SQLite's own.
+const SQL_TIMESTAMP = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?Z?$/;
+
+const MS_PER_DAY = 86400000;
+
+/** An instant, never a calendar day (D-05). Arithmetic on the day serial, so years below 0100 are not shifted. */
+export function epochMsFromSqlTimestamp(text: string): number {
+    const match = typeof text === 'string' ? SQL_TIMESTAMP.exec(text) : null;
+    if (match === null) {
+        throw new Error('epochMsFromSqlTimestamp: expected a UTC "YYYY-MM-DD HH:MM:SS", got ' + describe(text));
+    }
+    const parts = partsOf(match[1]);
+    const hours = Number(match[2]);
+    const minutes = Number(match[3]);
+    const seconds = Number(match[4]);
+    if (parts === undefined || hours > 23 || minutes > 59 || seconds > 59) {
+        throw new Error('epochMsFromSqlTimestamp: ' + describe(text) + ' is not a real UTC instant');
+    }
+    const fraction = match[5];
+    const millis = fraction === undefined ? 0 : Math.floor(Number(fraction.padEnd(3, '0').slice(0, 3)));
+    return dayNumber(parts) * MS_PER_DAY + hours * 3600000 + minutes * 60000 + seconds * 1000 + millis;
+}
