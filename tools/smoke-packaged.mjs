@@ -208,6 +208,22 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE === f.SMOKE_BRIDGE_TICKS,
         'before=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS) + ' after=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE));
 
+    // Criterion 8: the tray, and the close that hides rather than quits. Windows is the verified runtime target
+    // (PROJECT.md); elsewhere a runner with no notification area may legitimately have no tray, and the reason it
+    // reported is recorded rather than failed on.
+    check('asking for the tray twice produced one tray',
+        f.SMOKE_TRAY_SINGLETON === 'true', 'reported ' + JSON.stringify(f.SMOKE_TRAY_SINGLETON));
+    check('the app has a tray icon to hide to' + (process.platform === 'win32' ? '' : ' (not required off Windows)'),
+        f.SMOKE_TRAY_CREATED === 'true' || process.platform !== 'win32',
+        'reported ' + JSON.stringify(f.SMOKE_TRAY_CREATED) +
+        (f.SMOKE_TRAY_LOG === undefined ? '' : ' - ' + f.SMOKE_TRAY_LOG));
+    check('closing the window hides it instead of ending the app',
+        f.SMOKE_CLOSE_DECISION === 'hide' && f.SMOKE_WINDOW_AFTER_CLOSE === 'alive',
+        'decision=' + JSON.stringify(f.SMOKE_CLOSE_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_CLOSE));
+    check('choosing Quit lets the window go instead of re-hiding it',
+        f.SMOKE_QUIT_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_QUIT === 'destroyed',
+        'decision=' + JSON.stringify(f.SMOKE_QUIT_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_QUIT));
+
     return checks;
 }
 

@@ -16,6 +16,8 @@ import {
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
 import { registerIpcHandlers, removeIpcHandlers } from './ipc';
+import { decideWindowClose, markQuitting } from './quit';
+import { createAppTray, destroyAppTray } from './tray';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
@@ -147,6 +149,11 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         const bridgeFailure = await checkBridge(win, container, lines);
         if (bridgeFailure !== null) {
             return fail(bridgeFailure);
+        }
+        // Last, because it ends by telling the app it is quitting - which is the state being proved.
+        const shellFailure = checkShell(lines);
+        if (shellFailure !== null) {
+            return fail(shellFailure);
         }
     } finally {
         removeIpcHandlers();
@@ -305,6 +312,37 @@ const READ_TICKS_SCRIPT = `({
 })`;
 
 const DISPOSE_SCRIPT = 'window.__smokeBridge.dispose(); window.__smokeBridge.dispose(); true';
+
+/*
+ * Criterion 8 in the packaged app: one tray icon however often it is asked for, a close that hides the window while
+ * the app is running, and a close that lets it go once the app is quitting. The quitting flag is set at the very end
+ * of the smoke on purpose - nothing runs after it but the report.
+ */
+function checkShell(lines: string[]): string | null {
+    try {
+        const actions = { show: () => undefined, hide: () => undefined, isVisible: () => false };
+        const log = (line: string): void => { lines.push('SMOKE_TRAY_LOG=' + line); };
+        const first = createAppTray(actions, log);
+        const second = createAppTray(actions, log);
+        lines.push('SMOKE_TRAY_CREATED=' + String(first !== undefined));
+        lines.push('SMOKE_TRAY_SINGLETON=' + String(first === second));
+
+        // A window of its own, so the one the renderer checks ran against is left alone.
+        const probe = createMainWindow({ show: false });
+        lines.push('SMOKE_CLOSE_DECISION=' + decideWindowClose({ quitting: false }));
+        probe.close();
+        lines.push('SMOKE_WINDOW_AFTER_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
+
+        markQuitting();
+        lines.push('SMOKE_QUIT_DECISION=' + decideWindowClose({ quitting: true }));
+        probe.close();
+        lines.push('SMOKE_WINDOW_AFTER_QUIT=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
+        destroyAppTray();
+    } catch (error) {
+        return 'shell: ' + describeError(error);
+    }
+    return null;
+}
 
 /** Returns the failure reason, or null when every check passed. */
 function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: string[]): string | null {
