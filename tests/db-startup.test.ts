@@ -472,6 +472,58 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
     });
 
+    // CR-02: a step that commits and a later step that fails leaves the file at a version it never had before.
+    // Saying "still there as it was" and "No backup was taken" to that user describes someone else's file.
+    it('says the database was changed when a step had already committed, and names the backup', async () => {
+        const h = harness('partial-commit', {
+            layer: {
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    steps: [
+                        { version: 1, tag: '0000_v121_baseline', kind: 'baseline' },
+                        { version: 2, tag: 'injected_failure', kind: 'sql', sql: 'INSERT INTO t_missing VALUES (1)' }
+                    ]
+                })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(userVersionOf(h.dbPath), 'no step committed, so this case proves nothing about a partial one').toBe(1);
+        const backups = backupsIn(h.backupDir);
+        expect(backups, 'a legacy adoption ran without a backup').toHaveLength(1);
+
+        const body = h.recorder.reports[0]?.body ?? '';
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(body, 'the dialog denied a change the file carries').not.toContain('still there as it was');
+        expect(body, 'the dialog hid the backup the user was told did not exist').toContain(path.join(h.backupDir, backups[0] ?? ''));
+        expect(body).not.toContain('No backup was taken.');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+    });
+
+    // CR-02: setJournalModeWal runs after every step has committed. It used to sit inside the migration try, so a
+    // WAL conversion that did not take refused to start a database that was migrated, backed up and usable.
+    it('starts anyway when the post-migration journal-mode conversion fails, and logs it', async () => {
+        const h = harness('journal-mode-throws', {
+            layer: {
+                setJournalModeWal: () => { throw new Error('injected WAL conversion failure'); }
+            }
+        });
+        writeLegacyDatabase(h.dbPath, 'delete');
+
+        const started = await run(h);
+
+        expect(started, 'a migrated database was refused over its journal mode').not.toBeNull();
+        expect(started?.report.applied).toEqual([1, 2]);
+        expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
+        expect(h.recorder.reports, 'a committed migration still reported a failure').toEqual([]);
+        expect(h.recorder.exits).toEqual([]);
+        expect(h.recorder.calls).toContain('openMainWindow');
+        expect(h.recorder.logs.join('\n')).toContain('still in its previous journal mode');
+    });
+
     it('reports a backup that could not be taken, and leaves the version where it was', async () => {
         const h = harness('backup-failure');
         writeLegacyDatabase(h.dbPath);

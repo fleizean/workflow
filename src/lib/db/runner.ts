@@ -162,13 +162,15 @@ const sizeOf = (file: string): number => (fs.existsSync(file) ? fs.statSync(file
 // A file with nothing in it has nothing to back up; committed rows may still live only in the -wal.
 const hasContent = (dbPath: string): boolean => sizeOf(dbPath) > 0 || sizeOf(dbPath + '-wal') > 0;
 
-// Best effort: the migration failure the caller is about to raise says more than anything prune could go wrong with.
-function prunePartial(backupDir: string, backupPath: string | null): void {
-    if (backupPath === null) return;
+// Best effort on both paths (CR-02): retention is housekeeping. On the failure path it must not mask the
+// migration failure the caller is about to raise; on the success path an undeletable stray in backups/ must not
+// turn a committed migration into a reported one.
+function pruneBestEffort(backupDir: string, backupPath: string | null): string[] {
+    if (backupPath === null) return [];
     try {
-        pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS);
+        return pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS);
     } catch {
-        // The failure being reported matters more than an unpruned backup directory.
+        return [];
     }
 }
 
@@ -261,13 +263,13 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
         } catch (error) {
             // CR-02: a migration that fails on every launch takes a fresh backup on every launch. Pruning here
             // too is what keeps that loop bounded at the retained count instead of filling the disk.
-            prunePartial(options.backupDir, backupPath);
+            pruneBestEffort(options.backupDir, backupPath);
             throw new MigrationFailedError(step.version, backupPath, error);
         }
         applied.push(step.version);
         hooks?.afterCommit?.(step.version);
     }
 
-    const pruned = backupPath === null ? [] : pruneBackups(options.backupDir, DEFAULT_RETAINED_BACKUPS);
+    const pruned = pruneBestEffort(options.backupDir, backupPath);
     return { dbClass, fromVersion, toVersion: readUserVersion(db), applied, backupPath, pruned, anomalies };
 }

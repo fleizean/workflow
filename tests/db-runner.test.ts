@@ -397,6 +397,32 @@ describe('D-22: backup before the first statement, prune after the last commit',
         expect(left, 'the two oldest backups survived the prune').toEqual(expect.arrayContaining([older[2], older[3]]));
     });
 
+    // CR-02: retention runs after the last step commits. A stray in backups/ that will not delete - a directory
+    // with a backup's name, an antivirus hold - must not turn a committed migration into a reported failure.
+    it('completes the migration when the success-path prune cannot delete a stray', async () => {
+        const dbPath = legacyAt('C', 'representative');
+        const prepared = prepare(dbPath, 2);
+        const backupDir = path.join(prepared.dir, 'backups');
+        const older = await withOlderBackups(dbPath, backupDir);
+        expect(older).toHaveLength(4);
+        // A directory carrying a backup's name: rmSync without recursive refuses it, exactly as a held file does.
+        const stray = path.join(backupDir, path.basename(dbPath) + '.2020-01-01T00-00-00-000Z.bak');
+        fs.mkdirSync(stray);
+        const db = open(dbPath);
+
+        const report = await migrateDatabase(db, options(prepared, [BASELINE, PROBE_STEP], {
+            now: new Date(2026, 5, 1, 9, 0, 0)
+        }));
+        closeDatabase(db);
+
+        expect(report.toVersion).toBe(2);
+        expect(report.backupPath, 'no backup was taken, so the prune never ran').not.toBeNull();
+        expect(userVersionOf(dbPath)).toBe(2);
+        expect(fs.existsSync(stray), 'the stray was deleted, so the prune never hit it').toBe(true);
+        expect(backupsIn(backupDir), 'the backup the run took did not survive')
+            .toContain(path.basename(report.backupPath ?? ''));
+    });
+
     it('stays at the retained count across repeated failures, leaving no staging file behind', async () => {
         const dbPath = legacyAt('C', 'representative');
         const backupDir = path.join(path.dirname(dbPath), 'backups');

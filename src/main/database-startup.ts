@@ -73,16 +73,32 @@ export function doorMessage(productionDir: string): string {
         'Start the installed version of Workflow instead.';
 }
 
+/** What re-reading the file after the failure showed, never where in the code the throw happened (CR-02). */
+export type DatabaseChange = 'unchanged' | 'changed' | 'unknown';
+
+const HEADS: Readonly<Record<DatabaseChange, string>> = Object.freeze({
+    unchanged: 'Workflow stopped instead of changing your database, which is still there as it was.',
+    changed: 'Workflow stopped part-way through updating your database. The step that failed was rolled back, ' +
+        'but the steps before it had already been saved.',
+    unknown: 'Workflow stopped while updating your database, and could not read the file afterwards to say how ' +
+        'much of the update it kept.'
+});
+
 // WR-03: the app has no restore action, so the backup is described as a file to keep, never as something
 // Workflow will put back on its own.
-export function failureMessage(details: { dbPath: string; backupPath: string | null; reason: string }): string {
+export function failureMessage(
+    details: { dbPath: string; backupPath: string | null; reason: string; changed: DatabaseChange }
+): string {
     const backup = details.backupPath === null
         ? 'No backup was taken.'
         : 'A verified copy of it, taken before anything was attempted, is at:\n' + details.backupPath;
-    return 'Workflow stopped instead of changing your database, which is still there as it was.\n\n' +
-        details.dbPath + '\n\n' + backup + '\n\nReason: ' + details.reason +
-        '\n\nNo database was created, renamed or replaced. Install the latest version of Workflow and ' +
-        'start it again; if this repeats, copy that file somewhere safe before doing anything else.';
+    const advice = details.changed === 'unchanged'
+        ? 'No database was created, renamed or replaced. Install the latest version of Workflow and ' +
+            'start it again; if this repeats, copy that file somewhere safe before doing anything else.'
+        : 'No database was created, renamed or replaced. Copy the file above, and the backup if there is one, ' +
+            'somewhere safe before starting Workflow again.';
+    return HEADS[details.changed] + '\n\n' +
+        details.dbPath + '\n\n' + backup + '\n\nReason: ' + details.reason + '\n\n' + advice;
 }
 
 function summaryLine(report: MigrationReport): string {
@@ -119,10 +135,18 @@ function closeHandle(layer: DatabaseLayer, db: DatabaseHandle): string | null {
 // D-31: report, then exit. app.exit skips will-quit, so the caller closes any connection before this runs.
 function reportFailure(
     ports: StartupPorts,
-    details: { dbPath: string; backupPath: string | null; reason: string }
+    details: { dbPath: string; backupPath: string | null; reason: string; changed: DatabaseChange }
 ): void {
     ports.report('failed', FAILURE_TITLE, failureMessage(details));
     ports.exit(EXIT_CODES.databaseFailed);
+}
+
+// CR-02: what the dialog tells the user about their file is read back off the file, not inferred from where the
+// throw came from. The connection is closed by now, so this read-only probe sees what the next launch would.
+function observeChange(layer: DatabaseLayer, dbPath: string, before: number): DatabaseChange {
+    const probe = layer.probeDatabase(dbPath);
+    if (!probe.ok) return 'unknown';
+    return probe.observed.userVersion === before ? 'unchanged' : 'changed';
 }
 
 // D-33: best effort. A read that fails or times out is logged by reason and retried on the next launch, and the
@@ -190,7 +214,7 @@ export async function startDatabase(
 
     const probe = layer.probeDatabase(dbPath);
     if (!probe.ok) {
-        reportFailure(ports, { dbPath, backupPath: null, reason: probe.reason });
+        reportFailure(ports, { dbPath, backupPath: null, reason: probe.reason, changed: 'unchanged' });
         return null;
     }
 
@@ -215,7 +239,7 @@ export async function startDatabase(
     try {
         db = layer.openDatabase(dbPath, { deferJournalMode: dbClass !== 'fresh' });
     } catch (error) {
-        reportFailure(ports, { dbPath, backupPath: null, reason: describeError(error) });
+        reportFailure(ports, { dbPath, backupPath: null, reason: describeError(error), changed: 'unchanged' });
         return null;
     }
 
@@ -228,18 +252,26 @@ export async function startDatabase(
             backupDir: join(env.userDataDir, BACKUP_DIR),
             now: env.now
         });
-        layer.setJournalModeWal(db, dbPath);
     } catch (error) {
-        // The rollback already left the file as it was: nothing here renames, replaces or restores it (D-31).
+        // Nothing here renames, replaces or restores the file (D-31); what the rollback left is read back below.
         const closeProblem = closeHandle(layer, db);
         reportFailure(ports, {
             dbPath,
             backupPath: error instanceof layer.MigrationFailedError ? error.backupPath : null,
-            reason: describeError(error) + (closeProblem === null ? '' : ' (and ' + closeProblem + ')')
+            reason: describeError(error) + (closeProblem === null ? '' : ' (and ' + closeProblem + ')'),
+            changed: observeChange(layer, dbPath, probe.observed.userVersion)
         });
         return null;
     }
     ports.log(summaryLine(report));
+
+    // CR-02: post-commit. The rows are migrated and the backup is on disk, so a journal mode that would not
+    // convert - a locked file, a filesystem without shared memory - is logged rather than made fatal.
+    try {
+        layer.setJournalModeWal(db, dbPath);
+    } catch (error) {
+        ports.log('database: still in its previous journal mode - ' + describeError(error));
+    }
 
     const legacy = await importLegacyTimer(layer, db, env, ports);
 
