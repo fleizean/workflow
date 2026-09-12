@@ -541,6 +541,28 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
+     * WR-04: the sweep runs at the top of every backup, before the source is opened. force: true suppresses
+     * ENOENT only, so a leftover that will not delete - held by a scanner, left read-only by a restore tool, or a
+     * directory a user made with that name - threw out of backupDatabase, which the runner turns into "No backup
+     * was taken" and a refused migration. Identically, on every launch. A directory is the portable stand-in: rmSync
+     * without recursive refuses it on Windows and POSIX alike.
+     */
+    it('completes when a leftover staging file in backups/ cannot be deleted', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        fs.mkdirSync(dir, { recursive: true });
+        const stubborn = path.join(dir, path.basename(fx) + '.2020-01-01T00-00-00-000Z.bak.partial');
+        fs.mkdirSync(stubborn);
+        fs.writeFileSync(path.join(stubborn, 'held'), 'a scanner has this open');
+
+        const result = await backupDatabase(fx, dir, { now: at(10, 0, 0) });
+
+        expect(result.verification.integrity).toBe('ok');
+        expect(fs.existsSync(result.backupPath), 'the backup the migration depends on was not written').toBe(true);
+        expect(fs.existsSync(stubborn), 'the leftover was deleted, so the sweep never hit it').toBe(true);
+    });
+
+    /*
      * Pitfall 2 at the module level. readonly:true backs up the FULL sidecar content and leaves
      * the source's -wal in place, so a fixture is not consumed by being backed up. A read-write
      * source connection would checkpoint on close and quietly disarm every later case.

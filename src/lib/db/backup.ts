@@ -231,10 +231,19 @@ function removePendingBackup(pendingPath: string): void {
 }
 
 // Staging files a killed copy left behind. They are unverified by construction, so none is ever kept (CR-02).
+// WR-04: housekeeping, and it runs before the source is even opened, so it must not be able to fail the backup it
+// precedes. force: true suppresses ENOENT only - a held, read-only or directory-shaped leftover still throws, and
+// used to refuse the migration on every launch. This run's own staging name is stamped, so one it cannot delete
+// never collides with it.
 function sweepPendingBackups(backupDir: string): void {
     if (!fs.existsSync(backupDir)) return;
     for (const name of fs.readdirSync(backupDir)) {
-        if (PENDING_NAME.test(name)) fs.rmSync(path.join(backupDir, name), { force: true });
+        if (!PENDING_NAME.test(name)) continue;
+        try {
+            fs.rmSync(path.join(backupDir, name), { force: true });
+        } catch {
+            // Someone else's leftover, not this backup's problem.
+        }
     }
 }
 
