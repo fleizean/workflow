@@ -1,16 +1,17 @@
-// ARCH-01: the four ports' implementations, and the inventory of every main-process file that names electron.
+// ARCH-01: the five ports' implementations, and the inventory of every main-process file that names electron.
 // The adapters are the seam the services must never reach around, so what they promise is asserted here rather
 // than inside a service that could quietly stop using them.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ipcEvents } from '@shared/ipc/contract';
 import { createElectronNotifier } from '../src/main/adapters/electron-notifier.adapter';
 import { createElectronRendererBus } from '../src/main/adapters/electron-renderer-bus.adapter';
 import type { RendererTarget } from '../src/main/adapters/electron-renderer-bus.adapter';
 import { createRendererSound } from '../src/main/adapters/renderer-sound.adapter';
+import { createNodeScheduler } from '../src/main/adapters/node-scheduler.adapter';
 import { createSystemClock } from '../src/main/adapters/system-clock.adapter';
 import { createElectronPorts } from '../src/main/adapters';
 import { eagerImports, read, repoRoot, scriptKindFor } from './helpers/ts-imports';
@@ -124,10 +125,47 @@ describe('the notifier is best effort', () => {
     });
 });
 
+describe('the scheduler port repeats until it is cancelled', () => {
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('runs on the interval it was given and stops on cancel', () => {
+        vi.useFakeTimers();
+        let runs = 0;
+        const repeat = createNodeScheduler().every(1000, () => { runs += 1; });
+
+        vi.advanceTimersByTime(3000);
+        expect(runs).toBe(3);
+
+        repeat.cancel();
+        vi.advanceTimersByTime(5000);
+        expect(runs, 'a cancelled repeat kept ticking').toBe(3);
+    });
+
+    it('survives a second cancel, because a service disposes on more than one path', () => {
+        vi.useFakeTimers();
+        const repeat = createNodeScheduler().every(1000, () => undefined);
+        repeat.cancel();
+        expect(() => { repeat.cancel(); }).not.toThrow();
+    });
+
+    // Real timers on purpose: under fake timers the handle is vitest's stand-in, so unref would go unmeasured.
+    it('does not hold the process open on its own', () => {
+        const timeouts = (): number => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+        const baseline = timeouts();
+        const referenced = setInterval(() => undefined, 60_000);
+        expect(timeouts(), 'the measurement itself does not see a referenced interval').toBe(baseline + 1);
+        clearInterval(referenced);
+
+        const repeat = createNodeScheduler().every(60_000, () => undefined);
+        expect(timeouts(), 'an unref-ed tick must not keep the event loop alive by itself').toBe(baseline);
+        repeat.cancel();
+    });
+});
+
 describe('createElectronPorts builds the whole port surface once', () => {
-    it('returns exactly the four ports AppPorts declares', () => {
+    it('returns exactly the five ports AppPorts declares', () => {
         const ports = createElectronPorts(ignoreLog);
-        expect(Object.keys(ports).sort()).toEqual(['bus', 'clock', 'notifier', 'sound']);
+        expect(Object.keys(ports).sort()).toEqual(['bus', 'clock', 'notifier', 'scheduler', 'sound']);
         expect(ports.clock.monotonicNow()).toBeGreaterThan(0);
     });
 

@@ -72,7 +72,8 @@ const stubPorts = (): AppPorts => ({
     clock: { now: () => 0, monotonicNow: () => 0 },
     notifier: { notify: () => undefined },
     sound: { play: () => undefined },
-    bus: { emit: () => undefined }
+    bus: { emit: () => undefined },
+    scheduler: { every: () => ({ cancel: () => undefined }) }
 });
 
 interface Built {
@@ -124,7 +125,7 @@ describe('the container hands out repositories over the connection startup opene
         expect(given.ports).toBe(ports);
 
         const built = createContainer({ layer: guardedLayer(), connection, log: () => undefined });
-        expect(Object.keys(built.ports).sort()).toEqual(['bus', 'clock', 'notifier', 'sound']);
+        expect(Object.keys(built.ports).sort()).toEqual(['bus', 'clock', 'notifier', 'scheduler', 'sound']);
         expect(built.ports.clock.now()).toBeGreaterThan(0);
     });
 

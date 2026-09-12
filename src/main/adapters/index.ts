@@ -4,11 +4,13 @@
 export { createSystemClock } from './system-clock.adapter';
 export { createElectronNotifier } from './electron-notifier.adapter';
 export { createElectronRendererBus } from './electron-renderer-bus.adapter';
+export { createNodeScheduler } from './node-scheduler.adapter';
 export { createRendererSound } from './renderer-sound.adapter';
 
 import type { AppPorts } from '../ports';
 import { createElectronNotifier } from './electron-notifier.adapter';
 import { createElectronRendererBus } from './electron-renderer-bus.adapter';
+import { createNodeScheduler } from './node-scheduler.adapter';
 import { createRendererSound } from './renderer-sound.adapter';
 import { createSystemClock } from './system-clock.adapter';
 
@@ -19,6 +21,7 @@ export function createElectronPorts(log: (line: string) => void): AppPorts {
         clock: createSystemClock(),
         notifier: createElectronNotifier(log),
         sound: createRendererSound(bus),
-        bus
+        bus,
+        scheduler: createNodeScheduler()
     };
 }

@@ -5,11 +5,13 @@ export { localDayOf } from './clock.port';
 export type { ClockPort } from './clock.port';
 export type { NotificationRequest, NotifierPort } from './notifier.port';
 export type { RendererBusPort } from './renderer-bus.port';
+export type { RepeatingTimer, SchedulerPort } from './scheduler.port';
 export type { SoundPort } from './sound.port';
 
 import type { ClockPort } from './clock.port';
 import type { NotifierPort } from './notifier.port';
 import type { RendererBusPort } from './renderer-bus.port';
+import type { SchedulerPort } from './scheduler.port';
 import type { SoundPort } from './sound.port';
 
 /** Everything a service may reach the outside world through; the container supplies exactly this. */
@@ -18,4 +20,5 @@ export interface AppPorts {
     readonly notifier: NotifierPort;
     readonly sound: SoundPort;
     readonly bus: RendererBusPort;
+    readonly scheduler: SchedulerPort;
 }
