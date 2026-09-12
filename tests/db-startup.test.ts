@@ -489,15 +489,22 @@ describe('D-32: quit flushes the WAL into the database and closes it', () => {
     });
 });
 
-// The call names inside the handler app.on('<event>', ...) registers, read from the source rather than run.
-function handlerCalls(event: string): string[] {
-    const source = ts.createSourceFile(LIFECYCLE, read(LIFECYCLE), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-    const registrations = findAll(source, (node): node is ts.CallExpression => {
+function lifecycleSource(): ts.SourceFile {
+    return ts.createSourceFile(LIFECYCLE, read(LIFECYCLE), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+}
+
+function registrationsOf(source: ts.Node, event: string): ts.CallExpression[] {
+    return findAll(source, (node): node is ts.CallExpression => {
         if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
         const [first] = node.arguments;
         return node.expression.name.text === 'on' && first !== undefined && ts.isStringLiteral(first) &&
             first.text === event;
     });
+}
+
+// The call names inside the handler app.on('<event>', ...) registers, read from the source rather than run.
+function handlerCalls(event: string): string[] {
+    const registrations = registrationsOf(lifecycleSource(), event);
     const [registration] = registrations;
     if (registration === undefined) {
         throw new Error(LIFECYCLE + ' no longer registers a handler for ' + event);
@@ -532,6 +539,27 @@ describe('Pitfall 4: a hidden window can neither quit the app nor be surfaced', 
             .toContain('mainWindows');
         expect(secondInstance, 'second-instance may surface only a main window, never any window')
             .not.toContain('getAllWindows');
+    });
+
+    // WR-07: the registration used to sit inside openMainWindow, so a second call would double the handler and
+    // one dock click would open two main windows. Nothing enforced that openMainWindow ran once.
+    it('registers activate exactly once, inside registerLifecycle rather than inside openMainWindow', () => {
+        const source = lifecycleSource();
+        expect(registrationsOf(source, 'activate'), 'activate is registered more than once').toHaveLength(1);
+
+        const opener = findAll(source, (node): node is ts.FunctionDeclaration =>
+            ts.isFunctionDeclaration(node) && node.name?.text === 'openMainWindow');
+        expect(opener, 'openMainWindow is gone, so this proves nothing').toHaveLength(1);
+        expect(registrationsOf(opener[0] as ts.FunctionDeclaration, 'activate'),
+            'openMainWindow registers activate again on every call').toEqual([]);
+
+        const registrar = findAll(source, (node): node is ts.FunctionDeclaration =>
+            ts.isFunctionDeclaration(node) && node.name?.text === 'registerLifecycle');
+        expect(registrationsOf(registrar[0] as ts.FunctionDeclaration, 'activate'),
+            'registerLifecycle does not register activate').toHaveLength(1);
+
+        // A dock click before startup has opened its first window must not race D-30's sequence.
+        expect(handlerCalls('activate')).toEqual(expect.arrayContaining(['hasCreatedMainWindow', 'mainWindows']));
     });
 });
 

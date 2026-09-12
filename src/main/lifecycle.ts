@@ -33,6 +33,15 @@ export function registerLifecycle(): void {
         win.focus();
     });
 
+    // WR-07: registered here, once by construction. It used to live inside openMainWindow, where a second call
+    // would double the handler and one dock click would open two main windows. hasCreatedMainWindow keeps this a
+    // re-open only: before the first window, D-30's startup sequence owns when a window may exist.
+    app.on('activate', () => {
+        if (!mainConfig.smoke && hasCreatedMainWindow() && mainWindows().length === 0) {
+            showRenderer(createMainWindow({ show: true }));
+        }
+    });
+
     app.on('window-all-closed', () => {
         if (shouldQuitOnAllClosed(hasCreatedMainWindow(), process.platform)) {
             app.quit();
@@ -99,13 +108,6 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
     }
 }
 
-// Non-smoke launches only: a smoke launch never registers 'activate'.
 export function openMainWindow(): void {
     showRenderer(createMainWindow({ show: true }));
-
-    app.on('activate', () => {
-        if (mainWindows().length === 0) {
-            showRenderer(createMainWindow({ show: true }));
-        }
-    });
 }
