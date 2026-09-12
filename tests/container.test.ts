@@ -10,13 +10,15 @@ import type DatabaseType from 'better-sqlite3';
 import * as realLayer from '../src/lib/db';
 import type { SkippedRowReport } from '../src/lib/db';
 import {
-    SKIPPED_ROW_REPORT_LIMIT, activeContainer, clearActiveContainer, createContainer, createSkippedRowReporter,
-    disposeActiveContainer, setActiveContainer, skippedRowLine
+    GOAL_EVALUATION_INTERVAL_SECONDS, SKIPPED_ROW_REPORT_LIMIT, activeContainer, clearActiveContainer, createContainer,
+    createSkippedRowReporter, disposeActiveContainer, setActiveContainer, skippedRowLine
 } from '../src/main/container';
 import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
 import { closeDatabaseNow } from '../src/main/lifecycle';
-import type { AppPorts } from '../src/main/ports';
+import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME } from '../src/main/notifications';
+import type { AppPorts, NotificationRequest } from '../src/main/ports';
+import type { IpcEventChannel, SoundId } from '../src/shared/types';
 import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
 import { cleanupFixtures, makeCleanFixture } from './fixtures/seed';
 import { findAll, read } from './helpers/ts-imports';
@@ -76,6 +78,56 @@ const stubPorts = (): AppPorts => ({
     scheduler: { every: () => ({ cancel: () => undefined }) }
 });
 
+// Local noon on a Monday, so the local day is unambiguous in any zone the suite runs in.
+const WALL_ORIGIN_MS = new Date(2026, 0, 5, 12, 0, 0).getTime();
+
+interface DrivenPorts {
+    readonly ports: AppPorts;
+    readonly notifications: NotificationRequest[];
+    readonly sounds: SoundId[];
+    readonly events: IpcEventChannel[];
+    /** Advances the monotonic and wall clocks together and runs every scheduled repeat once per whole second. */
+    tick(seconds: number): void;
+}
+
+/*
+ * The container builds its own services, so the only way to drive them is through the ports it was handed. This is
+ * the same trick tests/timer-service.test.ts uses: the scheduler is a port precisely so a test can be the clock.
+ */
+function drivenPorts(): DrivenPorts {
+    const notifications: NotificationRequest[] = [];
+    const sounds: SoundId[] = [];
+    const events: IpcEventChannel[] = [];
+    const repeats: (() => void)[] = [];
+    let monotonic = 0;
+
+    const ports: AppPorts = {
+        clock: { now: () => WALL_ORIGIN_MS + monotonic, monotonicNow: () => monotonic },
+        notifier: { notify: (request) => notifications.push(request) },
+        sound: { play: (sound) => sounds.push(sound) },
+        bus: { emit: (channel) => events.push(channel) },
+        scheduler: {
+            every: (_intervalMs, run) => {
+                repeats.push(run);
+                return { cancel: () => { const at = repeats.indexOf(run); if (at >= 0) repeats.splice(at, 1); } };
+            }
+        }
+    };
+
+    return {
+        ports,
+        notifications,
+        sounds,
+        events,
+        tick(seconds) {
+            for (let i = 0; i < seconds; i++) {
+                monotonic += 1000;
+                for (const run of [...repeats]) run();
+            }
+        }
+    };
+}
+
 interface Built {
     container: AppContainer;
     lines: string[];
@@ -130,7 +182,8 @@ describe('the container hands out repositories over the connection startup opene
         const dbPath = makeCleanFixture();
         const { container, connection } = await build(dbPath);
 
-        expect(Object.keys(container.services).sort()).toEqual(['timer']);
+        expect(Object.keys(container.services).sort())
+            .toEqual(['companies', 'goal', 'pomodoro', 'sessions', 'settings', 'stats', 'timer']);
         expect(container.services.timer.snapshot())
             .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
 
@@ -291,5 +344,164 @@ describe('ARCH-01: the bootstrap builds exactly one container, after the databas
     it('clears the active container on the path that closes the database', () => {
         expect(callsTo('clearActiveContainer'), LIFECYCLE + ' no longer clears the container at close')
             .toHaveLength(1);
+    });
+});
+
+/*
+ * Slices D and E left four services built but unwired: the composition they needed - the goal decision on the tick,
+ * and the pomodoro completion's one transaction - is the container's, not theirs. This is that composition, driven
+ * through the ports rather than described.
+ */
+describe('the services the container composes', () => {
+    async function driven(dbPath: string): Promise<{ container: AppContainer; driver: DrivenPorts; connection: DatabaseType.Database }> {
+        const driver = drivenPorts();
+        const connection = await migratedConnection(dbPath);
+        const container = createContainer({
+            layer: guardedLayer(), connection, log: () => undefined, ports: driver.ports
+        });
+        return { container, driver, connection };
+    }
+
+    it('reaches every service through the repositories it built, over the one connection', async () => {
+        const { container } = await driven(makeCleanFixture());
+        const company = container.services.companies.create({ name: 'Fabrikam', noteRequired: true });
+
+        expect(() => container.services.sessions.create({
+            name: 'No note', durationSeconds: 60, date: ld('2026-01-05'), companyId: company.id, note: null
+        }), 'COMP-04: the note-required rule is wired to the real companies repository').toThrow(/requires a note/);
+
+        expect(container.services.settings.get().dailyTargetSeconds).toBeGreaterThan(0);
+        expect(container.services.stats.streak().days).toBeGreaterThanOrEqual(0);
+        expect(container.services.pomodoro.snapshot().completedToday).toBe(0);
+    });
+
+    it('deletes a company and its sessions in one transaction, and says how many went', async () => {
+        const dbPath = makeCleanFixture();
+        const { container } = await driven(dbPath);
+        const [company] = container.services.companies.list();
+        expect(company).toBeDefined();
+
+        const attached = container.repositories.sessions.list().filter((s) => s.companyId === company?.id).length;
+        expect(attached, 'the fixture must attach sessions to this company, or the count proves nothing')
+            .toBeGreaterThan(0);
+
+        const removed = container.services.companies.remove(company?.id ?? 0);
+        expect(removed.deletedSessionCount).toBe(attached);
+        expect(rawCount(dbPath, 'companies')).toBe(2);
+    });
+
+    // POMO-01: the session and the pomodoro row are one write, and they happen before anything asks the user who
+    // the work was for. A crash at the prompt therefore loses no time.
+    it('writes the work session and the pomodoro row together when an interval completes', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver } = await driven(dbPath);
+        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        const sessionsBefore = rawCount(dbPath, 'work_sessions');
+
+        container.services.pomodoro.start();
+        driver.tick(59);
+        expect(rawCount(dbPath, 'work_sessions'), 'a session was written before the interval finished')
+            .toBe(sessionsBefore);
+
+        driver.tick(1);
+        expect(rawCount(dbPath, 'work_sessions')).toBe(sessionsBefore + 1);
+        expect(rawCount(dbPath, 'pomodoro_sessions')).toBe(1);
+
+        const written = container.repositories.sessions.list()[0];
+        expect(written?.name).toBe(POMODORO_SESSION_NAME);
+        expect(written?.durationSeconds).toBe(60);
+        expect(written?.companyId, 'the attribution prompt is Phase 8\'s; the time is recorded unattributed')
+            .toBeNull();
+
+        expect(driver.sounds).toContain('pomodoroCompleted');
+        expect(driver.notifications.map((n) => n.title)).toContain('Pomodoro complete');
+        expect(driver.events, 'the renderer was never told the cycle changed').toContain('pomodoro:tick');
+
+        // CORE-12: the next interval is derived from what the database now holds, not from a counter.
+        expect(container.services.pomodoro.snapshot().completedToday).toBe(1);
+        expect(container.services.pomodoro.snapshot().interval).toBe('shortBreak');
+    });
+
+    it('rolls both writes back when the pomodoro row cannot be written', async () => {
+        const dbPath = makeCleanFixture();
+        const driver = drivenPorts();
+        const connection = await migratedConnection(dbPath);
+        const layer: DatabaseLayer = {
+            ...guardedLayer(),
+            createPomodoroRepository: (handle, options) => ({
+                ...realLayer.createPomodoroRepository(handle, options),
+                recordCompletion: () => { throw new Error('disk full'); }
+            })
+        };
+        const container = createContainer({ layer, connection, log: () => undefined, ports: driver.ports });
+        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        const before = rawCount(dbPath, 'work_sessions');
+
+        container.services.pomodoro.start();
+        driver.tick(60);
+
+        expect(rawCount(dbPath, 'work_sessions'), 'the session survived a failed pomodoro write').toBe(before);
+        expect(rawCount(dbPath, 'pomodoro_sessions')).toBe(0);
+    });
+
+    /*
+     * CORE-13/B1: the decision is made on the timer's own tick - there is no second clock - and it fires once. The
+     * day it fired on is in the database, so the next launch of this same fixture does not fire again.
+     */
+    it('raises the goal notification once, on the tick that reaches the target', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver, connection } = await driven(dbPath);
+        // A minute above what the fixture already holds for this local day, so the seconds the running timer is
+        // holding are what carries the day over the line - which is the half of CORE-08 a saved-rows-only total misses.
+        const alreadyToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({ dailyTargetSeconds: alreadyToday + 60, goalNotification: true });
+
+        container.services.timer.start();
+        driver.tick(59);
+        expect(driver.notifications, 'the goal fired before the target was reached').toEqual([]);
+
+        driver.tick(1);
+        expect(driver.notifications).toEqual([GOAL_NOTIFICATION]);
+        expect(driver.sounds).toEqual(['goalReached']);
+        expect(realLayer.readGoalNotifiedDate(connection), 'the day it fired on is not in the database')
+            .not.toBeNull();
+
+        driver.tick(120);
+        expect(driver.notifications, 'B1: the notification fired more than once in a day').toHaveLength(1);
+        expect(driver.sounds).toHaveLength(1);
+    });
+
+    it('does not raise it at all when the setting is off, and asks only every few seconds', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver } = await driven(dbPath);
+        container.services.settings.update({
+            dailyTargetSeconds: container.services.stats.today().totalSeconds + 60,
+            goalNotification: false
+        });
+
+        container.services.timer.start();
+        driver.tick(120);
+        expect(driver.notifications).toEqual([]);
+
+        // The cadence is a stated cost: a goal met at second 61 is announced at second 70 at the latest.
+        expect(GOAL_EVALUATION_INTERVAL_SECONDS).toBeLessThanOrEqual(10);
+    });
+
+    it('stops both the timer and the pomodoro when the container is disposed', async () => {
+        const { container, driver } = await driven(makeCleanFixture());
+        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        container.services.timer.start();
+        container.services.pomodoro.start();
+
+        driver.tick(5);
+        const timerBefore = container.services.timer.snapshot().elapsedSeconds;
+        const pomodoroBefore = container.services.pomodoro.snapshot().elapsedSeconds;
+        expect(timerBefore, 'the clocks were not running, so stopping them proves nothing').toBe(5);
+
+        container.dispose();
+        driver.tick(30);
+
+        expect(container.services.timer.snapshot().elapsedSeconds).toBe(timerBefore);
+        expect(container.services.pomodoro.snapshot().elapsedSeconds).toBe(pomodoroBefore);
     });
 });

@@ -42,6 +42,11 @@ export interface TimerServiceInput {
     readonly scheduler: SchedulerPort;
     readonly bus: RendererBusPort;
     readonly store: TimerStateStore;
+    /**
+     * Every snapshot this service pushes, handed to the composition root so a decision that has to be made on the
+     * tick - the daily goal - can be made against the one clock rather than by starting a second (CORE-13).
+     */
+    readonly onSnapshot?: (snapshot: TimerSnapshot) => void;
     /** A persistence failure is reported, never thrown: a full disk must not stop the clock the user is watching. */
     readonly log: (line: string) => void;
 }
@@ -66,7 +71,7 @@ export const creditableMs = (delta: number): number =>
     Number.isFinite(delta) ? Math.min(Math.max(delta, 0), MAX_CREDIT_MS) : 0;
 
 export function createTimerService(input: TimerServiceInput): TimerService {
-    const { bus, clock, log, scheduler, store } = input;
+    const { bus, clock, log, onSnapshot, scheduler, store } = input;
 
     const initial = store.read();
     let accumulatedMs = initial.accumulatedSeconds * TICK_MS;
@@ -90,7 +95,16 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch
     });
 
-    const emit = (): void => { bus.emit('timer:tick', snapshot()); };
+    const emit = (): void => {
+        const state = snapshot();
+        bus.emit('timer:tick', state);
+        try {
+            // After the push and inside a catch: an observer that throws must not stop the clock the user is watching.
+            onSnapshot?.(state);
+        } catch (error) {
+            log('timer: a tick observer failed - ' + (error instanceof Error ? error.message : 'unknown'));
+        }
+    };
 
     function persistNow(): void {
         const seconds = elapsedSeconds();

@@ -4,13 +4,15 @@
 import { app, dialog, powerMonitor } from 'electron';
 import { join } from 'node:path';
 import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
-import { clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
+import { activeContainer, clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer } from './database-startup';
 import { describeError } from './errors';
+import { registerIpcHandlers } from './ipc';
+import type { HandlerContext } from './ipc';
 import { readLegacyStorage } from './legacy-storage';
 import type { TimerService } from './services/timer.service';
-import { createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, showRenderer } from './window';
+import { createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, showRenderer, windowControls } from './window';
 
 export function registerLifecycle(): void {
     // WR-01: registered before any window exists, so every web contents gets the guard.
@@ -106,8 +108,20 @@ export function shouldQuitOnAllClosed(mainWindowCreated: boolean, platform: stri
     return mainWindowCreated && platform !== 'darwin';
 }
 
+/** The services the container holds, plus the window the titlebar drives. Resolved per call, never held. */
+function handlerContext(): HandlerContext {
+    return { ...activeContainer().services, window: windowControls };
+}
+
 // D-30: the database is probed, refused or migrated before the first window; a refusal exits here, not deeper.
 export async function launchApplication(database: DatabaseLayer): Promise<void> {
+    /*
+     * Before the database, deliberately. The window opens inside startDatabase, so a renderer that calls on its first
+     * paint must find the channel answered - an unregistered channel rejects the invoke with Electron's own words,
+     * while an unbuilt container is an IpcResult the renderer can render. Registration is for the life of the app.
+     */
+    registerIpcHandlers({ context: handlerContext, log: (line) => { console.log(line); } });
+
     const appData = app.getPath('appData');
     const started = await startDatabase(
         database,

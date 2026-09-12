@@ -69,6 +69,15 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
     return win;
 }
 
+/*
+ * IPC-05: v1.2.1 hid the window on both the minimize and the close button (main.js:638-648), so the app went to the
+ * tray rather than to the taskbar. Both are kept, and both act on the first main window - there is only ever one.
+ */
+export const windowControls = {
+    minimize(): void { mainWindows()[0]?.hide(); },
+    close(): void { mainWindows()[0]?.hide(); }
+};
+
 /** The dev server when unpackaged, otherwise the built index.html beside __dirname (inside app.asar, never cwd-relative). */
 export function loadRenderer(win: BrowserWindow): Promise<void> {
     const devServerUrl = rendererDevServerUrl();
