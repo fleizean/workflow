@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import {
     CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, SoundIdSchema,
-    WorkSessionSchema
+    TimerSnapshotSchema, WorkSessionSchema
 } from '@shared/schemas';
 import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
@@ -91,7 +91,9 @@ export type IpcHandlers = HandlersOf<IpcContract>;
 // Main-to-renderer events; each entry arrives with the phase that designs the event (D-20).
 export const ipcEvents = {
     // The main process decides when a sound is due; only the renderer can play one.
-    'app:playSound': z.strictObject({ sound: SoundIdSchema })
+    'app:playSound': z.strictObject({ sound: SoundIdSchema }),
+    // One message per second carrying a whole snapshot, so the renderer stores what it is told and computes nothing.
+    'timer:tick': TimerSnapshotSchema
 } as const satisfies Readonly<Record<ChannelName, z.ZodType>>;
 export type IpcEventChannel = keyof typeof ipcEvents;
 export type IpcEventPayload<C extends IpcEventChannel> = z.output<(typeof ipcEvents)[C]>;

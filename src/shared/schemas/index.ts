@@ -56,3 +56,18 @@ export const SettingsSchema = z.strictObject({
 // The sounds main asks the renderer to play. Main owns the decision and the clock; the renderer owns the audio
 // element, as v1.2.1's `new Audio(...)` did. Slice E adds the pomodoro sound with the cycle that raises it.
 export const SoundIdSchema = z.enum(['goalReached']);
+
+// The timer's own vocabulary. Status and mode are separate axes, which is what lets a mode change leave what has
+// already been counted alone (CORE-14, CB-1).
+export const TimerStatusSchema = z.enum(['idle', 'running', 'paused']);
+export const TimerModeSchema = z.enum(['work', 'pomodoro']);
+
+// What main pushes to the renderer on every tick. elapsedSeconds is the whole of it: the renderer does no arithmetic
+// (X1), so there is no start timestamp here for it to subtract from (CORE-07).
+export const TimerSnapshotSchema = z.strictObject({
+    status: TimerStatusSchema,
+    mode: TimerModeSchema,
+    elapsedSeconds: DurationSecondsSchema,
+    // G3/G4: time carried over from a previous launch is offered for saving or discarding, never auto-resumed.
+    restoredFromPreviousLaunch: z.boolean()
+});

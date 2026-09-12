@@ -24,10 +24,11 @@ const CHANNELS = [
 const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
-const EVENTS = ['app:playSound'];
+const EVENTS = ['app:playSound', 'timer:tick'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
-    'SettingsSchema', 'SoundIdSchema', 'WorkSessionSchema'
+    'SettingsSchema', 'SoundIdSchema', 'TimerModeSchema', 'TimerSnapshotSchema', 'TimerStatusSchema',
+    'WorkSessionSchema'
 ];
 
 const isoOnTheWire: unknown = JSON.parse(JSON.stringify(new Date()));
@@ -235,6 +236,17 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
             expect(schema.safeParse({ sound: 'goalReached', extra: 1 }).success,
                 'an event payload must reject an undeclared key').toBe(false);
         }
+    });
+
+    it('carries the timer snapshot with no start timestamp on it (CORE-07)', () => {
+        const tick = ipcEvents['timer:tick'];
+        const snapshot = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false };
+        expect(tick.safeParse(snapshot).success).toBe(true);
+        expect(tick.safeParse({ ...snapshot, startTime: 1757000000000 }).success,
+            'CORE-07: a start timestamp reached the wire, which is how B12 and B13 were computed').toBe(false);
+        expect(tick.safeParse({ ...snapshot, elapsedSeconds: -1 }).success).toBe(false);
+        expect(tick.safeParse({ ...snapshot, elapsedSeconds: 1.5 }).success).toBe(false);
+        expect(tick.safeParse({ ...snapshot, status: 'suspended' }).success).toBe(false);
     });
 
     it('rejects unknown keys and invalid values on the companies and settings inputs', () => {
