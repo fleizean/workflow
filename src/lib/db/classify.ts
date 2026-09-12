@@ -23,7 +23,12 @@ export interface ObservedDatabase {
     columns: Readonly<Partial<Record<V1xTable, readonly string[]>>>;
 }
 
-const isInternal = (name: string): boolean => name === 'sqlite_sequence' || name.startsWith('sqlite_autoindex_');
+// SQLite reserves the whole prefix: sqlite_sequence, sqlite_autoindex_*, and the sqlite_stat* tables ANALYZE
+// leaves behind. None of them is the user's, so none of them decides what this file is.
+const isInternal = (name: string): boolean => name.startsWith('sqlite_');
+
+// The one table this milestone adds. A v1.x file has none of it, but a half-adopted one is not foreign either.
+const MILESTONE_TABLE = 'app_state';
 
 const isV1xTable = (name: string): name is V1xTable => (V1X_TABLES as readonly string[]).includes(name);
 
@@ -42,10 +47,13 @@ export function classify(observed: ObservedDatabase, latest: number): DbClass {
     const userObjects = observed.objects.filter((object) => !isInternal(object.name));
     if (userObjects.length === 0) return 'fresh';
 
-    const v1xTables = userObjects
-        .filter((object) => object.type === 'table')
-        .map((object) => object.name)
-        .filter(isV1xTable);
+    const tables = userObjects.filter((object) => object.type === 'table').map((object) => object.name);
+    // WR-05: the fingerprint needs an upper bound as well as a lower one. Without it, any database carrying a
+    // companies(id, name, created_at, updated_at) table was adopted and migrated, however much else it held.
+    const foreign = tables.filter((name) => !isV1xTable(name) && name !== MILESTONE_TABLE);
+    if (foreign.length > 0) return 'unrecognized';
+
+    const v1xTables = tables.filter(isV1xTable);
     const anchored = v1xTables.includes('work_sessions') || v1xTables.includes('companies');
     const fingerprinted = v1xTables.every((table) => startsWith(observed.columns[table], V1X_TABLE_PREFIXES[table]));
     return anchored && fingerprinted ? 'legacy' : 'unrecognized';

@@ -95,6 +95,25 @@ describe('D-12: classify is a total function over observed facts', () => {
             objects: [...V121_OBJECTS, { type: 'index', name: 'third_party_date_idx' }],
             columns: { ...V121_COLUMNS, work_sessions: [...V121_COLUMNS.work_sessions, 'billed'] }
         }), LATEST, 'legacy'],
+        // WR-05: the fingerprint had a lower bound only, so a file that merely contained a v1.x-shaped
+        // companies table was adopted and migrated however much else it carried.
+        ['the v1.2.1 tables plus three foreign tables', observed({
+            objects: [...V121_OBJECTS, { type: 'table', name: 'invoices' }, { type: 'table', name: 'clients' },
+                { type: 'table', name: 'ledger' }],
+            columns: V121_COLUMNS
+        }), LATEST, 'unrecognized'],
+        ['a foreign database that happens to carry a v1.x-shaped companies table', observed({
+            objects: [{ type: 'table', name: 'companies' }, { type: 'table', name: 'invoices' }],
+            columns: { companies: ['id', 'name', 'created_at', 'updated_at'] }
+        }), LATEST, 'unrecognized'],
+        ['the v1.2.1 tables plus the sqlite_stat1 that ANALYZE leaves behind', observed({
+            objects: [...V121_OBJECTS, { type: 'table', name: 'sqlite_stat1' }],
+            columns: V121_COLUMNS
+        }), LATEST, 'legacy'],
+        ['the v1.2.1 tables plus this milestone\'s app_state', observed({
+            objects: [...V121_OBJECTS, { type: 'table', name: 'app_state' }],
+            columns: V121_COLUMNS
+        }), LATEST, 'legacy'],
         ['settings alone (a v1.x name, but not an anchor table)', observed({
             objects: [{ type: 'table', name: 'settings' }], columns: { settings: ['key', 'value'] }
         }), LATEST, 'unrecognized'],
