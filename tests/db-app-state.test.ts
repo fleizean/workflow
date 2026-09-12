@@ -13,8 +13,12 @@ import { probeDatabase } from '../src/lib/db/probe';
 import { migrateDatabase } from '../src/lib/db/runner';
 import { LATEST } from '../src/lib/db/migrations/registry';
 import {
-    APP_STATE_KEYS, importLegacyState, readAppState, readTimerState, writeAppState, writeTimerState
+    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readTimerState, writeAppState,
+    writeGoalNotifiedDate, writeTimerState
 } from '../src/lib/db/app-state';
+import type { LocalDate } from '../src/shared/types';
+
+const ld = (text: string): LocalDate => text as LocalDate;
 
 const NOW = instantFromEpochMs(Date.UTC(2026, 8, 12, 9, 0, 0));
 const NOW_ISO = '2026-09-12T09:00:00.000Z';
@@ -320,6 +324,71 @@ describe('the persisted timer state', () => {
         const neverCalled = (db: Database.Database): void => {
             // @ts-expect-error CORE-07: the timer state has no startTime and must never grow one
             writeTimerState(db, { accumulatedSeconds: 1, mode: 'work', startTime: 1 }, NOW);
+        };
+        expect(typeof neverCalled).toBe('function');
+    });
+});
+
+/*
+ * CORE-13. v1.2.1 kept this day in localStorage, which only the renderer can read, and guarded the notification
+ * itself with an in-memory playedSound flag that re-armed on every reload (index.html:945, 964). So the sound was
+ * once a day and the notification was once a launch - B1. In v2 the day lives in app_state, where main reads it.
+ */
+describe('CORE-13: the goal-notification day survives a restart', () => {
+    it('reads as none on a database that has never notified', async () => {
+        const db = await migratedDatabase('goal-empty');
+        expect(readGoalNotifiedDate(db)).toBeNull();
+    });
+
+    it('reads back the day it was told, unchanged by how long ago that was', async () => {
+        const db = await migratedDatabase('goal-roundtrip');
+        writeGoalNotifiedDate(db, ld(GOAL_DATE), instantFromEpochMs(SAVED_AT));
+        expect(readGoalNotifiedDate(db)).toBe(GOAL_DATE);
+    });
+
+    it('stores the day and the instant it was written, and nothing else', async () => {
+        const db = await migratedDatabase('goal-shape');
+        writeGoalNotifiedDate(db, ld(GOAL_DATE), NOW);
+        expect(readAppState(db, APP_STATE_KEYS.goalNotifiedDate))
+            .toEqual({ date: GOAL_DATE, notifiedAt: NOW_ISO });
+    });
+
+    it('falls back to the imported v1.2.1 day, so an upgrade at noon does not notify twice', async () => {
+        const db = await migratedDatabase('goal-legacy');
+        importLegacyState(db, { timerState: null, lastGoalNotificationDate: GOAL_DATE }, NOW);
+        expect(readGoalNotifiedDate(db)).toBe(GOAL_DATE);
+    });
+
+    it('prefers the v2 day over the imported one, and leaves the import untouched', async () => {
+        const db = await migratedDatabase('goal-precedence');
+        importLegacyState(db, { timerState: null, lastGoalNotificationDate: '2026-09-01' }, NOW);
+        writeGoalNotifiedDate(db, ld(GOAL_DATE), NOW);
+
+        expect(readGoalNotifiedDate(db)).toBe(GOAL_DATE);
+        expect(readAppState(db, APP_STATE_KEYS.legacyGoalDate)?.raw).toBe('2026-09-01');
+    });
+
+    it('counts a v1.2.1 value that is not a local day as none', async () => {
+        const db = await migratedDatabase('goal-legacy-garbage');
+        // localStorage holds strings, and nothing in v1.2.1 validated this one before writing it.
+        importLegacyState(db, { timerState: null, lastGoalNotificationDate: 'today' }, NOW);
+        expect(readGoalNotifiedDate(db)).toBeNull();
+    });
+
+    it('counts a corrupt v2 day as none rather than suppressing the notification forever', async () => {
+        const db = await migratedDatabase('goal-corrupt');
+        writeAppState(db, APP_STATE_KEYS.legacyGoalDate, { raw: GOAL_DATE, importedAt: NOW_ISO }, NOW);
+        db.prepare<[string, string, string]>(
+            'INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)'
+        ).run(APP_STATE_KEYS.goalNotifiedDate, '{"date":"2026-02-30","notifiedAt":"x"}', NOW_ISO);
+        // A rejected v2 value falls through to the legacy one rather than throwing.
+        expect(readGoalNotifiedDate(db)).toBe(GOAL_DATE);
+    });
+
+    it('refuses a day that is not a local date at compile time', () => {
+        const neverCalled = (db: Database.Database): void => {
+            // @ts-expect-error the notified day is a LocalDate, not any string
+            writeGoalNotifiedDate(db, '2026-09-12', NOW);
         };
         expect(typeof neverCalled).toBe('function');
     });

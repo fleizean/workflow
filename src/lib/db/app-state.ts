@@ -2,16 +2,17 @@
 // The import writes app_state alone: it never creates a work session and never invents elapsed time.
 
 import { z } from 'zod';
-import { TimerModeSchema } from '@shared/schemas';
+import { LocalDateSchema, TimerModeSchema } from '@shared/schemas';
 import type DatabaseType from 'better-sqlite3';
-import type { TimerMode } from '@shared/types';
-import { utcIsoTimestamp } from '@shared/utils/date';
+import type { LocalDate, TimerMode } from '@shared/types';
+import { isLocalDate, utcIsoTimestamp } from '@shared/utils/date';
 import { parseLegacyTimerState } from './legacy-timer';
 
 export const APP_STATE_KEYS = Object.freeze({
     legacyTimerState: 'legacy.v121.timerState',
     legacyGoalDate: 'legacy.v121.lastGoalNotificationDate',
-    timerState: 'timer.state'
+    timerState: 'timer.state',
+    goalNotifiedDate: 'goal.lastNotifiedDate'
 } as const);
 
 export const LegacyTimerRecordSchema = z.strictObject({
@@ -38,10 +39,18 @@ export const TimerStateRecordSchema = z.strictObject({
     updatedAt: z.string()
 });
 
+// CORE-13: the local day the goal notification last fired on. v1.2.1 kept this in localStorage, which main cannot
+// read and a profile reset clears, and its in-memory sibling flag re-armed on every reload (index.html:945, B1).
+export const GoalNotifiedRecordSchema = z.strictObject({
+    date: LocalDateSchema,
+    notifiedAt: z.string()
+});
+
 const SCHEMAS = {
     'legacy.v121.timerState': LegacyTimerRecordSchema,
     'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema,
-    'timer.state': TimerStateRecordSchema
+    'timer.state': TimerStateRecordSchema,
+    'goal.lastNotifiedDate': GoalNotifiedRecordSchema
 } as const;
 
 export type AppStateKey = keyof typeof SCHEMAS;
@@ -148,6 +157,25 @@ export interface TimerStateInput {
 /** Writes the v2 key only. The imported v1.2.1 record is a record of what was found and is never overwritten. */
 export function writeTimerState(db: DatabaseType.Database, state: TimerStateInput, now: Date): void {
     writeAppState(db, APP_STATE_KEYS.timerState, { ...state, updatedAt: utcIsoTimestamp(now) }, now);
+}
+
+/**
+ * The local day the daily-goal notification last fired on, or null if it never has. Like readTimerState it reads no
+ * clock - the caller's clock names today, this only says which day is already spoken for. The v1.2.1 value is the
+ * fallback, so upgrading at noon does not re-raise a notification the user saw that morning: it held the same local
+ * YYYY-MM-DD getCurrentDate() produced (src/renderer/timer.js:246), and anything else counts as none.
+ */
+export function readGoalNotifiedDate(db: DatabaseType.Database): LocalDate | null {
+    const persisted = recorded(db, APP_STATE_KEYS.goalNotifiedDate);
+    if (persisted !== null) {
+        return persisted.date;
+    }
+    const legacy = recorded(db, APP_STATE_KEYS.legacyGoalDate);
+    return legacy !== null && isLocalDate(legacy.raw) ? legacy.raw : null;
+}
+
+export function writeGoalNotifiedDate(db: DatabaseType.Database, date: LocalDate, now: Date): void {
+    writeAppState(db, APP_STATE_KEYS.goalNotifiedDate, { date, notifiedAt: utcIsoTimestamp(now) }, now);
 }
 
 // The raw string decides whenever either side carries no lastUpdated to compare (D-34).

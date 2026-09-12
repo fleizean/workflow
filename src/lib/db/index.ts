@@ -16,7 +16,8 @@ export type { AnomalyCounts, MigrationOptions, MigrationReport, MigrationStep, R
 export { LATEST, MIGRATIONS } from './migrations/registry';
 
 export {
-    APP_STATE_KEYS, importLegacyState, readAppState, readTimerState, writeAppState, writeTimerState
+    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readTimerState, writeAppState,
+    writeGoalNotifiedDate, writeTimerState
 } from './app-state';
 export type {
     AppStateKey, AppStateValue, LegacyImportResult, LegacyStorageValues, RestoredTimerState, TimerStateInput,
