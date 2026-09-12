@@ -243,9 +243,17 @@ export async function startDatabase(
 
     const legacy = await importLegacyTimer(layer, db, env, ports);
 
-    ports.openMainWindow();
-    // Pitfall 4: destroying the extractor before a main window exists fires window-all-closed, which quits the app.
-    legacy.session?.release();
+    try {
+        ports.openMainWindow();
+    } catch (error) {
+        // WR-08: no window means no app, and index.ts's catch-all calls app.exit, which skips will-quit. Nothing
+        // else would ever close this connection, so it closes here.
+        closeHandle(layer, db);
+        throw error;
+    } finally {
+        // Pitfall 4: destroying the extractor before a main window exists fires window-all-closed, which quits the app.
+        legacy.session?.release();
+    }
 
     return { db, report, legacyImport: legacy.status, close: (): void => { closeHandle(layer, db); } };
 }

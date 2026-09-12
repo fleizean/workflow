@@ -645,6 +645,22 @@ describe('D-33/DATA-10: the legacy timer import runs after the migration and bef
     });
 });
 
+describe('WR-08: a main window that never opens leaves nothing running behind it', () => {
+    it('releases the offscreen extractor and closes the connection when openMainWindow throws', async () => {
+        const h = harness('window-throws', { legacy: READ_OK });
+        const ports: StartupPorts = {
+            ...h.ports,
+            openMainWindow: () => { throw new Error('injected display failure'); }
+        };
+
+        await expect(startDatabase(h.layer, h.env, ports)).rejects.toThrow('injected display failure');
+
+        expect(h.session.released, 'the offscreen extractor window was left undestroyed').toBe(1);
+        expect(h.recorder.handles, 'no connection was opened, so this proves nothing').toHaveLength(1);
+        expect(h.recorder.handles[0]?.open, 'the connection outlived the window that never opened').toBe(false);
+    });
+});
+
 describe('WR-04: an adopted database that already carries a v2 object name is still migrated', () => {
     it('adopts a legacy database holding work_sessions_date_idx instead of failing on every launch', async () => {
         const h = harness('name-collision');
