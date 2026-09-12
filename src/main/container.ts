@@ -21,7 +21,7 @@ import type { SettingsService } from './services/settings.service';
 import { createStatsService } from './services/stats.service';
 import type { StatsService } from './services/stats.service';
 import { createTimerService } from './services/timer.service';
-import type { TimerService, TimerStateStore } from './services/timer.service';
+import type { CountedDay, TimerService, TimerStateStore } from './services/timer.service';
 import type { TimerSnapshot } from '@shared/types';
 import type {
     CompaniesRepository, PomodoroRepository, RepositoryOptions, SessionsRepository, SettingsRepository, SkippedRowReport
@@ -163,9 +163,17 @@ export function createContainer(input: ContainerInput): AppContainer {
     // The second the goal was last measured at, so the sampler below compares rather than takes a residue.
     let lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
 
-    // The whole day, including the seconds the running timer is still holding: a goal is met by time worked, not by
-    // time already written to a row (CORE-08, B7).
-    function evaluateGoal(snapshot: TimerSnapshot): void {
+    /*
+     * The whole day, including the seconds the running timer is still holding: a goal is met by time worked, not by
+     * time already written to a row (CORE-08, B7). Only the part of the accumulation counted on this same local day,
+     * though - stats.today() is day-scoped and the accumulation is not, and adding the two as though they were the
+     * same quantity credited last night's unsaved hours to this morning's goal (CR-01).
+     *
+     * A restored accumulation is counted on no day, so it adds nothing until the timer counts fresh seconds. Those
+     * seconds are not lost: they are still in the snapshot, and saving them as a session is what says which day they
+     * belong to - which is the question G3/G4 puts to the user rather than one this module may answer for them.
+     */
+    function evaluateGoal(snapshot: TimerSnapshot, counted: CountedDay): void {
         // A reset rewinds elapsedSeconds, so the mark rewinds with it - otherwise the rest of the day would be spent
         // waiting for a second the restarted clock will never reach.
         if (snapshot.elapsedSeconds < lastGoalCheckAt) {
@@ -184,9 +192,10 @@ export function createContainer(input: ContainerInput): AppContainer {
         }
         lastGoalCheckAt = snapshot.elapsedSeconds;
 
+        const today = stats.today();
         const current = settings.get();
         const decision = goal.evaluate({
-            totalSecondsToday: stats.today().totalSeconds + snapshot.elapsedSeconds,
+            totalSecondsToday: today.totalSeconds + (counted.day === today.date ? counted.seconds : 0),
             settings: {
                 dailyTargetSeconds: current.dailyTargetSeconds,
                 goalNotification: current.goalNotification

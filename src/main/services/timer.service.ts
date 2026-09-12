@@ -2,7 +2,8 @@
 // throttles a hidden window's timers to roughly once per minute, so a renderer-owned tick undercounts exactly when
 // the user is most likely to be working (X1). Time is read only through ClockPort.monotonicNow.
 
-import type { TimerMode, TimerSnapshot, TimerStatus } from '@shared/types';
+import { localDayOf } from '../ports';
+import type { LocalDate, TimerMode, TimerSnapshot, TimerStatus } from '@shared/types';
 import type { ClockPort, RendererBusPort, RepeatingTimer, SchedulerPort } from '../ports';
 
 export const TICK_MS = 1000;
@@ -37,6 +38,16 @@ export interface TimerStateStore {
     write(state: PersistedTimerState): void;
 }
 
+/**
+ * Of what the timer is holding, the part counted on one named local day. The accumulation itself is day-less - it
+ * survives a quit, a relaunch and a midnight - so a caller measuring a day may only add this (CORE-13, CR-01).
+ */
+export interface CountedDay {
+    /** The local day those seconds were counted on; null while nothing has been counted since the last reset. */
+    readonly day: LocalDate | null;
+    readonly seconds: number;
+}
+
 export interface TimerServiceInput {
     readonly clock: ClockPort;
     readonly scheduler: SchedulerPort;
@@ -44,9 +55,10 @@ export interface TimerServiceInput {
     readonly store: TimerStateStore;
     /**
      * Every snapshot this service pushes, handed to the composition root so a decision that has to be made on the
-     * tick - the daily goal - can be made against the one clock rather than by starting a second (CORE-13).
+     * tick - the daily goal - can be made against the one clock rather than by starting a second (CORE-13). The
+     * second argument is the day-scoped part of the accumulation, which is the only part a day may be credited with.
      */
-    readonly onSnapshot?: (snapshot: TimerSnapshot) => void;
+    readonly onSnapshot?: (snapshot: TimerSnapshot, counted: CountedDay) => void;
     /** A persistence failure is reported, never thrown: a full disk must not stop the clock the user is watching. */
     readonly log: (line: string) => void;
 }
@@ -88,6 +100,11 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     let writtenSeconds = initial.accumulatedSeconds;
     let writtenMode: TimerMode = initial.mode;
 
+    // Which local day the seconds below were counted on. A launch restores the accumulation but not the day it was
+    // worked on, so a carry-over starts as counted on no day and no day is credited with it (CR-01).
+    let countedDay: LocalDate | null = null;
+    let countedDayMs = 0;
+
     // Truncating, never rounding: a rounded half-second would be half a second the user did not work.
     const elapsedSeconds = (): number => Math.floor(accumulatedMs / TICK_MS);
 
@@ -95,12 +112,14 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch
     });
 
+    const counted = (): CountedDay => ({ day: countedDay, seconds: Math.floor(countedDayMs / TICK_MS) });
+
     const emit = (): void => {
         const state = snapshot();
         bus.emit('timer:tick', state);
         try {
             // After the push and inside a catch: an observer that throws must not stop the clock the user is watching.
-            onSnapshot?.(state);
+            onSnapshot?.(state, counted());
         } catch (error) {
             log('timer: a tick observer failed - ' + (error instanceof Error ? error.message : 'unknown'));
         }
@@ -125,7 +144,16 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         const delta = now - lastTickAt;
         lastTickAt = now;
         if (status === 'running' && !gated) {
-            accumulatedMs += creditableMs(delta);
+            const earned = creditableMs(delta);
+            accumulatedMs += earned;
+            // A run that crosses midnight starts the new day at zero: the evening's seconds stay on the evening's
+            // day, where the user can still save them, and the new day is reached only on its own (CR-01).
+            const today = localDayOf(clock);
+            if (today !== countedDay) {
+                countedDay = today;
+                countedDayMs = 0;
+            }
+            countedDayMs += earned;
         }
     }
 
@@ -192,6 +220,9 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         reset() {
             stopRepeat();
             accumulatedMs = 0;
+            // The only path that discards what was counted, so the day it was counted on is discarded with it.
+            countedDay = null;
+            countedDayMs = 0;
             status = 'idle';
             restoredFromPreviousLaunch = false;
             gated = false;

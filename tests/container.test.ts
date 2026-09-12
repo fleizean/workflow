@@ -83,6 +83,11 @@ const stubPorts = (): AppPorts => ({
 // Local noon on a Monday, so the local day is unambiguous in any zone the suite runs in.
 const WALL_ORIGIN_MS = new Date(2026, 0, 5, 12, 0, 0).getTime();
 
+// Ten seconds before 23:00:10 on a day the fixture has no sessions on, a fortnight clear of every DST
+// transition in the zones this suite runs in, so the only thing that moves across the boundary is the day.
+const MIDNIGHT_EVE_MS = new Date(2026, 3, 13, 23, 0, 10).getTime();
+const SECONDS_TO_MIDNIGHT = 3590;
+
 interface DrivenPorts {
     readonly ports: AppPorts;
     readonly notifications: NotificationRequest[];
@@ -545,6 +550,59 @@ describe('CORE-13: the goal is a fact about the local day, not about the timer',
         });
         return { container, driver, connection };
     }
+
+    /*
+     * CR-01. stats.today() is day-scoped and the timer's accumulation is not: it survives a quit, a relaunch and a
+     * midnight. Adding the two credited last night's unsaved hours to this morning's goal - and wrote
+     * goal.lastNotifiedDate, so the afternoon the user really did reach the target announced nothing.
+     */
+    it('credits a previous day\'s carried-over seconds to no day at all', async () => {
+        const { container, driver, connection } = await driven({ carriedSeconds: 29000 });
+        const savedToday = container.services.stats.today().totalSeconds;
+        expect(savedToday, 'the fixture must hold a part-day, or the target below proves nothing').toBe(19800);
+        container.services.settings.update({ dailyTargetSeconds: savedToday + 3600, goalNotification: true });
+
+        expect(container.services.timer.snapshot(), 'G3/G4: the carry-over is offered, paused')
+            .toEqual({ status: 'paused', mode: 'work', elapsedSeconds: 29000, restoredFromPreviousLaunch: true });
+
+        container.services.timer.start();
+        driver.tick(60);
+        expect(driver.notifications, 'last night announced this morning\'s goal').toEqual([]);
+        expect(driver.sounds).toEqual([]);
+        expect(realLayer.readGoalNotifiedDate(connection), 'a day nobody worked was written off as notified')
+            .toBeNull();
+
+        // B1's other half: the day is still reachable, on the seconds actually worked today.
+        driver.tick(3600);
+        expect(driver.notifications).toEqual([GOAL_NOTIFICATION]);
+        expect(driver.sounds).toEqual(['goalReached']);
+    });
+
+    /*
+     * The decision the fix report names, stated as a test: seconds belong to the local day they were counted on. A
+     * run that crosses midnight starts the new day at zero - the evening's work stays on the evening's day, where
+     * the user can still save it, and the new day is reached only on the seconds worked after the boundary.
+     */
+    it('starts the new day at zero when a running timer crosses midnight', async () => {
+        const { container, driver, connection } = await driven({ wallOriginMs: MIDNIGHT_EVE_MS });
+        expect(container.services.stats.today().totalSeconds, 'the fixture must hold nothing on either day').toBe(0);
+        container.services.settings.update({ dailyTargetSeconds: 3600, goalNotification: true });
+
+        container.services.timer.start();
+        driver.tick(SECONDS_TO_MIDNIGHT - 1);
+        expect(container.services.stats.today().date).toBe('2026-04-13');
+        expect(driver.notifications, 'an hour was announced on an evening only 59 minutes long').toEqual([]);
+
+        // Ten seconds past midnight: the timer holds an hour, and none of it was worked on this day.
+        driver.tick(11);
+        expect(container.services.stats.today().date).toBe('2026-04-14');
+        expect(container.services.timer.snapshot().elapsedSeconds).toBe(SECONDS_TO_MIDNIGHT + 10);
+        expect(driver.notifications, 'last night was credited to the new day').toEqual([]);
+
+        driver.tick(3600);
+        expect(driver.notifications, 'the new day was not reachable on its own seconds').toEqual([GOAL_NOTIFICATION]);
+        expect(realLayer.readGoalNotifiedDate(connection)).toBe('2026-04-14');
+    });
 
     /*
      * CR-02. MAX_CREDIT_MS deliberately lets one tick credit two seconds, so elapsedSeconds is not a counter that
