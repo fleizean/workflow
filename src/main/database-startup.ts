@@ -205,9 +205,12 @@ export async function startDatabase(
         fs.mkdirSync(parent, { recursive: true });
     }
 
+    // WR-01: the journal mode lives in the file header, so writing it is a mutation. On anything that already
+    // holds the user's rows it waits until migrateDatabase has taken the backup; a fresh file has nothing to
+    // lose, so it gets v1.2.1's mode at once.
     let db: DatabaseHandle;
     try {
-        db = layer.openDatabase(dbPath);
+        db = layer.openDatabase(dbPath, { deferJournalMode: dbClass !== 'fresh' });
     } catch (error) {
         reportFailure(ports, { dbPath, backupPath: null, reason: describeError(error) });
         return null;
@@ -222,6 +225,7 @@ export async function startDatabase(
             backupDir: join(env.userDataDir, BACKUP_DIR),
             now: env.now
         });
+        layer.setJournalModeWal(db, dbPath);
     } catch (error) {
         // The rollback already left the file as it was: nothing here renames, replaces or restores it (D-31).
         const checkpointError = closeHandle(layer, db);

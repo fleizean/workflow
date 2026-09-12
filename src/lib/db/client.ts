@@ -18,6 +18,9 @@ export const BUSY_TIMEOUT_MS = 5_000;
 export interface OpenDatabaseOptions {
     // Test-only statement trace. It expands bound values (company names, notes), so never pass it in production.
     verbose?: DatabaseType.Options['verbose'];
+    // WR-01: leave the journal mode alone, so a delete-journal file is not rewritten before its backup exists.
+    // The caller then owes the database a setJournalModeWal once the backup is taken.
+    deferJournalMode?: boolean;
 }
 
 // Issues FOREIGN_KEYS_PRAGMA and reads it back. Inside a transaction the pragma is a no-op, hence the read-back.
@@ -28,6 +31,17 @@ export function assertForeignKeysOn(db: DatabaseType.Database, label: string): v
         throw new Error(
             'PRAGMA ' + FOREIGN_KEYS_PRAGMA + ' on ' + label + ' reads back ' + JSON.stringify(observed) +
             ', expected 1.'
+        );
+    }
+}
+
+// Issues JOURNAL_MODE_PRAGMA and reads it back; the mode lives in the file header, so this rewrites the database.
+export function setJournalModeWal(db: DatabaseType.Database, label: string): void {
+    const mode = db.pragma(JOURNAL_MODE_PRAGMA, { simple: true });
+    if (typeof mode !== 'string' || mode.toLowerCase() !== EXPECTED_JOURNAL_MODE) {
+        throw new Error(
+            'PRAGMA ' + JOURNAL_MODE_PRAGMA + ' on ' + label + ' reported ' +
+            JSON.stringify(mode) + ', expected "' + EXPECTED_JOURNAL_MODE + '".'
         );
     }
 }
@@ -46,12 +60,8 @@ export function openDatabase(dbPath: string, options: OpenDatabaseOptions = {}):
     try {
         assertForeignKeysOn(db, dbPath);
         db.pragma('busy_timeout = ' + String(BUSY_TIMEOUT_MS));
-        const mode = db.pragma(JOURNAL_MODE_PRAGMA, { simple: true });
-        if (typeof mode !== 'string' || mode.toLowerCase() !== EXPECTED_JOURNAL_MODE) {
-            throw new Error(
-                'PRAGMA ' + JOURNAL_MODE_PRAGMA + ' on ' + dbPath + ' reported ' +
-                JSON.stringify(mode) + ', expected "' + EXPECTED_JOURNAL_MODE + '".'
-            );
+        if (options.deferJournalMode !== true) {
+            setJournalModeWal(db, dbPath);
         }
     } catch (error) {
         db.close();

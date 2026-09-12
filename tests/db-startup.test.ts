@@ -52,6 +52,15 @@ function tempRoot(tag: string): string {
 
 const sha256 = (file: string): string => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 
+function journalModeOf(dbPath: string): string {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        return String(db.pragma('journal_mode', { simple: true })).toLowerCase();
+    } finally {
+        db.close();
+    }
+}
+
 function userVersionOf(dbPath: string): unknown {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     try {
@@ -65,10 +74,10 @@ const backupsIn = (dir: string): string[] =>
     fs.existsSync(dir) ? fs.readdirSync(dir).filter((name) => name.endsWith('.bak')) : [];
 
 /** A v1.2.1-shaped database, written by v1.2.1's own statements rather than copied from a fixture. */
-function writeLegacyDatabase(dbPath: string): void {
+function writeLegacyDatabase(dbPath: string, journalMode: string = 'WAL'): void {
     const db = new Database(dbPath);
     try {
-        db.pragma('journal_mode = WAL');
+        db.pragma('journal_mode = ' + journalMode);
         db.exec(`
     CREATE TABLE IF NOT EXISTS companies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -606,6 +615,37 @@ describe('D-33/DATA-10: the legacy timer import runs after the migration and bef
         expect(logs, 'the log carried the raw timerState string').not.toContain(RUNNING_TIMER_RAW);
         expect(logs, 'the log carried a saved timer value').not.toContain('3600');
     });
+});
+
+describe('WR-01: nothing writes to the user\'s file before the backup of it exists', () => {
+    it('leaves a delete-journal database byte-identical until migrateDatabase has it, then puts it in WAL',
+        async () => {
+            let hashAtMigrate = '';
+            const h = harness('untouched-until-backed-up', {
+                layer: {
+                    migrateDatabase: (db, migrateOptions) => {
+                        // The connection is open and the backup has not been taken yet: the last moment the
+                        // user's file must still be exactly what the probe saw.
+                        hashAtMigrate = sha256(migrateOptions.dbPath);
+                        return realLayer.migrateDatabase(db, migrateOptions);
+                    }
+                }
+            });
+            writeLegacyDatabase(h.dbPath, 'delete');
+            expect(journalModeOf(h.dbPath), 'the fixture is already in WAL, so this proves nothing').toBe('delete');
+            const before = sha256(h.dbPath);
+
+            const started = await run(h);
+
+            expect(started?.report.dbClass).toBe('legacy');
+            expect(hashAtMigrate, 'opening the database read-write rewrote it before any backup existed')
+                .toBe(before);
+            expect(backupsIn(h.backupDir), 'a legacy adoption must leave exactly one verified backup')
+                .toHaveLength(1);
+            started?.close();
+            expect(journalModeOf(h.dbPath), 'the adopted database was left outside v1.2.1\'s journal mode')
+                .toBe('wal');
+        });
 });
 
 describe('DATA-05: a fresh install initializes its own directory', () => {

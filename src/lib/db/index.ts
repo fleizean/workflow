@@ -1,7 +1,7 @@
 // The database layer's public surface: the one module src/main/index.ts imports after the lock (D-10).
 // Re-exports only, so loading it still opens nothing (BUILD-04).
 
-export { closeDatabase, openDatabase } from './client';
+export { closeDatabase, openDatabase, setJournalModeWal } from './client';
 export type { OpenDatabaseOptions } from './client';
 
 export { classify, V1X_TABLES } from './classify';
