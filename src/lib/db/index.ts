@@ -1,0 +1,25 @@
+// The database layer's public surface: the one module src/main/index.ts imports after the lock (D-10).
+// Re-exports only, so loading it still opens nothing (BUILD-04).
+
+export { closeDatabase, openDatabase } from './client';
+export type { OpenDatabaseOptions } from './client';
+
+export { classify, V1X_TABLES } from './classify';
+export type { DbClass, ObservedDatabase, V1xTable } from './classify';
+
+export { probeDatabase } from './probe';
+export type { ProbeOptions, ProbeResult } from './probe';
+
+export { MigrationFailedError, migrateDatabase, splitStatements } from './runner';
+export type { AnomalyCounts, MigrationOptions, MigrationReport, MigrationStep, RunnerHooks } from './runner';
+
+export { LATEST, MIGRATIONS } from './migrations/registry';
+
+export { APP_STATE_KEYS, importLegacyState, readAppState, writeAppState } from './app-state';
+export type { AppStateKey, AppStateValue, LegacyImportResult, LegacyStorageValues } from './app-state';
+
+export { parseLegacyTimerState } from './legacy-timer';
+export type { LegacyTimerRecord } from './legacy-timer';
+
+export { pruneBackups, readDatabaseStats } from './backup';
+export type { BackupVerification } from './backup';

@@ -23,7 +23,8 @@ const ENTRY = 'src/main/index.ts';
 const HARNESS = 'tools/smoke-packaged.mjs';
 const BRIDGE = 'src/shared/constants/bridge.ts';
 const MOVED_MODULES = [
-    'src/main/window.ts', 'src/main/smoke.ts', 'src/main/lifecycle.ts', 'src/main/legacy-storage.ts'
+    'src/main/window.ts', 'src/main/smoke.ts', 'src/main/lifecycle.ts', 'src/main/legacy-storage.ts',
+    'src/main/database-startup.ts'
 ];
 const MAIN_ALIASES = readAliases('electron.vite.config.ts', ['main', 'resolve', 'alias']);
 const DATABASE_LAYER = 'src/lib/db';
@@ -320,9 +321,10 @@ describe('D-22: ' + ENTRY + ' is the ordered bootstrap and nothing else', () => 
 describe('D-22: the moved main modules own their concerns without loading the database layer', () => {
     const OWNERSHIP: [string, string[]][] = [
         ['src/main/window.ts', ['createMainWindow', 'hardenWebContents']],
-        ['src/main/lifecycle.ts', ['registerLifecycle', 'openMainWindow']],
+        ['src/main/lifecycle.ts', ['registerLifecycle', 'openMainWindow', 'launchApplication']],
         ['src/main/smoke.ts', ['runSmoke', 'finishSmoke']],
-        ['src/main/legacy-storage.ts', ['readLegacyStorage']]
+        ['src/main/legacy-storage.ts', ['readLegacyStorage']],
+        ['src/main/database-startup.ts', ['startDatabase', 'refusalMessage', 'doorMessage', 'failureMessage']]
     ];
 
     it.each(OWNERSHIP)('%s exports %j', (file, names) => {

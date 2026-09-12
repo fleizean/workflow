@@ -25,6 +25,14 @@ export const PRODUCTION_DATA_DOOR_OPEN = false;
 // D-33: the legacy localStorage read is best effort, so it never blocks startup past this deadline.
 export const LEGACY_STORAGE_TIMEOUT_MS = 5_000;
 
+// D-30/D-31: each is distinct from 0 and 1, which stay the smoke's verdict and index.ts's catch-all.
+export const EXIT_CODES = Object.freeze({
+    doorClosed: 3,
+    refusedNewer: 4,
+    refusedUnrecognized: 5,
+    databaseFailed: 6
+});
+
 // minWidth/minHeight are declared, not applied: enforcing a minimum size is IPC-05 (Phase 6).
 export const MAIN_WINDOW = Object.freeze({
     width: 430,

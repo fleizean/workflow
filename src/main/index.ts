@@ -4,7 +4,7 @@
 import { app } from 'electron';
 import { mainConfig } from './config';
 import { describeError } from './errors';
-import { openMainWindow, registerLifecycle } from './lifecycle';
+import { launchApplication, registerLifecycle } from './lifecycle';
 import { finishSmoke, runSmoke } from './smoke';
 import { applyUnpackagedUserDataPath } from './userdata-path';
 
@@ -29,11 +29,13 @@ if (!holdsInstanceLock) {
 async function main(): Promise<void> {
     await app.whenReady();
 
+    // Dynamic, so the database layer loads only after the lock, and only once the app is ready.
+    const database = await import('../lib/db');
+
     if (mainConfig.smoke) {
-        // Dynamic, so a normal launch never loads the database layer and a smoke launch loads it only after the lock.
-        finishSmoke(await runSmoke(await import('../lib/db/client')));
+        finishSmoke(await runSmoke(database));
         return;
     }
 
-    openMainWindow();
+    await launchApplication(database);
 }
