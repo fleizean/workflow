@@ -320,8 +320,11 @@ describe('D-22: ' + ENTRY + ' is the ordered bootstrap and nothing else', () => 
 
 describe('D-22: the moved main modules own their concerns without loading the database layer', () => {
     const OWNERSHIP: [string, string[]][] = [
-        ['src/main/window.ts', ['createMainWindow', 'hardenWebContents']],
-        ['src/main/lifecycle.ts', ['registerLifecycle', 'openMainWindow', 'launchApplication']],
+        ['src/main/window.ts', ['createMainWindow', 'hardenWebContents', 'mainWindows', 'hasCreatedMainWindow']],
+        ['src/main/lifecycle.ts', [
+            'registerLifecycle', 'openMainWindow', 'launchApplication', 'registerDatabaseCloser', 'closeDatabaseNow',
+            'shouldQuitOnAllClosed'
+        ]],
         ['src/main/smoke.ts', ['runSmoke', 'finishSmoke']],
         ['src/main/legacy-storage.ts', ['readLegacyStorage']],
         ['src/main/database-startup.ts', ['startDatabase', 'refusalMessage', 'doorMessage', 'failureMessage']]

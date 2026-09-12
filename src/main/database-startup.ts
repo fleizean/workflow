@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { dirname, join } from 'node:path';
 import type * as DatabaseLayerModule from '../lib/db';
 import { EXIT_CODES } from './config';
+import { describeError } from './errors';
 import type { LegacyStorageSession } from './legacy-storage';
 import { productionDataDoorRefuses } from './userdata-path';
 
@@ -87,6 +88,27 @@ function summaryLine(report: MigrationReport): string {
         ' durations=' + String(anomalies.invalidDurations);
 }
 
+// D-32: the -wal is folded back into the database, so the next launch - or a v1.2.1 downgrade - finds one file.
+function closeHandle(layer: DatabaseLayer, db: DatabaseHandle): void {
+    if (!db.open) {
+        return;
+    }
+    try {
+        db.pragma('wal_checkpoint(TRUNCATE)');
+    } finally {
+        layer.closeDatabase(db);
+    }
+}
+
+// D-31: report, then exit. app.exit skips will-quit, so the caller closes any connection before this runs.
+function reportFailure(
+    ports: StartupPorts,
+    details: { dbPath: string; backupPath: string | null; reason: string }
+): void {
+    ports.report('failed', FAILURE_TITLE, failureMessage(details));
+    ports.exit(EXIT_CODES.databaseFailed);
+}
+
 /** Returns the open connection, or null when startup reported and exited. Never creates a replacement database. */
 export async function startDatabase(
     layer: DatabaseLayer,
@@ -110,7 +132,8 @@ export async function startDatabase(
 
     const probe = layer.probeDatabase(dbPath);
     if (!probe.ok) {
-        throw new Error('Could not read ' + dbPath + ' - ' + probe.reason);
+        reportFailure(ports, { dbPath, backupPath: null, reason: probe.reason });
+        return null;
     }
 
     const latest = layer.LATEST;
@@ -127,17 +150,36 @@ export async function startDatabase(
         fs.mkdirSync(parent, { recursive: true });
     }
 
-    const db = layer.openDatabase(dbPath);
-    const report = await layer.migrateDatabase(db, {
-        dbPath,
-        dbClass,
-        fromVersion: probe.observed.userVersion,
-        backupDir: join(env.userDataDir, BACKUP_DIR),
-        now: env.now
-    });
+    let db: DatabaseHandle;
+    try {
+        db = layer.openDatabase(dbPath);
+    } catch (error) {
+        reportFailure(ports, { dbPath, backupPath: null, reason: describeError(error) });
+        return null;
+    }
+
+    let report: MigrationReport;
+    try {
+        report = await layer.migrateDatabase(db, {
+            dbPath,
+            dbClass,
+            fromVersion: probe.observed.userVersion,
+            backupDir: join(env.userDataDir, BACKUP_DIR),
+            now: env.now
+        });
+    } catch (error) {
+        // The rollback already left the file as it was: nothing here renames, replaces or restores it (D-31).
+        closeHandle(layer, db);
+        reportFailure(ports, {
+            dbPath,
+            backupPath: error instanceof layer.MigrationFailedError ? error.backupPath : null,
+            reason: describeError(error)
+        });
+        return null;
+    }
     ports.log(summaryLine(report));
 
     ports.openMainWindow();
 
-    return { db, report, close: (): void => { layer.closeDatabase(db); } };
+    return { db, report, close: (): void => { closeHandle(layer, db); } };
 }

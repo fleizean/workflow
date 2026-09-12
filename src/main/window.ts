@@ -23,10 +23,24 @@ function isSupersededNavigation(error: unknown): boolean {
     return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ERR_ABORTED';
 }
 
+// Pitfall 4: only windows this factory made count, so the hidden extractor can neither quit the app nor be surfaced.
+const created: BrowserWindow[] = [];
+let everCreated = false;
+
+/** The main windows still alive, in creation order. */
+export function mainWindows(): BrowserWindow[] {
+    return created.filter((win) => !win.isDestroyed());
+}
+
+/** Whether a main window has ever existed; it stays true once the last one closes. */
+export function hasCreatedMainWindow(): boolean {
+    return everCreated;
+}
+
 /** The window main.js creates today, plus the sandbox (T-02-04). */
 export function createMainWindow(options: { show: boolean }): BrowserWindow {
     const isMac = process.platform === 'darwin';
-    return new BrowserWindow({
+    const win = new BrowserWindow({
         width: MAIN_WINDOW.width,
         height: isMac ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height,
         resizable: true,
@@ -43,6 +57,16 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
             sandbox: true
         }
     });
+
+    created.push(win);
+    everCreated = true;
+    win.on('closed', () => {
+        const index = created.indexOf(win);
+        if (index >= 0) {
+            created.splice(index, 1);
+        }
+    });
+    return win;
 }
 
 /** The dev server when unpackaged, otherwise the built index.html beside __dirname (inside app.asar, never cwd-relative). */
