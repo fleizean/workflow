@@ -21,6 +21,7 @@ import {
     V121_TABLES,
     checkAllowedDelta,
     checkMigrationSql,
+    classifyStatement,
     checkRuntimeTrace,
     snapshotSchema
 } from './helpers/additive-guard';
@@ -186,6 +187,30 @@ const CONTROLS: readonly (readonly [string, string])[] = [
 // Version 3, appended after the real registry: the control travels the runner's own path.
 const controlStep = (sql: string): MigrationStep & { kind: 'sql' } =>
     ({ version: 3, tag: '0002_control', kind: 'sql', sql });
+
+// WR-09: the one control the per-statement rules cannot refuse, so it exercises the whole-file layer alone.
+// CREATE TABLE ... AS SELECT carries no forbidden keyword and reads as a plain create-table; only the rule over
+// accepted statements sees that it copies rows.
+const CTAS_CONTROL = 'CREATE TABLE work_sessions_archive AS SELECT * FROM work_sessions';
+
+describe('D-25/WR-09: the whole-file layer refuses a copy the per-statement rules accept', () => {
+    it('accepts the statement on its own, so the file-level verdict below is that layer\'s alone', () => {
+        expect(classifyStatement(CTAS_CONTROL, ctx).allowed,
+            'a per-statement rule now refuses it, so the whole-file layer is untested again').toBe(true);
+    });
+
+    it('refuses it at the file level, naming the rebuild shape', () => {
+        const result = checkMigrationSql(CTAS_CONTROL, ctx);
+        expect(result.ok).toBe(false);
+        expect(result.violations.map((violation) => violation.rule).join('; ')).toContain('copies rows');
+    });
+
+    it('says nothing about the real registry, which copies no rows', () => {
+        for (const step of SQL_STEPS) {
+            expect(checkMigrationSql(step.sql, ctx).violations, step.tag).toEqual([]);
+        }
+    });
+});
 
 describe('D-25: the six negative controls, injected through the real entry points', () => {
     it.each(CONTROLS)('%s is refused by the static guard', (_label, sql) => {

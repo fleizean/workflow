@@ -251,7 +251,8 @@ export function checkMigrationSql(sql: string, ctx: GuardContext): GuardResult {
     const createdTables: string[] = [];
     let known = [...ctx.existingTables];
 
-    for (const chunk of splitStatements(sql)) {
+    const chunks = splitStatements(sql);
+    for (const chunk of chunks) {
         const local: GuardContext = {
             v121Tables: ctx.v121Tables,
             milestoneTables: [...ctx.milestoneTables, ...createdTables],
@@ -272,13 +273,21 @@ export function checkMigrationSql(sql: string, ctx: GuardContext): GuardResult {
         }
     }
 
-    // Sequence level: a copy into a table this file created, beside a drop or a rename, is the rebuild shape.
-    const words = tokenizeSql(sql).filter((token) => token.kind === 'word').map((token) => token.value);
-    const dropsOrRenames = words.includes('DROP') || words.includes('RENAME');
-    const copies = statements.some((entry) => entry.kind === 'insert' && entry.reason?.includes('rebuild') === true);
-    if (dropsOrRenames && copies) {
-        violations.push({ statement: 'the statement sequence', rule: 'the rebuild shape: copy, then drop or rename (D-20)' });
-    }
+    // WR-09: this layer reads the statements the per-statement rules ACCEPTED. The old version keyed off DROP or
+    // RENAME beside a rejected INSERT ... SELECT, both of which are refused above, so it could only ever restate a
+    // verdict already reached - deleting it changed no outcome. What it can see on its own is a copy of rows the
+    // allowlist lets through: CREATE TABLE ... AS SELECT reads as a plain create-table to classifyStatement, and
+    // it is the first half of the rebuild shape D-20 exists to forbid.
+    chunks.forEach((chunk, index) => {
+        const classification = statements[index];
+        if (classification === undefined || !classification.allowed) return;
+        const copies = tokenizeSql(chunk).some((token) => token.kind === 'word' && token.value === 'SELECT');
+        if (!copies) return;
+        violations.push({
+            statement: classification.head,
+            rule: 'the rebuild shape: an accepted statement that still copies rows (D-20)'
+        });
+    });
 
     return { ok: violations.length === 0, violations, statements, created };
 }
