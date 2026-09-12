@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_FLAG, USER_DATA_DIR_SWITCH,
-    mainConfig, parseMainConfig
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
+    SMOKE_SEED_TIMER_STATE_ENV, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
     DEVELOPMENT_USER_DATA_SUFFIX as USERDATA_SUFFIX, USER_DATA_DIR_SWITCH as USERDATA_SWITCH
@@ -162,6 +162,13 @@ describe('D-23: parseMainConfig is pure and never throws', () => {
         expect(parseMainConfig({ ELECTRON_RENDERER_URL: '' }, []).rendererDevUrl).toBeUndefined();
         expect(parseMainConfig({ ELECTRON_RENDERER_URL: 'http://localhost:5173/' }, []).rendererDevUrl)
             .toBe('http://localhost:5173/');
+    });
+
+    it('reads the smoke timer seed from its own variable and leaves it unset when absent', () => {
+        expect(parseMainConfig({}, []).smokeSeedTimerState,
+            'D-37: an unset seed must stay undefined, or every smoke launch would seed localStorage').toBeUndefined();
+        const seed = '{"elapsed":3723,"running":true}';
+        expect(parseMainConfig({ [SMOKE_SEED_TIMER_STATE_ENV]: seed }, ['--smoke']).smokeSeedTimerState).toBe(seed);
     });
 
     it('recognises --smoke only as the exact argument', () => {
