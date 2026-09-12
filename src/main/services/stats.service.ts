@@ -5,16 +5,13 @@
 // (work-history.html:484), so a day worked in several short blocks never counted. Nothing here can see a session.
 
 import { addDays, diffDays, isoWeekday, startOfWeek } from '@shared/utils/date';
-import type { DayTotal, LocalDate } from '@shared/types';
+import { localDayOf } from '../ports';
+import type { ClockPort } from '../ports';
+import type { DayProgress, DayTotal, LocalDate, PomodoroCounts, Settings, Streak, WeekTotals } from '@shared/types';
 
 export interface StreakSettings {
     readonly dailyTargetSeconds: number;
     readonly excludeWeekends: boolean;
-}
-
-export interface WeekTotals {
-    readonly thisWeekSeconds: number;
-    readonly lastWeekSeconds: number;
 }
 
 // v1.2.1 walked back a day at a time and stopped at 365 (database/db.js calculateCurrentStreak).
@@ -87,4 +84,76 @@ export function weekTotals(dayTotals: readonly DayTotal[], today: LocalDate): We
         }
     }
     return { thisWeekSeconds, lastWeekSeconds };
+}
+
+/** Structural, so nothing here imports src/lib/db: the container passes the repositories themselves. */
+export interface DayTotalsLedger {
+    dayTotals(): DayTotal[];
+}
+
+export interface PomodoroDayLedger {
+    countForDay(date: LocalDate): number;
+}
+
+export interface SettingsReader {
+    get(): Settings;
+}
+
+export interface StatsServiceInput {
+    readonly clock: ClockPort;
+    readonly sessions: DayTotalsLedger;
+    readonly pomodoro: PomodoroDayLedger;
+    readonly settings: SettingsReader;
+}
+
+export interface StatsService {
+    /** The whole day's tracked seconds, which is what the streak, the goal and Work History all measure (B7). */
+    dayProgress(date: LocalDate): DayProgress;
+    /** Today, as the clock's local day names it. */
+    today(): DayProgress;
+    streak(): Streak;
+    weeks(): WeekTotals;
+    pomodoroCounts(): PomodoroCounts;
+}
+
+const DAYS_IN_WEEK = 7;
+
+export function createStatsService(input: StatsServiceInput): StatsService {
+    const { clock, pomodoro, sessions, settings } = input;
+
+    const progress = (date: LocalDate): DayProgress => {
+        const { dailyTargetSeconds } = settings.get();
+        const totalSeconds = totalForDay(sessions.dayTotals(), date);
+        return { date, totalSeconds, dailyTargetSeconds, goalMet: totalSeconds >= dailyTargetSeconds };
+    };
+
+    return {
+        dayProgress: progress,
+        today: () => progress(localDayOf(clock)),
+
+        streak() {
+            const today = localDayOf(clock);
+            const current = settings.get();
+            return {
+                date: today,
+                days: currentStreak(sessions.dayTotals(), today, {
+                    dailyTargetSeconds: current.dailyTargetSeconds,
+                    excludeWeekends: current.excludeWeekendsFromStreak
+                })
+            };
+        },
+
+        weeks: () => weekTotals(sessions.dayTotals(), localDayOf(clock)),
+
+        // POMO-09: the week is the same Monday-to-Sunday slice the totals use, summed day by day from the ledger.
+        pomodoroCounts() {
+            const date = localDayOf(clock);
+            const monday = startOfWeek(date);
+            let thisWeekCount = 0;
+            for (let offset = 0; offset < DAYS_IN_WEEK; offset++) {
+                thisWeekCount += pomodoro.countForDay(addDays(monday, offset));
+            }
+            return { date, todayCount: pomodoro.countForDay(date), thisWeekCount };
+        }
+    };
 }

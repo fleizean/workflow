@@ -6,11 +6,11 @@
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
 import { localDayOf } from '../ports';
 import { TICK_MS, creditableMs } from './timer.service';
-import type { LocalDate } from '@shared/types';
+import type { LocalDate, PomodoroInterval, PomodoroSnapshot, PomodoroStatus } from '@shared/types';
 import type { ClockPort, RepeatingTimer, SchedulerPort } from '../ports';
 
-export type PomodoroInterval = 'work' | 'shortBreak' | 'longBreak';
-export type PomodoroStatus = 'idle' | 'running' | 'paused';
+// The wire shapes are the cycle's shapes: one definition, so a field added to the schema is a compile error here.
+export type { PomodoroInterval, PomodoroSnapshot, PomodoroStatus };
 
 export const BREAK_INTERVALS: readonly PomodoroInterval[] = Object.freeze(['shortBreak', 'longBreak']);
 
@@ -21,19 +21,6 @@ export interface PomodoroDurations {
     readonly workSeconds: number;
     readonly shortBreakSeconds: number;
     readonly longBreakSeconds: number;
-    readonly sessionsUntilLongBreak: number;
-}
-
-export interface PomodoroSnapshot {
-    readonly interval: PomodoroInterval;
-    readonly status: PomodoroStatus;
-    readonly elapsedSeconds: number;
-    readonly targetSeconds: number;
-    readonly remainingSeconds: number;
-    /** The local day the count below was read for. */
-    readonly date: LocalDate;
-    /** Pomodoros the database holds for that day. Never incremented here - only ever assigned from the ledger. */
-    readonly completedToday: number;
     readonly sessionsUntilLongBreak: number;
 }
 

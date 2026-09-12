@@ -1,6 +1,7 @@
 // CORE-03: the settings boundary Phase 8's screens write through. It validates, then calls slice B's repository
 // once; the ten-key Settings shape and the v1.2.1 key strings stay where they already live.
 
+import { ServiceError } from './service-errors';
 import type { Settings } from '@shared/types';
 
 /** Structural, so nothing here imports src/lib/db: the container passes the settings repository itself. */
@@ -63,11 +64,11 @@ export const SETTING_KEYS: readonly (keyof Settings)[] =
     Object.freeze([...NUMERIC_SETTING_KEYS, ...BOOLEAN_SETTING_KEYS]);
 
 /** A refused write, named by the key that caused it. Durations and targets are not user data, so the value is said. */
-export class SettingsValidationError extends Error {
+export class SettingsValidationError extends ServiceError {
     readonly key: string;
 
     constructor(key: string, message: string) {
-        super(message);
+        super('INVALID_INPUT', message);
         this.name = 'SettingsValidationError';
         this.key = key;
     }

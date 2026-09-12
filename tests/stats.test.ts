@@ -10,10 +10,13 @@ import { migrateDatabase } from '../src/lib/db/runner';
 import { LATEST } from '../src/lib/db/migrations/registry';
 import { createDbHandle } from '../src/lib/db/handle';
 import { createSessionsRepository } from '../src/lib/db/repositories';
-import { currentStreak, isGoalMet, totalForDay, weekTotals } from '../src/main/services/stats.service';
-import { formatLocalDate, startOfWeek } from '../src/shared/utils/date';
+import { createStatsService, currentStreak, isGoalMet, totalForDay, weekTotals } from '../src/main/services/stats.service';
+import type { StatsService } from '../src/main/services/stats.service';
+import { DEFAULT_SETTINGS } from '../src/shared/constants/settings';
+import { formatLocalDate, parseLocalDate, startOfWeek } from '../src/shared/utils/date';
 import { cleanupFixtures, makeEmptyFixture } from './fixtures/seed';
-import type { DayTotal, LocalDate } from '../src/shared/types';
+import type { ClockPort } from '../src/main/ports';
+import type { DayTotal, LocalDate, Settings } from '../src/shared/types';
 
 // Criterion 3: this suite must pass with electron refusing to load. tests/services-electron-free.test.ts requires
 // the call in every test that imports a service, and would report this file the day it went missing.
@@ -199,5 +202,82 @@ describe('B7: a day worked in several short blocks meets the target', () => {
         } finally {
             closeDatabase(connection);
         }
+    });
+});
+
+/*
+ * The service around those functions: it reads the day totals, the settings and the clock's local day, so the
+ * screens ask for "the streak" rather than assembling one. The clock is a stub, because a statistic that changed
+ * with the wall clock of the machine running the suite would be a statistic nobody could assert.
+ */
+describe('CORE-08: the stats service reads the clock, the settings and the ledger', () => {
+    const TODAY = '2026-03-04';
+    const settingsOf = (overrides: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...overrides });
+
+    interface Harness {
+        readonly service: StatsService;
+        readonly countedDays: LocalDate[];
+    }
+
+    function harness(options: { totals?: DayTotal[]; settings?: Settings; pomodoros?: Record<string, number> } = {}): Harness {
+        const countedDays: LocalDate[] = [];
+        const pomodoros = options.pomodoros ?? {};
+        const clock: ClockPort = {
+            // Local noon of TODAY, so the local day is unambiguous whatever zone the suite runs in.
+            now: () => parseLocalDate(ld(TODAY)).getTime() + 12 * 3600 * 1000,
+            monotonicNow: () => 0
+        };
+        return {
+            countedDays,
+            service: createStatsService({
+                clock,
+                sessions: { dayTotals: () => options.totals ?? [] },
+                pomodoro: {
+                    countForDay: (date) => { countedDays.push(date); return pomodoros[date] ?? 0; }
+                },
+                settings: { get: () => options.settings ?? settingsOf() }
+            })
+        };
+    }
+
+    it('reports today\'s progress against the configured target, not against a hard-coded 28800 (HIST-02)', () => {
+        const h = harness({
+            totals: [day(TODAY, 7200)],
+            settings: settingsOf({ dailyTargetSeconds: 3600 })
+        });
+        expect(h.service.today()).toEqual({
+            date: ld(TODAY), totalSeconds: 7200, dailyTargetSeconds: 3600, goalMet: true
+        });
+    });
+
+    it('reports a day with nothing on it as zero seconds and an unmet goal', () => {
+        expect(harness().service.dayProgress(ld('2026-03-01')))
+            .toEqual({ date: ld('2026-03-01'), totalSeconds: 0, dailyTargetSeconds: TARGET, goalMet: false });
+    });
+
+    it('counts the streak back from the clock\'s day, honouring the weekend setting', () => {
+        const totals = [day('2026-03-04', TARGET), day('2026-03-03', TARGET), day('2026-03-02', TARGET)];
+        expect(harness({ totals }).service.streak()).toEqual({ date: ld(TODAY), days: 3 });
+
+        // 2026-02-28 is a Saturday and 2026-03-01 a Sunday; with weekends excluded the count steps over both.
+        const acrossWeekend = [...totals, day('2026-02-27', TARGET)];
+        expect(harness({ totals: acrossWeekend }).service.streak().days).toBe(3);
+        expect(harness({
+            totals: acrossWeekend,
+            settings: settingsOf({ excludeWeekendsFromStreak: true })
+        }).service.streak().days).toBe(4);
+    });
+
+    it('slices the week the way the totals do', () => {
+        const totals = [day('2026-03-04', 3600), day('2026-02-25', 7200)];
+        expect(harness({ totals }).service.weeks()).toEqual({ thisWeekSeconds: 3600, lastWeekSeconds: 7200 });
+    });
+
+    it('counts pomodoros for today and for the Monday-to-Sunday week, from the ledger only (POMO-09)', () => {
+        const monday = startOfWeek(ld(TODAY));
+        const h = harness({ pomodoros: { [TODAY]: 2, [monday]: 3 } });
+        expect(h.service.pomodoroCounts()).toEqual({ date: ld(TODAY), todayCount: 2, thisWeekCount: 5 });
+        expect(h.countedDays, 'the week is the seven days of the week, plus today')
+            .toHaveLength(8);
     });
 });
