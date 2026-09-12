@@ -22,6 +22,9 @@ export const USER_DATA_DIR_SWITCH = 'user-data-dir';
 // D-36: while false, a packaged non-smoke launch refuses the production krono.db. Only Phase 10 (REL-04) flips it.
 export const PRODUCTION_DATA_DOOR_OPEN = false;
 
+// D-33: the legacy localStorage read is best effort, so it never blocks startup past this deadline.
+export const LEGACY_STORAGE_TIMEOUT_MS = 5_000;
+
 // minWidth/minHeight are declared, not applied: enforcing a minimum size is IPC-05 (Phase 6).
 export const MAIN_WINDOW = Object.freeze({
     width: 430,
