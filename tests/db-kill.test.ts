@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { build } from 'vite';
-import { verifyBackup } from '../src/lib/db/backup';
+import { PENDING_SUFFIX, verifyBackup } from '../src/lib/db/backup';
 import { classify } from '../src/lib/db/classify';
 import { closeDatabase, openDatabase } from '../src/lib/db/client';
 import { probeDatabase } from '../src/lib/db/probe';
@@ -205,9 +205,12 @@ describe('D-24: a SIGKILL mid-migration leaves a recoverable database', () => {
 
             const partials = backupsIn(backupDir);
             if (point === 'backup') {
-                // Pitfall 9, accepted: a killed backup leaves a validly-named partial .bak that counts toward
-                // retention. The newest backup is always the just-verified one, so data safety holds.
-                expect(partials.length, 'the killed backup left its partial file behind').toBeGreaterThan(0);
+                // CR-02: the copy is written under a staging name and moved onto the retention-counted one only
+                // after it verifies, so a killed backup can leave nothing retention will count or trust.
+                const staged = fs.readdirSync(backupDir).filter((name) => name.endsWith(PENDING_SUFFIX));
+                expect(staged.length, 'the kill landed before the copy began, so this proves nothing')
+                    .toBeGreaterThan(0);
+                expect(partials, 'a killed backup left a retention-counted .bak behind').toEqual([]);
             }
 
             const report = await migrateReal(fixture, backupDir);
@@ -217,9 +220,11 @@ describe('D-24: a SIGKILL mid-migration leaves a recoverable database', () => {
             if (point === 'backup') {
                 expect(report.backupPath, 'the re-run takes its own backup').not.toBeNull();
                 const taken = report.backupPath ?? '';
-                expect(partials, 'and it is a new file, not the partial one')
-                    .not.toContain(path.basename(taken));
+                expect(backupsIn(backupDir), 'the only .bak is the one the re-run verified')
+                    .toEqual([path.basename(taken)]);
                 expect(verifyBackup(taken).integrity, 'the re-run backup verifies').toBe('ok');
+                expect(fs.readdirSync(backupDir).filter((name) => name.endsWith(PENDING_SUFFIX)),
+                    'the killed run\'s staging file outlived the next backup').toEqual([]);
             }
 
             const final = captureInvariants(fixture, { over });

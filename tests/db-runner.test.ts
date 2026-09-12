@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import type DatabaseType from 'better-sqlite3';
-import { backupDatabase, readDatabaseStats, verifyBackup } from '../src/lib/db/backup';
+import { backupDatabase, PENDING_SUFFIX, readDatabaseStats, verifyBackup } from '../src/lib/db/backup';
 import { classify, type DbClass } from '../src/lib/db/classify';
 import { closeDatabase, openDatabase } from '../src/lib/db/client';
 import { probeDatabase } from '../src/lib/db/probe';
@@ -373,11 +373,14 @@ describe('D-22: backup before the first statement, prune after the last commit',
         expect(report.pruned.map((file) => path.basename(file)).sort()).toEqual([older[0], older[1]]);
     });
 
-    it('deletes no backup when a migration fails', async () => {
+    // CR-02: a failing migration leaves the file at its old version, so the next launch backs it up again. Pruning
+    // only on the success path turned a migration that fails every time into one full-size copy per launch.
+    it('prunes on the failure path too, keeping the backup it just took', async () => {
         const dbPath = legacyAt('C', 'representative');
         const prepared = prepare(dbPath, 2);
         const backupDir = path.join(prepared.dir, 'backups');
         const older = await withOlderBackups(dbPath, backupDir);
+        expect(older).toHaveLength(4);
         const db = open(dbPath);
 
         const error = await failureOf(migrateDatabase(db, options(prepared, [BASELINE, sqlStep(2, 'INSERT INTO t_missing VALUES (1)')], {
@@ -388,9 +391,33 @@ describe('D-22: backup before the first statement, prune after the last commit',
         expect(error.version).toBe(2);
         expect(error.backupPath).not.toBeNull();
         const left = backupsIn(backupDir);
-        expect(left).toHaveLength(5);
-        expect(left).toEqual(expect.arrayContaining(older));
-        expect(left).toContain(path.basename(error.backupPath ?? ''));
+        expect(left, 'a failed migration left retention unenforced').toHaveLength(3);
+        expect(left, 'the backup the failed run took was pruned away')
+            .toContain(path.basename(error.backupPath ?? ''));
+        expect(left, 'the two oldest backups survived the prune').toEqual(expect.arrayContaining([older[2], older[3]]));
+    });
+
+    it('stays at the retained count across repeated failures, leaving no staging file behind', async () => {
+        const dbPath = legacyAt('C', 'representative');
+        const backupDir = path.join(path.dirname(dbPath), 'backups');
+        const broken = [BASELINE, sqlStep(2, 'INSERT INTO t_missing VALUES (1)')];
+
+        for (let attempt = 1; attempt <= 4; attempt++) {
+            // Re-probed each time: the baseline commits, so the relaunch sees the file one version further on.
+            const prepared = prepare(dbPath, 2);
+            const db = open(dbPath);
+            const error = await failureOf(migrateDatabase(db, options(prepared, broken, {
+                now: new Date(2026, 5, attempt, 9, 0, 0)
+            })));
+            closeDatabase(db);
+            expect(error.backupPath, 'attempt ' + String(attempt) + ' took no backup, so this proves nothing')
+                .not.toBeNull();
+            expect(backupsIn(backupDir).length, 'attempt ' + String(attempt) + ' pushed retention past three')
+                .toBeLessThanOrEqual(3);
+        }
+
+        expect(fs.readdirSync(backupDir).filter((name) => name.endsWith(PENDING_SUFFIX)),
+            'a staging file survived a completed backup').toEqual([]);
     });
 });
 

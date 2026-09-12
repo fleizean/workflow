@@ -162,6 +162,16 @@ const sizeOf = (file: string): number => (fs.existsSync(file) ? fs.statSync(file
 // A file with nothing in it has nothing to back up; committed rows may still live only in the -wal.
 const hasContent = (dbPath: string): boolean => sizeOf(dbPath) > 0 || sizeOf(dbPath + '-wal') > 0;
 
+// Best effort: the migration failure the caller is about to raise says more than anything prune could go wrong with.
+function prunePartial(backupDir: string, backupPath: string | null): void {
+    if (backupPath === null) return;
+    try {
+        pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS);
+    } catch {
+        // The failure being reported matters more than an unpruned backup directory.
+    }
+}
+
 function expectedClassFor(fromVersion: number, latest: number): readonly DbClass[] {
     if (fromVersion === 0) return ['fresh', 'legacy'];
     if (fromVersion === latest) return ['current'];
@@ -249,6 +259,9 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
         try {
             applyStep(db, step, applyBaseline, hooks);
         } catch (error) {
+            // CR-02: a migration that fails on every launch takes a fresh backup on every launch. Pruning here
+            // too is what keeps that loop bounded at the retained count instead of filling the disk.
+            prunePartial(options.backupDir, backupPath);
             throw new MigrationFailedError(step.version, backupPath, error);
         }
         applied.push(step.version);

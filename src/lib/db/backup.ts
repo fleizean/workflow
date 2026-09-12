@@ -15,6 +15,11 @@ type CountedTable = (typeof COUNTED_TABLES)[number];
 
 const SIDECARS = ['-wal', '-shm'] as const;
 
+// The staging name a backup is written under. BACKUP_NAME never matches it, so retention never counts one (CR-02).
+export const PENDING_SUFFIX = '.partial';
+
+const PENDING_NAME = /\.bak\.partial(-wal|-shm)?$/;
+
 const PAGES_PER_STEP = 100;
 
 export const DEFAULT_BACKUP_DEADLINE_MS = 60_000;
@@ -157,44 +162,74 @@ export async function backupDatabase(
         );
     }
 
+    // CR-02: the copy is written under a name pruneBackups cannot see and moved onto the retention-counted one
+    // only once it is verified and quiesced, so a failed backup leaves nothing behind to count or to trust.
+    const pendingPath = backupPath + PENDING_SUFFIX;
+
+    sweepPendingBackups(backupDir);
+
     const source = new Database(sourcePath, { readonly: true, fileMustExist: true });
     let expected: BackupVerification;
     let totalPages: number;
+    let verification: BackupVerification;
     try {
-        assertForeignKeysOn(source, sourcePath);
-        expected = readDatabaseStats(sourcePath);
-        const startedAt = Date.now();
-        const progress = await source.backup(backupPath, {
-            progress: (info) => {
-                options.onProgress?.(info);
-                const elapsed = Date.now() - startedAt;
-                if (elapsed >= deadlineMs) {
-                    throw new Error(
-                        'Backup exceeded its wall-clock deadline: ' + String(elapsed) +
-                        ' ms elapsed, limit ' + String(deadlineMs) + ' ms, with ' +
-                        String(info.remainingPages) + ' of ' + String(info.totalPages) +
-                        ' pages still to copy. Source: ' + sourcePath
-                    );
+        try {
+            assertForeignKeysOn(source, sourcePath);
+            expected = readDatabaseStats(sourcePath);
+            const startedAt = Date.now();
+            const progress = await source.backup(pendingPath, {
+                progress: (info) => {
+                    options.onProgress?.(info);
+                    const elapsed = Date.now() - startedAt;
+                    if (elapsed >= deadlineMs) {
+                        throw new Error(
+                            'Backup exceeded its wall-clock deadline: ' + String(elapsed) +
+                            ' ms elapsed, limit ' + String(deadlineMs) + ' ms, with ' +
+                            String(info.remainingPages) + ' of ' + String(info.totalPages) +
+                            ' pages still to copy. Source: ' + sourcePath
+                        );
+                    }
+                    return PAGES_PER_STEP;
                 }
-                return PAGES_PER_STEP;
-            }
-        });
-        totalPages = progress.totalPages;
-    } finally {
-        source.close();
-    }
+            });
+            totalPages = progress.totalPages;
+        } finally {
+            source.close();
+        }
 
-    const verification = verifyBackup(backupPath);
-    const mismatches = describeVerificationMismatches(expected, verification);
-    if (mismatches.length > 0) {
-        throw new Error(
-            'Backup verification failed for ' + backupPath + ': ' + mismatches.join('; ') +
-            '. The copy was NOT trusted.'
-        );
+        verification = verifyBackup(pendingPath);
+        const mismatches = describeVerificationMismatches(expected, verification);
+        if (mismatches.length > 0) {
+            throw new Error(
+                'Backup verification failed for ' + pendingPath + ': ' + mismatches.join('; ') +
+                '. The copy was NOT trusted.'
+            );
+        }
+        quiesceBackupFile(pendingPath);
+        // eslint-disable-next-line no-restricted-syntax -- a verified, quiesced copy with no sidecars, never a live database (CUSTODY-03)
+        fs.renameSync(pendingPath, backupPath);
+    } catch (error) {
+        removePendingBackup(pendingPath);
+        throw error;
     }
-    quiesceBackupFile(backupPath);
 
     return { backupPath, totalPages, verification };
+}
+
+// Everything a half-written copy may have left. force: true, so a name that was never created is not an error.
+function removePendingBackup(pendingPath: string): void {
+    fs.rmSync(pendingPath, { force: true });
+    for (const sidecar of SIDECARS) {
+        fs.rmSync(pendingPath + sidecar, { force: true });
+    }
+}
+
+// Staging files a killed copy left behind. They are unverified by construction, so none is ever kept (CR-02).
+function sweepPendingBackups(backupDir: string): void {
+    if (!fs.existsSync(backupDir)) return;
+    for (const name of fs.readdirSync(backupDir)) {
+        if (PENDING_NAME.test(name)) fs.rmSync(path.join(backupDir, name), { force: true });
+    }
 }
 
 // Verifying reopens the backup and leaves a -shm and an empty -wal that a read-only connection cannot delete.
