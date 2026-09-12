@@ -1,7 +1,7 @@
 // D-30: the real bootstrap sequence over the real database layer, driven by recording stand-in ports on mkdtemp
 // directories. No electron mock, and no real krono.db or production profile is ever opened.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -10,6 +10,7 @@ import Database from 'better-sqlite3';
 import ts from 'typescript';
 import { instantFromEpochMs } from '@shared/utils/date';
 import * as realLayer from '../src/lib/db';
+import { backupDatabase } from '../src/lib/db/backup';
 import { EXIT_CODES } from '../src/main/config';
 import { startDatabase } from '../src/main/database-startup';
 import type {
@@ -925,6 +926,47 @@ describe('WR-04: an adopted database that already carries a v2 object name is st
         expect(h.recorder.reports, 'a pre-existing index name failed the whole v2 transaction').toEqual([]);
         expect(started?.report.applied).toEqual([1, 2]);
         expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
+    });
+});
+
+describe('WR-02: retention that stops working says so', () => {
+    // A held backup used to end the sweep at itself, and both callers swallow a throwing prune, so the only
+    // symptom of a backups/ directory growing without bound was silence.
+    it('prunes past a backup it cannot delete and logs the one it skipped', async () => {
+        const h = harness('retention-behind');
+        writeLegacyDatabase(h.dbPath);
+        const existing: string[] = [];
+        for (const day of [1, 2, 3, 4]) {
+            const made = await backupDatabase(h.dbPath, h.backupDir, {
+                now: instantFromEpochMs(Date.UTC(2026, 0, day, 10, 0, 0))
+            });
+            existing.push(made.backupPath);
+        }
+        // The migration adds the newest backup of all, so the default retention of three dooms the two oldest.
+        const held = existing[1] ?? '';
+        const olderThanIt = existing[0] ?? '';
+
+        const realRm = fs.rmSync.bind(fs);
+        const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target: fs.PathLike, options?: fs.RmOptions) => {
+            if (String(target) === held) {
+                throw Object.assign(new Error('EBUSY: resource busy or locked, unlink'), { code: 'EBUSY' });
+            }
+            realRm(target, options);
+        });
+        let started: StartedDatabase | null;
+        try {
+            started = await run(h);
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(started, 'a held backup refused the migration').not.toBeNull();
+        expect(fs.existsSync(held), 'the held backup was deleted after all, so this proves nothing').toBe(true);
+        expect(fs.existsSync(olderThanIt), 'the backup behind the held one was never reached').toBe(false);
+        expect(started?.report.prunedSkipped).toEqual([held]);
+        const logged = h.recorder.logs.join('\n');
+        expect(logged, 'retention stopped working with nothing said about it').toContain('retention is behind');
+        expect(logged, 'the log does not name the backup that could not be deleted').toContain(held);
     });
 });
 

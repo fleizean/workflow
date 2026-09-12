@@ -292,6 +292,11 @@ export async function startDatabase(
         return null;
     }
     ports.log(summaryLine(report));
+    // WR-02: retention that silently stopped working is a disk-full report months later. Paths only (T-01-37).
+    if (report.prunedSkipped.length > 0) {
+        ports.log('database: retention is behind - ' + String(report.prunedSkipped.length) +
+            ' old backup(s) could not be deleted: ' + report.prunedSkipped.join(', '));
+    }
 
     // CR-02: post-commit. The rows are migrated and the backup is on disk, so a journal mode that would not
     // convert - a locked file, a filesystem without shared memory - is logged rather than made fatal.

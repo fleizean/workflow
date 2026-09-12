@@ -22,4 +22,4 @@ export { parseLegacyTimerState } from './legacy-timer';
 export type { LegacyTimerRecord } from './legacy-timer';
 
 export { pruneBackups, readDatabaseStats } from './backup';
-export type { BackupVerification } from './backup';
+export type { BackupVerification, PruneOutcome } from './backup';

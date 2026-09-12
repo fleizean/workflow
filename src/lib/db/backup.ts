@@ -388,12 +388,21 @@ function looksLikeADatabase(file: string): boolean {
     }
 }
 
+/** What the sweep did. `skipped` is what it could not delete, so retention is behind until those are gone. */
+export interface PruneOutcome {
+    readonly deleted: string[];
+    readonly skipped: string[];
+}
+
 // Deletes all but the `keep` newest backups, ordered by filename stamp rather than mtime, and returns what it
-// deleted. WR-02: a file that does not read as a database ranks below every one that does, whatever its stamp,
-// so retention can never spend a slot on a corrupt copy while deleting a good one. The newest database-shaped
-// backup always survives, whatever `keep` says.
-export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_BACKUPS): string[] {
-    if (!fs.existsSync(backupDir)) return [];
+// deleted. WR-02 (iteration 2): a file that does not read as a database ranks below every one that does, whatever
+// its stamp, so retention can never spend a slot on a corrupt copy while deleting a good one. The newest
+// database-shaped backup always survives, whatever `keep` says.
+// WR-02 (iteration 3): one entry it cannot delete - held open by a scanner, left read-only by a restore tool -
+// used to end the whole sweep, so every backup older than it was never deleted again. The sweep is total, and what
+// it could not do is returned rather than lost.
+export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_BACKUPS): PruneOutcome {
+    if (!fs.existsSync(backupDir)) return { deleted: [], skipped: [] };
 
     const newestFirst = fs
         .readdirSync(backupDir)
@@ -411,10 +420,15 @@ export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_
     const doomed = ranked.slice(retained);
 
     const deleted: string[] = [];
+    const skipped: string[] = [];
     for (const name of doomed) {
         const target = path.join(backupDir, name);
-        fs.rmSync(target);
-        deleted.push(target);
+        try {
+            fs.rmSync(target);
+            deleted.push(target);
+        } catch {
+            skipped.push(target);
+        }
     }
-    return deleted;
+    return { deleted, skipped };
 }

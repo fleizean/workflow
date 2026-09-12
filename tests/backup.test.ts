@@ -966,9 +966,10 @@ describe('backup retention', () => {
         const survivors = ['10:00:02', '10:00:03', '10:00:04'].map((s) => byStamp.get(s) ?? '');
         const digestsBefore = survivors.map(sha256);
 
-        const deleted = pruneBackups(dir, 3).sort();
+        const swept = pruneBackups(dir, 3);
 
-        expect(deleted).toEqual([byStamp.get('10:00:00'), byStamp.get('10:00:01')].sort());
+        expect(swept.deleted.sort()).toEqual([byStamp.get('10:00:00'), byStamp.get('10:00:01')].sort());
+        expect(swept.skipped, 'the sweep could not finish on an ordinary directory').toEqual([]);
         expect(fs.readdirSync(dir)).toHaveLength(3);
         for (const survivor of survivors) {
             expect(fs.existsSync(survivor)).toBe(true);
@@ -993,13 +994,54 @@ describe('backup retention', () => {
         const corrupt = path.join(dir, path.basename(fx) + '.2026-09-12T10-00-09-000Z.bak');
         fs.writeFileSync(corrupt, 'this was never a database');
 
-        const deleted = pruneBackups(dir, 3);
+        const deleted = pruneBackups(dir, 3).deleted;
 
         expect(deleted, 'the corrupt backup was not the one deleted').toEqual([corrupt]);
         expect(fs.existsSync(corrupt)).toBe(false);
         for (const survivor of kept) {
             expect(fs.existsSync(survivor), 'a verified backup was evicted by a corrupt one').toBe(true);
         }
+    });
+
+    /*
+     * WR-02: the deletion loop had no per-entry guard, so the first EPERM/EBUSY ended the whole sweep - and both
+     * callers swallow a throwing prune, so every backup older than a held one was never deleted again with no log
+     * line anywhere. A backup held open by a scanner is database-shaped, so it ranks among the readable ones and
+     * lands in the middle of the doomed list rather than harmlessly at its end.
+     */
+    it('deletes the rest of the doomed backups past one it cannot delete, and says which it skipped', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const stamps = [at(10, 0, 0), at(10, 0, 1), at(10, 0, 2), at(10, 0, 3)];
+        const made: string[] = [];
+        for (const now of stamps) {
+            made.push((await backupDatabase(fx, dir, { now })).backupPath);
+        }
+        // keep=1 dooms the three oldest, and the sweep meets them newest first: [10:00:02, 10:00:01, 10:00:00].
+        const held = made[2] ?? '';
+        const doomedAfterIt = [made[1] ?? '', made[0] ?? ''];
+
+        const realRm = fs.rmSync.bind(fs);
+        const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target: fs.PathLike, options?: fs.RmOptions) => {
+            if (String(target) === held) {
+                throw Object.assign(new Error('EBUSY: resource busy or locked, unlink'), { code: 'EBUSY' });
+            }
+            realRm(target, options);
+        });
+        let swept: ReturnType<typeof pruneBackups>;
+        try {
+            swept = pruneBackups(dir, 1);
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(fs.existsSync(held), 'the held backup was deleted after all, so this proves nothing').toBe(true);
+        expect(swept.skipped, 'the sweep did not say what it could not delete').toEqual([held]);
+        for (const older of doomedAfterIt) {
+            expect(fs.existsSync(older), 'a backup behind the held one was never reached').toBe(false);
+        }
+        expect(swept.deleted.sort()).toEqual([...doomedAfterIt].sort());
+        expect(fs.existsSync(made[3] ?? ''), 'retention deleted the newest backup').toBe(true);
     });
 
     it('ignores files that are not backups it wrote', async () => {
@@ -1011,7 +1053,7 @@ describe('backup retention', () => {
         const stranger = path.join(dir, 'notes.txt');
         fs.writeFileSync(stranger, 'not mine\n');
 
-        expect(pruneBackups(dir, 1)).toHaveLength(1);
+        expect(pruneBackups(dir, 1).deleted).toHaveLength(1);
         expect(fs.existsSync(stranger)).toBe(true);
     });
 });

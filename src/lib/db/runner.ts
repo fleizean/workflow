@@ -4,7 +4,9 @@
 import fs from 'node:fs';
 import type DatabaseType from 'better-sqlite3';
 import { isLocalDate } from '@shared/utils/date';
-import { backupDatabase, DEFAULT_RETAINED_BACKUPS, pruneBackups, type BackupOptions } from './backup';
+import {
+    backupDatabase, DEFAULT_RETAINED_BACKUPS, pruneBackups, type BackupOptions, type PruneOutcome
+} from './backup';
 import { applyV121Baseline } from './baseline-v121';
 import type { DbClass } from './classify';
 import { MIGRATIONS } from './migrations/registry';
@@ -66,6 +68,8 @@ export interface MigrationReport {
     applied: number[];
     backupPath: string | null;
     pruned: string[];
+    // Old backups retention wanted gone and could not delete; empty on every ordinary run (WR-02).
+    prunedSkipped: string[];
     anomalies: AnomalyCounts;
 }
 
@@ -183,12 +187,13 @@ const hasContent = (dbPath: string): boolean => sizeOf(dbPath) > 0 || sizeOf(dbP
 // Best effort on both paths (CR-02): retention is housekeeping. On the failure path it must not mask the
 // migration failure the caller is about to raise; on the success path an undeletable stray in backups/ must not
 // turn a committed migration into a reported one.
-function pruneBestEffort(backupDir: string, backupPath: string | null): string[] {
-    if (backupPath === null) return [];
+function pruneBestEffort(backupDir: string, backupPath: string | null): PruneOutcome {
+    if (backupPath === null) return { deleted: [], skipped: [] };
     try {
         return pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS);
     } catch {
-        return [];
+        // A sweep that could not even be attempted is still something the caller has to be able to say.
+        return { deleted: [], skipped: [backupDir] };
     }
 }
 
@@ -315,5 +320,14 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
     }
 
     const pruned = pruneBestEffort(options.backupDir, backupPath);
-    return { dbClass, fromVersion, toVersion: readUserVersion(db), applied, backupPath, pruned, anomalies };
+    return {
+        dbClass,
+        fromVersion,
+        toVersion: readUserVersion(db),
+        applied,
+        backupPath,
+        pruned: pruned.deleted,
+        prunedSkipped: pruned.skipped,
+        anomalies
+    };
 }
