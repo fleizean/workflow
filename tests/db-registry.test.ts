@@ -27,11 +27,13 @@ const KIT = path.join(repoRoot, 'node_modules', 'drizzle-kit', 'bin.cjs');
 const SCHEMA = path.join(repoRoot, 'src', 'lib', 'db', 'schema.ts');
 
 // Only the imperative D-13 replay may sniff a table's columns to decide whether to ALTER (DATA-17).
-// probe.ts's one hit is the read-only `pragma_table_info(?)` table-valued function the D-12 classifier
-// selects from, which sniffs nothing and writes nothing; it is pinned here so a new reader fails closed.
+// The other two hits are the read-only `pragma_table_info(?)` table-valued function, which decides no write:
+// probe.ts selects from it for the D-12 classifier, and runner.ts for the WR-02 post-step column check, which
+// only ever refuses. Every reader is pinned here so a new one fails closed.
 const TABLE_INFO_LITERALS: Readonly<Record<string, number>> = Object.freeze({
     'src/lib/db/baseline-v121.ts': 2,
-    'src/lib/db/probe.ts': 1
+    'src/lib/db/probe.ts': 1,
+    'src/lib/db/runner.ts': 1
 });
 
 const PRAGMA_TABLE_INFO = /PRAGMA\s+table_info/i;

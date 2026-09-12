@@ -15,9 +15,21 @@ export const STATEMENT_BREAKPOINT = '--> statement-breakpoint';
 const DATE_TABLES = ['work_sessions', 'pomodoro_sessions'] as const;
 const SESSIONS_TABLE = 'work_sessions';
 
+/** Columns the app reads afterwards, checked inside the step's own transaction (WR-02). */
+export interface RequiredColumns {
+    readonly table: string;
+    readonly columns: readonly string[];
+}
+
 export type MigrationStep =
-    | { readonly version: 1; readonly tag: string; readonly kind: 'baseline' }
-    | { readonly version: number; readonly tag: string; readonly kind: 'sql'; readonly sql: string };
+    | { readonly version: 1; readonly tag: string; readonly kind: 'baseline'; readonly ensures?: readonly RequiredColumns[] }
+    | {
+        readonly version: number;
+        readonly tag: string;
+        readonly kind: 'sql';
+        readonly sql: string;
+        readonly ensures?: readonly RequiredColumns[];
+    };
 
 export interface RunnerHooks {
     // Test-only kill points.
@@ -174,6 +186,27 @@ function pruneBestEffort(backupDir: string, backupPath: string | null): string[]
     }
 }
 
+// WR-02: every CREATE in the v2 step carries IF NOT EXISTS, so a table of the right name in the wrong shape
+// makes the step a no-op. Checked here, inside the step's transaction and before the version bump, so such a file
+// is refused loudly rather than stamped current with columns the app cannot read.
+function assertRequiredColumns(db: DatabaseType.Database, step: MigrationStep): void {
+    for (const required of step.ensures ?? []) {
+        const present = new Set(
+            db.prepare<[string], { name: string }>('SELECT name FROM pragma_table_info(?)')
+                .all(required.table)
+                .map((row) => row.name)
+        );
+        const missing = required.columns.filter((column) => !present.has(column));
+        if (missing.length > 0) {
+            throw new Error(
+                'Version ' + String(step.version) + ' left "' + required.table + '" without the column' +
+                (missing.length === 1 ? ' ' : 's ') + missing.join(', ') +
+                '. A table of that name was already there in another shape, and the app reads those columns.'
+            );
+        }
+    }
+}
+
 function expectedClassFor(fromVersion: number, latest: number): readonly DbClass[] {
     if (fromVersion === 0) return ['fresh', 'legacy'];
     if (fromVersion === latest) return ['current'];
@@ -205,6 +238,7 @@ function applyStep(
                 String(violationsBefore) + ' to ' + String(violationsAfter) + '.'
             );
         }
+        assertRequiredColumns(db, step);
         db.pragma('user_version = ' + String(step.version));
         hooks?.insideTransaction?.(step.version);
     }).immediate();

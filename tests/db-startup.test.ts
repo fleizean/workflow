@@ -107,6 +107,15 @@ function writeLegacyDatabase(dbPath: string, journalMode: string = 'WAL'): void 
     }
 }
 
+function write(dbPath: string, sql: string): void {
+    const db = new Database(dbPath);
+    try {
+        db.exec(sql);
+    } finally {
+        db.close();
+    }
+}
+
 function writeNewerDatabase(dbPath: string): void {
     writeLegacyDatabase(dbPath);
     const db = new Database(dbPath);
@@ -470,6 +479,43 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(h.recorder.exits, 'a throwing close cost the database-failed exit code')
             .toEqual([EXIT_CODES.databaseFailed]);
         expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
+    });
+
+    // WR-02: the v2 step creates app_state IF NOT EXISTS, so one already there in another shape makes the step a
+    // no-op. Stamping that file LATEST left readAppState failing forever, with a swallowed log line as the only
+    // symptom and no launch that would ever run the step again.
+    it('refuses a database whose app_state is there in another shape, and says which columns are missing', async () => {
+        const h = harness('app-state-shape');
+        writeLegacyDatabase(h.dbPath);
+        write(h.dbPath, 'CREATE TABLE app_state (id INTEGER PRIMARY KEY, blob TEXT)');
+
+        const started = await run(h);
+
+        expect(started, 'a database the app cannot read its own state from was adopted').toBeNull();
+        expect(userVersionOf(h.dbPath), 'the file was stamped current over a table the app cannot read')
+            .not.toBe(realLayer.LATEST);
+        const body = h.recorder.reports[0]?.body ?? '';
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(body).toContain('app_state');
+        expect(body).toContain('key');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+        expect(backupsIn(h.backupDir), 'the refusal left the user no backup').toHaveLength(1);
+    });
+
+    // The other side of the same rule: WR-04 made the step re-runnable on purpose, so an app_state that already
+    // carries the columns the app reads must still migrate rather than be caught by the check above.
+    it('adopts a database that already carries a correctly shaped app_state', async () => {
+        const h = harness('app-state-present');
+        writeLegacyDatabase(h.dbPath);
+        write(h.dbPath, 'CREATE TABLE app_state (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL, ' +
+            'updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)');
+
+        const started = await run(h);
+
+        expect(started, 'a v1.x file with this milestone\'s own table was refused').not.toBeNull();
+        expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
+        expect(h.recorder.reports).toEqual([]);
+        expect(h.recorder.exits).toEqual([]);
     });
 
     // CR-02: a step that commits and a later step that fails leaves the file at a version it never had before.
