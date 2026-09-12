@@ -48,13 +48,18 @@ export function classify(observed: ObservedDatabase, latest: number): DbClass {
     if (userObjects.length === 0) return 'fresh';
 
     const tables = userObjects.filter((object) => object.type === 'table').map((object) => object.name);
-    // WR-05: the fingerprint needs an upper bound as well as a lower one. Without it, any database carrying a
-    // companies(id, name, created_at, updated_at) table was adopted and migrated, however much else it held.
-    const foreign = tables.filter((name) => !isV1xTable(name) && name !== MILESTONE_TABLE);
-    if (foreign.length > 0) return 'unrecognized';
-
     const v1xTables = tables.filter(isV1xTable);
     const anchored = v1xTables.includes('work_sessions') || v1xTables.includes('companies');
     const fingerprinted = v1xTables.every((table) => startsWith(observed.columns[table], V1X_TABLE_PREFIXES[table]));
-    return anchored && fingerprinted ? 'legacy' : 'unrecognized';
+    if (!anchored || !fingerprinted) return 'unrecognized';
+
+    // WR-03: an extra table is not grounds for refusal. A user who opened their own krono.db in a SQLite browser
+    // and left a scratch table behind would be told their file is not a Workflow database, with advice that cannot
+    // help and no way back - and adoption is the reversible side of that choice, since it backs the file up first
+    // and only ever adds. WR-05's upper bound survives as the stricter footprint a file with foreign tables must
+    // show: both anchors, not just one, so a foreign database carrying a v1.x-shaped companies is still refused.
+    const foreign = tables.filter((name) => !isV1xTable(name) && name !== MILESTONE_TABLE);
+    const wholeFootprint = v1xTables.includes('companies') && v1xTables.includes('work_sessions');
+    if (foreign.length > 0 && !wholeFootprint) return 'unrecognized';
+    return 'legacy';
 }

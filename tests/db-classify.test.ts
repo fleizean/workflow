@@ -95,16 +95,26 @@ describe('D-12: classify is a total function over observed facts', () => {
             objects: [...V121_OBJECTS, { type: 'index', name: 'third_party_date_idx' }],
             columns: { ...V121_COLUMNS, work_sessions: [...V121_COLUMNS.work_sessions, 'billed'] }
         }), LATEST, 'legacy'],
-        // WR-05: the fingerprint had a lower bound only, so a file that merely contained a v1.x-shaped
-        // companies table was adopted and migrated however much else it carried.
+        // WR-03: a v1.x file that carries the whole footprint is the user's database whatever else a third-party
+        // SQLite tool left in it. Refusing it locked that user out of their own rows for good.
+        ['the v1.2.1 tables plus a table a SQLite browser left behind', observed({
+            objects: [...V121_OBJECTS, { type: 'table', name: 'scratch' }],
+            columns: V121_COLUMNS
+        }), LATEST, 'legacy'],
         ['the v1.2.1 tables plus three foreign tables', observed({
             objects: [...V121_OBJECTS, { type: 'table', name: 'invoices' }, { type: 'table', name: 'clients' },
                 { type: 'table', name: 'ledger' }],
             columns: V121_COLUMNS
-        }), LATEST, 'unrecognized'],
+        }), LATEST, 'legacy'],
+        // WR-05's half of the rule: a file with foreign tables has to show both anchors, so a foreign database
+        // that merely happens to carry a v1.x-shaped companies is still refused.
         ['a foreign database that happens to carry a v1.x-shaped companies table', observed({
             objects: [{ type: 'table', name: 'companies' }, { type: 'table', name: 'invoices' }],
             columns: { companies: ['id', 'name', 'created_at', 'updated_at'] }
+        }), LATEST, 'unrecognized'],
+        ['a foreign database carrying a v1.x-shaped work_sessions but no companies', observed({
+            objects: [{ type: 'table', name: 'work_sessions' }, { type: 'table', name: 'ledger' }],
+            columns: { work_sessions: V121_COLUMNS.work_sessions }
         }), LATEST, 'unrecognized'],
         ['the v1.2.1 tables plus the sqlite_stat1 that ANALYZE leaves behind', observed({
             objects: [...V121_OBJECTS, { type: 'table', name: 'sqlite_stat1' }],
@@ -180,6 +190,12 @@ describe('D-12: every class on a real file, through the read-only probe', () => 
     it('refuses a file whose companies table has the columns id, title', () => {
         expect(classifyFile(write(tempPath(), 'CREATE TABLE companies (id INTEGER PRIMARY KEY, title TEXT);')))
             .toBe('unrecognized');
+    });
+
+    it('adopts a v1.x fixture carrying an extra table, rather than locking the user out of it', () => {
+        const dbPath = buildLegacyFixture('C', 'representative');
+        write(dbPath, 'CREATE TABLE scratch (id INTEGER PRIMARY KEY, note TEXT);');
+        expect(classifyFile(dbPath)).toBe('legacy');
     });
 
     it('adopts a v1.x fixture carrying a third-party index on work_sessions', () => {

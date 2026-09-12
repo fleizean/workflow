@@ -61,6 +61,19 @@ function journalModeOf(dbPath: string): string {
     }
 }
 
+function scalarOf(dbPath: string, sql: string): number {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        const row = db.prepare<[], { v: number }>(sql).get();
+        if (row === undefined || !('v' in row)) {
+            throw new Error('scalarOf(): the query returned no column aliased v for ' + dbPath);
+        }
+        return row.v;
+    } finally {
+        db.close();
+    }
+}
+
 function userVersionOf(dbPath: string): unknown {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     try {
@@ -310,6 +323,26 @@ describe('D-30/DATA-06: a database this build must not touch is refused before a
         expect(h.recorder.calls).not.toContain('open');
         expect(h.recorder.calls).not.toContain('openMainWindow');
         expect(sha256(h.dbPath)).toBe(before);
+    });
+
+    // WR-03: this refusal has no way out. The user is told their own database is not a Workflow database and
+    // given advice that cannot help, on every launch, for a table a SQLite browser left behind.
+    it('adopts a v1.x database that carries an extra table instead of refusing it', async () => {
+        const h = harness('extra-table');
+        writeLegacyDatabase(h.dbPath);
+        write(h.dbPath, 'CREATE TABLE scratch (id INTEGER PRIMARY KEY, note TEXT)');
+
+        const started = await run(h);
+
+        expect(started, 'a real v1.x database was refused over a table Workflow did not create').not.toBeNull();
+        expect(started?.report.dbClass).toBe('legacy');
+        expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
+        expect(h.recorder.reports).toEqual([]);
+        expect(h.recorder.exits).toEqual([]);
+        expect(scalarOf(h.dbPath, 'SELECT count(*) AS v FROM scratch'), 'the adoption dropped the extra table')
+            .toBe(0);
+        expect(scalarOf(h.dbPath, 'SELECT count(*) AS v FROM work_sessions'), 'the adoption lost a session')
+            .toBe(1);
     });
 
     it('says nothing was changed in every refusal, and names no row data', async () => {
