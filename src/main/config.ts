@@ -3,6 +3,8 @@
 
 export const SMOKE_FLAG = '--smoke';
 export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
+// D-37: a v1.2.1 timerState the smoke writes into its own temp profile's localStorage, so the next launch imports it.
+export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 // Set by `electron-vite dev` to the renderer dev server's address.
 export const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
 // The Home route's heading, which the smoke launch waits for; tests/main-config.test.ts pins it to the harness.
@@ -14,6 +16,8 @@ export const SMOKE_EXIT_FALLBACK_MS = 3_000;
 // WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
 export const SMOKE_ESCAPE_URL = 'https://example.invalid/';
 export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
+// flushStorageData is asynchronous; app.exit must not race it (D-37 seed mode).
+export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 
 /** Appended to the application name to form the development userData directory name. */
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
@@ -47,6 +51,7 @@ export const MAIN_WINDOW = Object.freeze({
 export interface MainConfig {
     readonly smoke: boolean;
     readonly smokeDbPath: string | undefined;
+    readonly smokeSeedTimerState: string | undefined;
     readonly rendererDevUrl: string | undefined;
 }
 
@@ -56,6 +61,7 @@ export function parseMainConfig(env: Readonly<Record<string, string | undefined>
     return Object.freeze({
         smoke: argv.includes(SMOKE_FLAG),
         smokeDbPath: env[SMOKE_DB_ENV],
+        smokeSeedTimerState: env[SMOKE_SEED_TIMER_STATE_ENV],
         rendererDevUrl: typeof devUrl === 'string' && devUrl !== '' ? devUrl : undefined
     });
 }

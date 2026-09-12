@@ -4,6 +4,7 @@
 // Usage: node tools/smoke-packaged.mjs [--keep] [--dist=PATH] [--case=NAME]
 
 import { execFileSync, spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
@@ -27,6 +28,17 @@ export const RENDERER_MARKER_TEXT = 'Home';
 export const DATABASE_FILE = 'krono.db';
 export const BACKUP_DIR = 'backups';
 export const EXPECTED_LATEST = 2;
+/** src/lib/db/app-state.ts's APP_STATE_KEYS.legacyTimerState. */
+export const LEGACY_TIMER_KEY = 'legacy.v121.timerState';
+export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
+
+/** src/main/config.ts's EXIT_CODES, restated for plain Node; tests/smoke-harness.test.ts holds the two equal (T-04-50). */
+export const EXPECTED_EXIT_CODES = Object.freeze({
+    doorClosed: 3,
+    refusedNewer: 4,
+    refusedUnrecognized: 5,
+    databaseFailed: 6
+});
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const V121_FIXTURE = path.join(repoRoot, 'tests', 'fixtures', 'v121.sql');
@@ -224,6 +236,80 @@ export function evaluateLegacyCase({ report, before, after, backups }) {
     return checks;
 }
 
+/** D-30/D-37/SC3: a newer database refused with no window, no write and no smoke database. */
+export function evaluateRefusalCase({ exit, report, hashBefore, hashAfter, smokeDbExists }) {
+    const f = report.fields;
+    return [
+        {
+            label: 'the packaged app exited with the refused-newer code',
+            pass: exit.code === EXPECTED_EXIT_CODES.refusedNewer,
+            detail: 'code=' + String(exit.code) + ' signal=' + String(exit.signal) +
+                (exit.timedOut ? ' (killed by the hard timeout)' : '')
+        },
+        {
+            label: 'the refusal was reported instead of a modal dialog',
+            pass: f.SMOKE_REPORT_KIND === 'refused',
+            detail: 'reported ' + JSON.stringify(f.SMOKE_REPORT_KIND ?? null)
+        },
+        {
+            label: 'no window was ever created',
+            pass: f.SMOKE_WINDOW_CREATED === undefined,
+            detail: 'reported ' + JSON.stringify(f.SMOKE_WINDOW_CREATED ?? null)
+        },
+        {
+            label: 'the database file is unchanged, byte for byte',
+            pass: hashBefore === hashAfter,
+            detail: String(hashBefore).slice(0, 16) + ' -> ' + String(hashAfter).slice(0, 16)
+        },
+        {
+            label: 'no smoke database was created',
+            pass: smokeDbExists === false,
+            detail: smokeDbExists ? 'it exists' : 'absent'
+        }
+    ];
+}
+
+/** D-35 item 2 / SC5: the seeded timer crossed the launch verbatim, and no time was invented (B12). */
+export function evaluateTimerCase({ report, seeded, stored, workSessions }) {
+    const f = report.fields;
+    return [
+        {
+            label: 'the second launch reported importing a timer state',
+            pass: typeof f.SMOKE_TIMER_IMPORT === 'string' && f.SMOKE_TIMER_IMPORT.startsWith('timerState=imported'),
+            detail: 'reported ' + JSON.stringify(f.SMOKE_TIMER_IMPORT ?? null)
+        },
+        {
+            label: 'app_state holds the legacy timer record',
+            pass: stored !== null && stored !== undefined,
+            detail: stored === null || stored === undefined ? 'no row under ' + LEGACY_TIMER_KEY : 'present'
+        },
+        {
+            label: 'the raw string was kept verbatim',
+            pass: stored?.raw === seeded.raw,
+            detail: JSON.stringify(stored?.raw ?? null) + ' vs ' + JSON.stringify(seeded.raw)
+        },
+        {
+            label: 'elapsedSeconds equals what was seeded, despite a day-old lastUpdated',
+            pass: stored?.elapsedSeconds === seeded.elapsedSeconds,
+            detail: String(stored?.elapsedSeconds) + ' vs ' + String(seeded.elapsedSeconds)
+        },
+        {
+            label: 'the import created no work session',
+            pass: workSessions === 0,
+            detail: String(workSessions) + ' work sessions'
+        }
+    ];
+}
+
+/** D-32: a checkpointed database leaves no frames behind, so a v1.2.1 downgrade still finds one file. */
+export function evaluateWalFlushed({ caseName, exists, size }) {
+    return {
+        label: '[' + caseName + '] ' + DATABASE_FILE + '-wal is absent or 0 bytes after the exit',
+        pass: !exists || size === 0,
+        detail: exists ? String(size) + ' bytes' : 'absent'
+    };
+}
+
 /* ---------------------------------------------------------------------------------------- */
 /* Fixture databases - built in Node with the same N-API prebuild the app loads               */
 /* ---------------------------------------------------------------------------------------- */
@@ -250,6 +336,37 @@ export function seedLegacyDatabase(dbPath) {
         db.exec(fs.readFileSync(V121_FIXTURE, 'utf8'));
         db.exec(LEGACY_ROWS);
         db.pragma('wal_checkpoint(TRUNCATE)');
+    } finally {
+        db.close();
+    }
+}
+
+/** A single-table database from an imaginary future Workflow: classified `newer`, and refused untouched. */
+export function seedNewerDatabase(dbPath, userVersion = 99) {
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath);
+    try {
+        db.exec('CREATE TABLE from_the_future (id INTEGER PRIMARY KEY, value TEXT NOT NULL)');
+        db.pragma('user_version = ' + String(userVersion));
+    } finally {
+        db.close();
+    }
+}
+
+export function sha256(file) {
+    return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
+/** What the second timer launch imported, read through a read-only connection. */
+export function observeLegacyTimer(dbPath) {
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath, { readonly: true });
+    try {
+        const row = db.prepare('SELECT value FROM app_state WHERE key = ?').get(LEGACY_TIMER_KEY);
+        return {
+            stored: row === undefined ? null : JSON.parse(row.value),
+            workSessions: count(db, 'SELECT COUNT(*) AS n FROM work_sessions')
+        };
     } finally {
         db.close();
     }
@@ -359,6 +476,13 @@ function makeFixtureDir(productionDir) {
     return { root, dir };
 }
 
+/** D-32, judged from disk: the -wal a launch left beside <userData>/krono.db. */
+function walCheck(caseName, userDataDir) {
+    const wal = path.join(userDataDir, DATABASE_FILE + '-wal');
+    const exists = fs.existsSync(wal);
+    return evaluateWalFlushed({ caseName, exists, size: exists ? fs.statSync(wal).size : 0 });
+}
+
 async function freshCase({ binary, productionDir, timeoutMs, log }) {
     const { root, dir } = makeFixtureDir(productionDir);
     const fixtureDb = path.join(dir, SMOKE_DB_NAME);
@@ -374,7 +498,8 @@ async function freshCase({ binary, productionDir, timeoutMs, log }) {
             exit: launch.exit, report, childEnv: launch.childEnv, fixtureDir: dir, fixtureDb, fixtureDbSize,
             productionDir
         }),
-        ...evaluateFreshCase({ report })
+        ...evaluateFreshCase({ report }),
+        walCheck('fresh', dir)
     ];
     if (launch.exit.error) checks.push({ label: 'the binary could be spawned', pass: false, detail: launch.exit.error });
     return { name: 'fresh', checks, launch, root, dir };
@@ -408,13 +533,92 @@ async function legacyCase({ binary, productionDir, timeoutMs, log }) {
             pass: report.ok,
             detail: report.fields.SMOKE_FAIL ?? (report.ok ? 'present' : 'absent')
         },
-        ...evaluateLegacyCase({ report, before, after, backups })
+        ...evaluateLegacyCase({ report, before, after, backups }),
+        walCheck('legacy', dir)
     ];
     if (launch.exit.error) checks.push({ label: 'the binary could be spawned', pass: false, detail: launch.exit.error });
     return { name: 'legacy', checks, launch, root, dir };
 }
 
-const CASES = { fresh: freshCase, legacy: legacyCase };
+async function newerCase({ binary, productionDir, timeoutMs, log }) {
+    const { root, dir } = makeFixtureDir(productionDir);
+    const dbPath = path.join(dir, DATABASE_FILE);
+    const smokeDb = path.join(dir, SMOKE_DB_NAME);
+    seedNewerDatabase(dbPath);
+    const hashBefore = sha256(dbPath);
+    log(SCRIPT_NAME + ': [newer] seeded a ' + DATABASE_FILE + ' at user_version 99');
+
+    const launch = await launchSmoke({ binary, userDataDir: dir, timeoutMs, env: { [SMOKE_DB_ENV]: smokeDb } });
+    const report = parseSmokeReport(launch.stdout);
+    const checks = evaluateRefusalCase({
+        exit: launch.exit,
+        report,
+        hashBefore,
+        hashAfter: sha256(dbPath),
+        smokeDbExists: fs.existsSync(smokeDb)
+    });
+    if (launch.exit.error) checks.push({ label: 'the binary could be spawned', pass: false, detail: launch.exit.error });
+    return { name: 'newer', checks, launch, root, dir };
+}
+
+// The seed is synthetic and its lastUpdated is a day old on purpose: an elapsed that grew is the B12 signature.
+function timerSeed() {
+    const elapsedSeconds = 3723;
+    return {
+        elapsedSeconds,
+        raw: JSON.stringify({
+            elapsed: elapsedSeconds,
+            running: true,
+            pomodoroMode: false,
+            pomodoroState: 'work',
+            pomodoroSessionCount: 0,
+            lastUpdated: Date.now() - 24 * 60 * 60 * 1000
+        })
+    };
+}
+
+async function timerCase({ binary, productionDir, timeoutMs, log }) {
+    const { root, dir } = makeFixtureDir(productionDir);
+    const smokeDb = path.join(dir, SMOKE_DB_NAME);
+    const seeded = timerSeed();
+
+    log(SCRIPT_NAME + ': [timer] seeding localStorage in ' + dir);
+    const seedLaunch = await launchSmoke({
+        binary, userDataDir: dir, timeoutMs,
+        env: { [SMOKE_DB_ENV]: smokeDb, [SMOKE_SEED_TIMER_STATE_ENV]: seeded.raw }
+    });
+    const seedReport = parseSmokeReport(seedLaunch.stdout);
+
+    log(SCRIPT_NAME + ': [timer] relaunching the same profile without the seed');
+    const launch = await launchSmoke({ binary, userDataDir: dir, timeoutMs, env: { [SMOKE_DB_ENV]: smokeDb } });
+    const report = parseSmokeReport(launch.stdout);
+    const observed = observeLegacyTimer(path.join(dir, DATABASE_FILE));
+
+    const checks = [
+        {
+            label: 'the seed launch wrote timerState and exited 0',
+            pass: seedLaunch.exit.code === 0 && seedReport.fields.SMOKE_SEEDED === 'timerState',
+            detail: 'code=' + String(seedLaunch.exit.code) + ' ' +
+                JSON.stringify(seedReport.fields.SMOKE_SEEDED ?? seedReport.fields.SMOKE_FAIL ?? null)
+        },
+        {
+            label: 'the seed launch opened no database',
+            pass: seedReport.fields.SMOKE_DB_CLASS === undefined,
+            detail: 'reported ' + JSON.stringify(seedReport.fields.SMOKE_DB_CLASS ?? null)
+        },
+        {
+            label: 'the second launch exited 0',
+            pass: launch.exit.code === 0,
+            detail: 'code=' + String(launch.exit.code) + ' signal=' + String(launch.exit.signal)
+        },
+        ...evaluateTimerCase({ report, seeded, stored: observed.stored, workSessions: observed.workSessions }),
+        walCheck('timer', dir)
+    ];
+    if (launch.exit.error) checks.push({ label: 'the binary could be spawned', pass: false, detail: launch.exit.error });
+    return { name: 'timer', checks, launch, root, dir };
+}
+
+const CASES = { fresh: freshCase, legacy: legacyCase, newer: newerCase, timer: timerCase };
 
 export async function runSmokeCases(options = {}) {
     const log = options.quiet ? () => {} : (...parts) => console.log(...parts);

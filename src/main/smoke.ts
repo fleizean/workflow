@@ -2,19 +2,19 @@
 // modal dialog (Pitfall 6) and exits recorded rather than taken (D-37).
 // The database layer arrives as runSmoke's argument, so loading this module never loads it.
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, session } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
     PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
-    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, mainConfig
+    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS, mainConfig
 } from './config';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus } from './database-startup';
 import { describeError } from './errors';
-import { readLegacyStorage } from './legacy-storage';
+import { LEGACY_STORAGE_PAGE, readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
 import { createMainWindow, loadRenderer } from './window';
 
@@ -66,6 +66,18 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             'creates a new database, so it can never touch an existing one');
     }
     lines.push('SMOKE_DB=' + dbPath);
+
+    // D-37: seed this temp profile's localStorage and stop. Only reachable under --smoke, and only after the
+    // refusals above have proved userData is not the production directory (T-04-48).
+    const seed = mainConfig.smokeSeedTimerState;
+    if (seed !== undefined) {
+        const seedFailure = await seedLegacyTimerState(seed);
+        if (seedFailure !== null) {
+            return fail(seedFailure);
+        }
+        lines.push('SMOKE_SEEDED=timerState', 'SMOKE_OK');
+        return { ok: true, lines };
+    }
 
     // D-37: the real bootstrap, over ports that print instead of showing a dialog or exiting.
     let exitCode: number | undefined;
@@ -121,6 +133,29 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
 
     lines.push('SMOKE_OK');
     return { ok: true, lines };
+}
+
+// D-37: written through the page the extractor reads, so the seed lands in the same file:// origin. Sandboxed and
+// offscreen, like the extractor: the page gets no capability beyond its own origin's storage.
+async function seedLegacyTimerState(raw: string): Promise<string | null> {
+    const win = new BrowserWindow({
+        show: false,
+        webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: true }
+    });
+    try {
+        await win.loadFile(LEGACY_STORAGE_PAGE);
+        await win.webContents.executeJavaScript(
+            'localStorage.setItem("timerState", ' + JSON.stringify(raw) + '); true'
+        );
+        // app.exit skips the usual teardown, so the value has to be on disk before this launch ends (Pitfall 5).
+        session.defaultSession.flushStorageData();
+        await new Promise((done) => setTimeout(done, SMOKE_STORAGE_FLUSH_MS));
+    } catch (error) {
+        return 'seed: ' + describeError(error);
+    } finally {
+        win.destroy();
+    }
+    return null;
 }
 
 /** Returns the failure reason, or null when every check passed. */

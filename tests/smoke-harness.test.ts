@@ -12,11 +12,14 @@ const NEWER_HASH = 'f'.repeat(64);
 
 const reportOf = (fields: Record<string, string>): SmokeReport => ({ ok: false, fields });
 
+const exitWith = (code: number): { code: number | null; signal: string | null; timedOut: boolean } =>
+    ({ code, signal: null, timedOut: false });
+
 const failed = (checks: readonly SmokeCheck[]): string[] =>
     checks.filter((check) => !check.pass).map((check) => check.label);
 
 const refusal = {
-    exit: { code: EXIT_CODES.refusedNewer, signal: null, timedOut: false },
+    exit: exitWith(EXIT_CODES.refusedNewer),
     report: reportOf({ SMOKE_REPORT_KIND: 'refused', SMOKE_REPORT_TITLE: 'Workflow will not open this database' }),
     hashBefore: NEWER_HASH,
     hashAfter: NEWER_HASH,
@@ -29,10 +32,8 @@ describe('D-30/D-37: a newer database is refused in the packaged app without a w
     });
 
     const DEVIATIONS: [string, Partial<typeof refusal>][] = [
-        ['the app exited 0 instead of the refusal code', { exit: { code: 0, signal: null, timedOut: false } }],
-        ['the app exited with the wrong refusal code', {
-            exit: { code: EXIT_CODES.refusedUnrecognized, signal: null, timedOut: false }
-        }],
+        ['the app exited 0 instead of the refusal code', { exit: exitWith(0) }],
+        ['the app exited with the wrong refusal code', { exit: exitWith(EXIT_CODES.refusedUnrecognized) }],
         ['no refusal was reported', { report: reportOf({}) }],
         ['a door refusal was reported instead', { report: reportOf({ SMOKE_REPORT_KIND: 'door' }) }],
         ['a window was created', {

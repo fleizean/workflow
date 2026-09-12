@@ -35,7 +35,43 @@ export interface DatabaseObservation {
     readonly settingsByKey: Readonly<Record<string, string>>;
 }
 
+export declare const LEGACY_TIMER_KEY: string;
+export declare const SMOKE_SEED_TIMER_STATE_ENV: string;
+export declare const EXPECTED_EXIT_CODES: Readonly<Record<string, number>>;
+
+export interface LaunchExit {
+    readonly code: number | null;
+    readonly signal: string | null;
+    readonly timedOut: boolean;
+    readonly error?: string;
+}
+
+export interface StoredLegacyTimer {
+    readonly raw: string;
+    readonly elapsedSeconds: number | null;
+    readonly wasRunning?: boolean | null;
+    readonly lastUpdated?: number | null;
+}
+
 export declare function parseSmokeReport(stdout: string): SmokeReport;
+export declare function evaluateRefusalCase(observed: {
+    exit: LaunchExit;
+    report: SmokeReport;
+    hashBefore: string;
+    hashAfter: string;
+    smokeDbExists: boolean;
+}): SmokeCheck[];
+export declare function evaluateTimerCase(observed: {
+    report: SmokeReport;
+    seeded: { raw: string; elapsedSeconds: number };
+    stored: StoredLegacyTimer | null;
+    workSessions: number;
+}): SmokeCheck[];
+export declare function evaluateWalFlushed(observed: {
+    caseName: string;
+    exists: boolean;
+    size: number;
+}): SmokeCheck;
 export declare function evaluateFreshCase(observed: { report: SmokeReport }): SmokeCheck[];
 export declare function evaluateLegacyCase(observed: {
     report: SmokeReport;
