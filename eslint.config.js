@@ -53,6 +53,41 @@ const DRIZZLE_TOOLING_PATTERNS = [{
     message: DRIZZLE_TOOLING_MESSAGE
 }];
 
+// ARCH-01: a service must load with electron stubbed to throw, and must not know that IPC exists. Ports in, handlers
+// above: a service that imports ipc/ has inverted the layering even when nothing else notices.
+const SERVICE_LAYER_MESSAGE = 'src/main/services must stay Electron-free and must not import ipc/ - take a port from src/main/ports and let a handler call the service (ARCH-01).';
+const SERVICE_LAYER_PATHS = [{ name: 'electron', message: SERVICE_LAYER_MESSAGE }];
+const SERVICE_LAYER_PATTERNS = [
+    { group: ['electron/*'], message: SERVICE_LAYER_MESSAGE },
+    { regex: '^(\\.\\./)+ipc(/|$)', message: SERVICE_LAYER_MESSAGE },
+    { regex: '^@main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE },
+    { regex: '(^|/)main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE }
+];
+
+// ARCH-01 / CORE-16: Drizzle is how src/lib/db writes SQL; a value import of it anywhere else is SQL somewhere else.
+// Types are allowed, so a caller may still name a row shape the schema derives.
+const DRIZZLE_VALUE_MESSAGE = 'Drizzle and the SQL it builds live only under src/lib/db; call a repository (ARCH-01, CORE-16).';
+const DRIZZLE_VALUE_PATHS = [{ name: 'drizzle-orm', message: DRIZZLE_VALUE_MESSAGE, allowTypeImports: true }];
+const DRIZZLE_VALUE_PATTERNS = [
+    { group: ['drizzle-orm/*', 'drizzle-orm/**'], message: DRIZZLE_VALUE_MESSAGE, allowTypeImports: true }
+];
+
+const SQL_MESSAGE = 'SQL lives only under src/lib/db; call a repository (ARCH-01, CORE-16).';
+const SQL_BANS = [
+    // Drizzle's sql`` tag, whatever local name it is imported under.
+    'TaggedTemplateExpression[tag.name=\'sql\']',
+    'TaggedTemplateExpression[tag.property.name=\'sql\']',
+    // better-sqlite3's statement API. exec is matched only on a literal argument, which leaves the regex exec(value)
+    // shape src/shared/utils/date.ts uses alone; a regex exec on a literal is refused too, and is the known cost.
+    'CallExpression[callee.property.name=\'prepare\']',
+    'CallExpression[callee.property.name=\'pragma\']',
+    'CallExpression[callee.property.name=\'exec\'][arguments.0.type=\'Literal\']',
+    'CallExpression[callee.property.name=\'exec\'][arguments.0.type=\'TemplateLiteral\']'
+].map((selector) => ({ selector, message: SQL_MESSAGE }));
+// The two bootstrap files that operate the database file itself: D-32's wal_checkpoint before the close, and
+// BUILD-06's packaged proof, which writes and reads one row in a brand-new injected database.
+const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts', 'src/main/smoke.ts'];
+
 const SHARED_LAYER_MESSAGE = 'src/shared is the bottom layer: no main/lib/preload/renderer, no node builtins, no electron, no database driver (D-15).';
 const SHARED_LAYER_PATHS = [
     ...ELECTRON_PATHS,
@@ -158,18 +193,46 @@ module.exports = [
             'no-restricted-syntax': ['error', CUSTODY_03, ...DATE_BANS]
         }
     },
+    // ARCH-01: SQL lives only under src/lib/db. Each block below restates every ban it does not lift (D-11).
+    {
+        files: ['src/**'],
+        rules: {
+            'no-restricted-syntax': ['error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS]
+        }
+    },
+    // The one home of SQL.
+    {
+        files: ['src/lib/db/**'],
+        rules: {
+            'no-restricted-syntax': ['error', CUSTODY_03, ...DATE_BANS]
+        }
+    },
+    {
+        files: SQL_BOOTSTRAP_EXEMPT,
+        rules: {
+            'no-restricted-syntax': ['error', CUSTODY_03, ...DATE_BANS]
+        }
+    },
     // The sanctioned home of the date constructs keeps CUSTODY-03 alone (D-13).
     {
         files: ['src/shared/utils/date.ts'],
         rules: {
-            'no-restricted-syntax': ['error', CUSTODY_03]
+            'no-restricted-syntax': ['error', CUSTODY_03, ...SQL_BANS]
         }
     },
-    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them).
+    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them). main.js and database/db.js are the
+    // v1.2.1 SQL this milestone is replacing, so they are outside the SQL bans too.
     {
         files: LEGACY_DATE_EXEMPT,
         rules: {
             'no-restricted-syntax': ['error', CUSTODY_03]
+        }
+    },
+    // The two legacy files under src/ hold no SQL, so the block above lifting the date bans must not lift those too.
+    {
+        files: ['src/renderer/shared.js', 'src/renderer/timer.js'],
+        rules: {
+            'no-restricted-syntax': ['error', CUSTODY_03, ...SQL_BANS]
         }
     },
     {
@@ -193,6 +256,17 @@ module.exports = [
             'no-restricted-imports': ['error', { paths: DRIZZLE_TOOLING_PATHS, patterns: DRIZZLE_TOOLING_PATTERNS }]
         }
     },
+    // The typed rule is named by extension: a .js file under src/ never matches a tseslint block, so the plugin
+    // would not be defined for it.
+    {
+        files: ['src/**/*.ts', 'src/**/*.mts', 'src/**/*.cts', 'src/**/*.tsx'],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': ['error', {
+                paths: [...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS],
+                patterns: [...DRIZZLE_TOOLING_PATTERNS, ...DRIZZLE_VALUE_PATTERNS]
+            }]
+        }
+    },
     // src/lib keeps node:fs, node:path and the driver; only src/shared gets the layer bans (Pitfall 2).
     {
         files: ['src/lib/**'],
@@ -200,6 +274,26 @@ module.exports = [
             'no-restricted-imports': ['error', {
                 paths: [...ELECTRON_PATHS, ...DRIZZLE_TOOLING_PATHS],
                 patterns: [...ELECTRON_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }]
+        }
+    },
+    // The one place Drizzle may be imported as a value; the authoring-tooling ban stays (D-08).
+    {
+        files: ['src/lib/db/**/*.ts'],
+        rules: {
+            '@typescript-eslint/no-restricted-imports': ['error', {
+                paths: DRIZZLE_TOOLING_PATHS,
+                patterns: DRIZZLE_TOOLING_PATTERNS
+            }]
+        }
+    },
+    // ARCH-01, criterion 3: the Electron-free service boundary, stated as lint rather than as a convention.
+    {
+        files: ['src/main/services/**'],
+        rules: {
+            'no-restricted-imports': ['error', {
+                paths: [...SERVICE_LAYER_PATHS, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...SERVICE_LAYER_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
             }]
         }
     },
@@ -216,8 +310,11 @@ module.exports = [
         files: ['src/shared/utils/**', 'src/shared/constants/**', 'src/shared/types/**'],
         rules: {
             '@typescript-eslint/no-restricted-imports': ['error', {
-                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS],
-                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ZOD_BEARING_SIBLING_PATTERN, ...DRIZZLE_TOOLING_PATTERNS]
+                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS],
+                patterns: [
+                    ...ZOD_BEARING_SHARED_PATTERNS, ZOD_BEARING_SIBLING_PATTERN, ...DRIZZLE_TOOLING_PATTERNS,
+                    ...DRIZZLE_VALUE_PATTERNS
+                ]
             }],
             ...TYPE_IMPORT_RULES
         }
@@ -226,8 +323,8 @@ module.exports = [
         files: ['src/renderer/src/**'],
         rules: {
             '@typescript-eslint/no-restricted-imports': ['error', {
-                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS],
-                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS],
+                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS, ...DRIZZLE_VALUE_PATTERNS]
             }],
             ...TYPE_IMPORT_RULES
         }

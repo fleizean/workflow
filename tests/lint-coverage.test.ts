@@ -189,6 +189,21 @@ const DATE_EXEMPTIONS: Record<string, DateExemption> = {
 
 const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, file);
 
+// ARCH-01: SQL lives only under src/lib/db. Everything else that may still write it is named here, with the reason.
+const SQL_MESSAGE = 'SQL lives only under src/lib/db; call a repository (ARCH-01, CORE-16).';
+const SQL_HOME = 'src/lib/db';
+const SQL_EXEMPTIONS: Record<string, { expires: string; why: string }> = {
+    'src/main/database-startup.ts': {
+        expires: 'permanent',
+        why: 'D-32 folds the -wal back into the database with a pragma before the connection closes'
+    },
+    'src/main/smoke.ts': {
+        expires: 'permanent',
+        why: 'BUILD-06 writes and reads one row in a brand-new injected database to prove the packaged driver works'
+    }
+};
+const isSqlExempt = (file: string): boolean => isUnder(file, SQL_HOME) || Object.hasOwn(SQL_EXEMPTIONS, file);
+
 const isConfigBypass = (m: Linter.LintMessage): boolean =>
     m.ruleId === 'no-restricted-properties' && m.message.endsWith('from src/main/config.ts (D-23).');
 
@@ -637,6 +652,128 @@ describe('D-15 and D-14: import boundaries', () => {
             const { missed } = await probe(file, [], banned, [], byRule(rule));
             expect(missed, 'drizzle tooling imports ' + rule + ' let through in ' + file).toEqual([]);
         }, 60_000);
+    });
+});
+
+/*
+ * ARCH-01, criteria 3 and 11. A layering that is not linted is a comment, and the failure it prevents is the one
+ * this project has already had: a rule everybody agrees with, that nothing checks, until a service imports electron
+ * and its unit tests need an Electron binary to run. So each direction is probed as code the linter judges, on the
+ * real files, rather than read off the config's glob strings.
+ */
+describe('ARCH-01: lint proves the direction of the main process', () => {
+    const SERVICE_FILE = 'src/main/services/stats.service.ts';
+    const ADAPTER_FILE = 'src/main/adapters/electron-notifier.adapter.ts';
+    const CONTAINER_FILE = 'src/main/container.ts';
+    const DB_FILE = 'src/lib/db/handle.ts';
+
+    it('refuses electron and ipc/ in a service, and lets the ports and the shared contract through', async () => {
+        const banned = [
+            'import { app } from \'electron\';',
+            'import { Notification } from \'electron/main\';',
+            'import { registerIpcHandlers } from \'../ipc\';',
+            'import { registerIpcHandlers as fromAlias } from \'@main/ipc\';',
+            'import { handler } from \'../../main/ipc/session.ipc\';'
+        ];
+        const allowed = [
+            'import type { ClockPort } from \'../ports\';',
+            'import type { WorkSession } from \'@shared/types\';',
+            'import type { SessionsRepository } from \'@lib/db\';'
+        ];
+        const { missed, flagged } = await probe(SERVICE_FILE, [], banned, allowed, byRule('no-restricted-imports'));
+        expect(missed, 'imports a service was allowed to make').toEqual([]);
+        expect(flagged, 'the service ban refused a port, a domain type or a repository type').toEqual([]);
+    }, 60_000);
+
+    it('still lets the adapters import electron, which is the whole reason they exist', async () => {
+        const { flagged } = await probe(
+            ADAPTER_FILE, [], [],
+            ['import { Notification } from \'electron\';', 'import { BrowserWindow } from \'electron\';'],
+            byRule('no-restricted-imports')
+        );
+        expect(flagged, 'ARCH-01 puts Electron behind adapters; an adapter that cannot import it has nowhere to go')
+            .toEqual([]);
+    }, 60_000);
+
+    it('refuses a drizzle value import outside src/lib/db and allows a type import', async () => {
+        const banned = [
+            'import { eq } from \'drizzle-orm\';',
+            'import { drizzle } from \'drizzle-orm/better-sqlite3\';',
+            'import { sqliteTable } from \'drizzle-orm/sqlite-core\';'
+        ];
+        const allowed = ['import type { SQL } from \'drizzle-orm\';'];
+        for (const file of [SERVICE_FILE, CONTAINER_FILE, 'src/main/index.ts']) {
+            const { missed, flagged } = await probe(file, [], banned, allowed,
+                byRule('@typescript-eslint/no-restricted-imports'));
+            expect(missed, 'drizzle value imports lint let through in ' + file).toEqual([]);
+            expect(flagged, 'a drizzle type import was refused in ' + file).toEqual([]);
+        }
+    }, 60_000);
+
+    it('lets src/lib/db import drizzle as a value, and still refuses the authoring tooling there', async () => {
+        const { flagged } = await probe(DB_FILE, [], [], [
+            'import { eq } from \'drizzle-orm\';',
+            'import { drizzle } from \'drizzle-orm/better-sqlite3\';'
+        ], byRule('@typescript-eslint/no-restricted-imports'));
+        expect(flagged, 'the one home of SQL was refused the query builder it is built on').toEqual([]);
+
+        const { missed } = await probe(DB_FILE, [], [
+            'import { defineConfig } from \'drizzle-kit\';',
+            'import { migrate } from \'drizzle-orm/better-sqlite3/migrator\';'
+        ], [], byRule('@typescript-eslint/no-restricted-imports'));
+        expect(missed, 'D-08 lapsed in src/lib/db when the value ban was lifted there').toEqual([]);
+    }, 60_000);
+
+    it('refuses SQL in a service and allows it in its one home', async () => {
+        const header = [
+            'declare const db: { prepare(s: string): unknown; exec(s: string): void; pragma(s: string): unknown };',
+            'declare const sql: (parts: TemplateStringsArray) => unknown;',
+            'declare const pattern: RegExp;',
+            'declare const value: string;'
+        ];
+        const banned = [
+            'void db.prepare(\'SELECT 1\');',
+            'void db.pragma(\'user_version\');',
+            'db.exec(\'CREATE TABLE t (a TEXT)\');',
+            'db.exec(`CREATE TABLE t (a TEXT)`);',
+            'void sql`SELECT 1`;'
+        ];
+        // The shape src/shared/utils/date.ts uses; a regex exec on a variable must stay legal everywhere.
+        const allowed = ['void pattern.exec(value);'];
+        const isSql = (m: Linter.LintMessage): boolean => m.message === SQL_MESSAGE;
+
+        const service = await probe(SERVICE_FILE, header, banned, allowed, isSql);
+        expect(service.missed, 'SQL shapes lint let through in a service').toEqual([]);
+        expect(service.flagged, 'a regex exec was mistaken for SQL in a service').toEqual([]);
+
+        for (const file of ['src/lib/db/client.ts', ...Object.keys(SQL_EXEMPTIONS)]) {
+            const { flagged } = await probe(file, header, [], banned, isSql);
+            expect(flagged, 'SQL was refused in ' + file + ', which is exempt').toEqual([]);
+        }
+    }, 60_000);
+
+    it('resolves the SQL bans on every linted source file except src/lib/db and the inventoried exemptions', async () => {
+        const offenders: string[] = [];
+        let checked = 0;
+        for (const file of repositoryFiles().filter((f) => SOURCE_EXTENSIONS.includes(extensionOf(f)))) {
+            if (!isUnder(file, 'src') || await eslint.isPathIgnored(path.join(repoRoot, file))) continue;
+            checked++;
+            const banned = JSON.stringify(await ruleEntry(file, 'no-restricted-syntax')).includes(SQL_MESSAGE);
+            if (isSqlExempt(file) && banned) offenders.push(file + ' - exempt, yet the SQL bans still apply');
+            if (!isSqlExempt(file) && !banned) offenders.push(file + ' - not exempt, yet the SQL bans do not apply');
+        }
+        expect(checked, 'no source file under src was checked').toBeGreaterThan(0);
+        expect(offenders, 'eslint.config.js and SQL_EXEMPTIONS disagree:\n  ' + offenders.join('\n  ')).toEqual([]);
+    }, 60_000);
+
+    // An exemption that no longer has anything to be exempt for is a rule about nothing the next file inherits.
+    it.each(Object.entries(SQL_EXEMPTIONS))('%s still holds the SQL its exemption is for', (file, ex) => {
+        const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+        expect(
+            /\.(prepare|exec|pragma)\(/.test(source),
+            file + ' no longer writes SQL (' + ex.why + '), so remove it from SQL_BOOTSTRAP_EXEMPT in ' +
+            'eslint.config.js and from SQL_EXEMPTIONS here, in this same change.'
+        ).toBe(true);
     });
 });
 
