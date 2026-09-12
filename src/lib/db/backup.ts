@@ -23,6 +23,9 @@ const PENDING_NAME = /\.bak\.partial(-wal|-shm)?$/;
 // The staging name a restore copies into before it is verified and moved over the target (WR-03).
 const INCOMING_SUFFIX = '.incoming';
 
+// Where the target is moved while the restored file takes its place, so a failed rename destroys nothing (WR-01).
+const DISPLACED_SUFFIX = '.replaced';
+
 const PAGES_PER_STEP = 100;
 
 export const DEFAULT_BACKUP_DEADLINE_MS = 60_000;
@@ -253,14 +256,31 @@ function quiesceBackupFile(backupPath: string): void {
     }
 }
 
+// Renames `from` out of the way, recording the move so putBack can undo it. A path that is not there is not a move.
+function moveAside(from: string, to: string, moved: { from: string; to: string }[]): void {
+    if (!fs.existsSync(from)) return;
+    // eslint-disable-next-line no-restricted-syntax -- moving a database aside intact, never copying it (CUSTODY-03)
+    fs.renameSync(from, to);
+    moved.push({ from, to });
+}
+
+// Undoes the moves in reverse, so the database is back before its sidecars are.
+function putBack(moved: { from: string; to: string }[]): void {
+    while (moved.length > 0) {
+        const move = moved.pop() as { from: string; to: string };
+        // eslint-disable-next-line no-restricted-syntax -- putting the user's own file back where it was (CUSTODY-03)
+        fs.renameSync(move.to, move.from);
+    }
+}
+
 function refusalReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
 // Restores a verified backup over `targetPath` and re-verifies the result; anything unverifiable is refused before
 // the target is touched (T-01-34). WR-03: the copy is staged beside the target and verified there, so a failing or
-// interrupted copy can never leave the target truncated with its sidecars already gone. The target's stale
-// sidecars go only in the moment before the rename, so no -wal outlives its database.
+// interrupted copy can never leave the target truncated with its sidecars already gone. WR-01: the target is moved
+// aside rather than deleted from, so every failure path still has the whole of it - database and -wal - to put back.
 //
 // Not on the database layer's public surface: the app has no restore action, and the failure dialog says so. It is
 // the tested recovery procedure behind DATA-03, not something src/main can reach by accident.
@@ -297,12 +317,25 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
         }
         quiesceBackupFile(incomingPath);
 
-        for (const sidecar of SIDECARS) {
-            const stale = targetPath + sidecar;
-            if (fs.existsSync(stale)) fs.rmSync(stale);
+        // WR-01: the target and its sidecars move aside together and nothing of theirs is deleted until the
+        // restored file is in place. Deleting the -wal first cost every uncheckpointed row whenever the rename
+        // then failed, which on Windows is an ordinary EPERM/EBUSY from a scanner or a stale handle.
+        const displacedPath = targetPath + DISPLACED_SUFFIX;
+        removePendingBackup(displacedPath);
+        const moved: { from: string; to: string }[] = [];
+        try {
+            // Sidecars first: one that will not move costs nothing while the database is still where it was.
+            for (const sidecar of SIDECARS) {
+                moveAside(targetPath + sidecar, displacedPath + sidecar, moved);
+            }
+            moveAside(targetPath, displacedPath, moved);
+            // eslint-disable-next-line no-restricted-syntax -- a verified, quiesced file with no sidecars (CUSTODY-03)
+            fs.renameSync(incomingPath, targetPath);
+        } catch (error) {
+            putBack(moved);
+            throw error;
         }
-        // eslint-disable-next-line no-restricted-syntax -- a verified, quiesced file with no sidecars (CUSTODY-03)
-        fs.renameSync(incomingPath, targetPath);
+        removePendingBackup(displacedPath);
         return restored;
     } catch (error) {
         removePendingBackup(incomingPath);

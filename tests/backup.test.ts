@@ -1,7 +1,7 @@
 // Fixture invariants first (the backup proofs are vacuous without them), then the backup module contract and the
 // CUSTODY-03/04/05 blocks, whose titles the validation strategy's -t filters select on.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -812,6 +812,43 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
             .toBe(before.rows.work_sessions);
         expect(after.totalDuration, 'a refused restore cost the target tracked time').toBe(before.totalDuration);
         expect(fs.existsSync(target + '.incoming'), 'a refused restore left its staging file behind').toBe(false);
+    });
+
+    /*
+     * WR-01: the target's sidecars were deleted before the rename that replaces it, so a rename that failed -
+     * EPERM/EBUSY from a scanner, an indexer or a stale handle is ordinary on Windows - left the main file in
+     * place with its uncheckpointed rows gone. The WAL fixture holds 40 of its 45 sessions in that sidecar, so
+     * the cost is measurable rather than theoretical. Only the incoming -> target rename is made to fail; the
+     * put-back renames must still work, which is the behaviour under test.
+     */
+    it('leaves every row of the target in place when the rename over it fails', async () => {
+        const source = await makeWalFixture();
+        const target = await makeWalFixture();
+        const { backupPath } = await backupDatabase(source, backupDirFor(source));
+        const before = truth(target);
+        expect(before.count, 'the target holds no uncheckpointed rows, so this proves nothing')
+            .toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+        expect(fs.statSync(target + '-wal').size, 'the target carries no -wal, so there is nothing to lose')
+            .toBeGreaterThan(0);
+
+        const realRename = fs.renameSync.bind(fs);
+        const spy = vi.spyOn(fs, 'renameSync').mockImplementation((from: fs.PathLike, to: fs.PathLike) => {
+            if (String(from) === target + '.incoming') {
+                throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+            }
+            realRename(from, to);
+        });
+        try {
+            expect(() => restoreDatabase(backupPath, target)).toThrow(/EPERM/);
+        } finally {
+            spy.mockRestore();
+        }
+
+        const after = truth(target);
+        expect(after.count, 'a failed rename took rows out of the target it never replaced').toBe(before.count);
+        expect(after.sum, 'a failed rename cost the target tracked time').toBe(before.sum);
+        expect(fs.existsSync(target + '.incoming'), 'a failed restore left its staging file behind').toBe(false);
+        expect(fs.existsSync(target + '.replaced'), 'a failed restore left the target displaced').toBe(false);
     });
 
     it('damages a working database, restores it, and recovers the exact pre-damage figures', async () => {
