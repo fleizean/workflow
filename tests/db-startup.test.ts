@@ -327,6 +327,25 @@ describe('D-36: the production-data door closes before anything reads the databa
     });
 });
 
+/** The same connection with every wal_checkpoint pragma throwing; getters and methods still reach the real handle. */
+function refusesToCheckpoint(db: Database.Database): Database.Database {
+    const handler: ProxyHandler<Database.Database> = {
+        get: (target, key) => {
+            if (key === 'pragma') {
+                return (source: string, options?: Database.PragmaOptions): unknown => {
+                    if (source.includes('wal_checkpoint')) {
+                        throw new Error('injected SQLITE_FULL at checkpoint');
+                    }
+                    return options === undefined ? target.pragma(source) : target.pragma(source, options);
+                };
+            }
+            const value: unknown = Reflect.get(target, key, target);
+            return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
+        }
+    };
+    return new Proxy(db, handler);
+}
+
 describe('D-31: a failure closes the connection, says where things are, and changes nothing', () => {
     it('reports a file it cannot read without ever opening it read-write, and changes no byte', async () => {
         const h = harness('unreadable');
@@ -375,6 +394,40 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         const strays = fs.readdirSync(h.userDataDir)
             .filter((name) => name !== 'backups' && !name.startsWith('krono.db'));
         expect(strays, 'the failure created, renamed or replaced a file').toEqual([]);
+    });
+
+    // CR-01: the checkpoint in the closer runs on the failure path, where a full disk is both a likely cause of
+    // the migration failure and of the checkpoint failure. A throw there must not take the dialog with it.
+    it('still reports and exits with its own code when the closing checkpoint throws', async () => {
+        const opened: Database.Database[] = [];
+        const h = harness('checkpoint-throws', {
+            layer: {
+                openDatabase: (dbPath, openOptions) => {
+                    const db = realLayer.openDatabase(dbPath, openOptions);
+                    opened.push(db);
+                    return refusesToCheckpoint(db);
+                },
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    applyBaseline: () => { throw new Error('injected migration failure'); }
+                })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(opened, 'no connection was opened, so this proves nothing').toHaveLength(1);
+        expect(opened[0]?.open, 'a failed checkpoint left the connection open').toBe(false);
+        expect(h.recorder.reports, 'a throwing checkpoint swallowed the failure dialog').toHaveLength(1);
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(h.recorder.reports[0]?.body).toContain('injected migration failure');
+        expect(h.recorder.reports[0]?.body, 'the dialog hid the checkpoint that failed with it')
+            .toContain('the -wal could not be flushed');
+        expect(h.recorder.exits, 'a throwing checkpoint cost the database-failed exit code')
+            .toEqual([EXIT_CODES.databaseFailed]);
+        expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
     });
 
     it('reports a backup that could not be taken, and leaves the version where it was', async () => {

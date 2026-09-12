@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer } from './database-startup';
+import { describeError } from './errors';
 import { readLegacyStorage } from './legacy-storage';
 import { createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, showRenderer } from './window';
 
@@ -55,8 +56,14 @@ export function registerDatabaseCloser(close: () => void): void {
 export function closeDatabaseNow(): void {
     const close = databaseCloser;
     databaseCloser = undefined;
-    if (close !== undefined) {
+    if (close === undefined) {
+        return;
+    }
+    // CR-01: will-quit must finish even when the close cannot; the process ending releases the file anyway.
+    try {
         close();
+    } catch (error) {
+        console.error('src/main/lifecycle.ts: the database did not close at quit - ' + describeError(error));
     }
 }
 

@@ -95,15 +95,21 @@ function summaryLine(report: MigrationReport): string {
 }
 
 // D-32: the -wal is folded back into the database, so the next launch - or a v1.2.1 downgrade - finds one file.
-function closeHandle(layer: DatabaseLayer, db: DatabaseHandle): void {
+// CR-01: a checkpoint that throws (SQLITE_BUSY, a full disk) is returned rather than raised, so the connection
+// still closes and the caller still reports the failure this close was part of.
+function closeHandle(layer: DatabaseLayer, db: DatabaseHandle): string | null {
     if (!db.open) {
-        return;
+        return null;
     }
+    let checkpointError: string | null = null;
     try {
         db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+        checkpointError = describeError(error);
     } finally {
         layer.closeDatabase(db);
     }
+    return checkpointError;
 }
 
 // D-31: report, then exit. app.exit skips will-quit, so the caller closes any connection before this runs.
@@ -218,11 +224,12 @@ export async function startDatabase(
         });
     } catch (error) {
         // The rollback already left the file as it was: nothing here renames, replaces or restores it (D-31).
-        closeHandle(layer, db);
+        const checkpointError = closeHandle(layer, db);
         reportFailure(ports, {
             dbPath,
             backupPath: error instanceof layer.MigrationFailedError ? error.backupPath : null,
-            reason: describeError(error)
+            reason: describeError(error) +
+                (checkpointError === null ? '' : ' (and the -wal could not be flushed: ' + checkpointError + ')')
         });
         return null;
     }
