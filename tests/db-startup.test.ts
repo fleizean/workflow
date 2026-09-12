@@ -26,6 +26,12 @@ const NOW = instantFromEpochMs(Date.UTC(2026, 8, 12, 9, 0, 0));
 
 const NO_LEGACY: LegacyStorageRead = { ok: true, timerState: null, lastGoalNotificationDate: null };
 
+const RUNNING_TIMER_RAW = '{"elapsed":3600,"running":true,"lastUpdated":1757062800000}';
+const READ_OK: LegacyStorageRead = {
+    ok: true, timerState: RUNNING_TIMER_RAW, lastGoalNotificationDate: '2026-09-12'
+};
+const READ_FAILED: LegacyStorageRead = { ok: false, reason: 'timeout after 5000 ms' };
+
 const tempRoots: string[] = [];
 const openHandles: StartedDatabase[] = [];
 
@@ -138,11 +144,14 @@ interface HarnessOptions {
     readonly layer?: Partial<DatabaseLayer>;
     // A userData directory the harness must not create, for the fresh-install case.
     readonly userDataSubdir?: string;
+    // An existing userData directory, so a second start runs against the first one's database.
+    readonly userDataDir?: string;
 }
 
 function harness(tag: string, options: HarnessOptions = {}): Harness {
     const root = tempRoot(tag);
-    const userDataDir = options.userDataSubdir === undefined ? root : path.join(root, options.userDataSubdir);
+    const userDataDir = options.userDataDir ??
+        (options.userDataSubdir === undefined ? root : path.join(root, options.userDataSubdir));
     const recorder: Recorder = { calls: [], reports: [], exits: [], logs: [], handles: [], handleOpenAtReport: [] };
     const session = { released: 0 };
 
@@ -461,6 +470,88 @@ describe('Pitfall 4: a hidden window can neither quit the app nor be surfaced', 
             .toContain('mainWindows');
         expect(secondInstance, 'second-instance may surface only a main window, never any window')
             .not.toContain('getAllWindows');
+    });
+});
+
+const appStateCount = (db: Database.Database): number =>
+    db.prepare<[], { c: number }>('SELECT count(*) AS c FROM app_state').get()?.c ?? 0;
+
+describe('D-33/DATA-10: the legacy timer import runs after the migration and before the window', () => {
+    it('imports both keys on the open connection, then releases the extractor only after the window opens', async () => {
+        const h = harness('legacy-import', { legacy: READ_OK });
+
+        const started = await run(h);
+
+        if (started === null) {
+            throw new Error('startup returned no connection');
+        }
+        const stored = realLayer.readAppState(started.db, realLayer.APP_STATE_KEYS.legacyTimerState);
+        expect(stored?.elapsedSeconds, 'the running v1.2.1 timer never reached app_state').toBe(3600);
+        expect(stored?.raw).toBe(RUNNING_TIMER_RAW);
+        expect(stored?.importedAt, 'the import used a clock of its own instead of the injected one')
+            .toBe('2026-09-12T09:00:00.000Z');
+        expect(realLayer.readAppState(started.db, realLayer.APP_STATE_KEYS.legacyGoalDate)?.raw).toBe('2026-09-12');
+
+        const ordered = ['migrated', 'readLegacyStorage', 'importLegacyState', 'openMainWindow', 'release'];
+        expect(h.recorder.calls.filter((call) => ordered.includes(call)), 'the startup steps ran out of order')
+            .toEqual(ordered);
+        expect(h.session.released, 'the extractor window was not released exactly once').toBe(1);
+    });
+
+    it('still opens the window when the read fails, logging the reason and writing nothing', async () => {
+        const h = harness('legacy-failed', { legacy: READ_FAILED });
+
+        const started = await run(h);
+
+        if (started === null) {
+            throw new Error('startup returned no connection');
+        }
+        expect(h.recorder.calls).toContain('readLegacyStorage');
+        expect(h.recorder.calls, 'a failed read still imported something').not.toContain('importLegacyState');
+        expect(h.recorder.calls, 'a failed read blocked the main window').toContain('openMainWindow');
+        expect(h.recorder.logs.join('\n')).toContain('timeout after 5000 ms');
+        expect(appStateCount(started.db), 'a failed read wrote to app_state').toBe(0);
+        expect(h.session.released).toBe(1);
+    });
+
+    it('retries the read on the next start', async () => {
+        const first = harness('legacy-retry', { legacy: READ_FAILED });
+        const firstStart = await startDatabase(first.layer, first.env, first.ports);
+        if (firstStart === null) {
+            throw new Error('the first start returned no connection');
+        }
+        expect(appStateCount(firstStart.db)).toBe(0);
+        firstStart.close();
+
+        const second = harness('legacy-retry-again', { legacy: READ_OK, userDataDir: first.userDataDir });
+        const secondStart = await run(second);
+
+        if (secondStart === null) {
+            throw new Error('the second start returned no connection');
+        }
+        expect(secondStart.report.dbClass, 'the second start did not find the database current').toBe('current');
+        expect(realLayer.readAppState(secondStart.db, realLayer.APP_STATE_KEYS.legacyTimerState)?.elapsedSeconds,
+            'the next start did not retry the read').toBe(3600);
+    });
+
+    it('never reads the extractor for a refused or unreadable database, and never logs the timer string', async () => {
+        const refused = harness('legacy-refused', { legacy: READ_OK });
+        writeNewerDatabase(refused.dbPath);
+        await run(refused);
+        expect(refused.recorder.calls, 'a refused database reached the extractor').not.toContain('readLegacyStorage');
+
+        const unreadable = harness('legacy-unreadable', { legacy: READ_OK });
+        fs.writeFileSync(unreadable.dbPath, Buffer.from('not a database'));
+        await run(unreadable);
+        expect(unreadable.recorder.calls, 'an unreadable database reached the extractor')
+            .not.toContain('readLegacyStorage');
+
+        const imported = harness('legacy-quiet', { legacy: READ_OK });
+        await run(imported);
+        const logs = imported.recorder.logs.join('\n');
+        expect(logs, 'the log names the import, so the absence checks below are not vacuous').toContain('legacy timer');
+        expect(logs, 'the log carried the raw timerState string').not.toContain(RUNNING_TIMER_RAW);
+        expect(logs, 'the log carried a saved timer value').not.toContain('3600');
     });
 });
 
