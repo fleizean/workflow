@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
-import { ipcContract } from '@shared/ipc/contract';
+import { ipcContract, ipcEvents } from '@shared/ipc/contract';
 import type { ApiOf, ContractMap, HandlersOf, IpcApi, IpcChannel, IpcContract, IpcHandlers } from '@shared/ipc/contract';
 import * as schemas from '@shared/schemas';
 import { LocalDateSchema, SettingsSchema, WorkSessionSchema } from '@shared/schemas';
@@ -22,9 +22,12 @@ const CHANNELS = [
     'companies:delete', 'settings:get', 'settings:update'
 ];
 const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
+// Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
+// phase that designs the event, and adding one here is how that change is declared rather than discovered.
+const EVENTS = ['app:playSound'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
-    'SettingsSchema', 'WorkSessionSchema'
+    'SettingsSchema', 'SoundIdSchema', 'WorkSessionSchema'
 ];
 
 const isoOnTheWire: unknown = JSON.parse(JSON.stringify(new Date()));
@@ -223,6 +226,17 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         }
     });
 
+    it('holds exactly the declared main-to-renderer events, each a strict payload schema', () => {
+        const keys = Object.keys(ipcEvents);
+        expect([...keys].sort(), 'D-20: the event catalogue changed').toEqual([...EVENTS].sort());
+        for (const [name, schema] of Object.entries(ipcEvents)) {
+            expect(name, 'D-16: event names are domain:action in camelCase').toMatch(/^[a-z]+:[a-z][A-Za-z]*$/);
+            expect(defOf(schema, name).type, 'an event payload is an object schema').toBe('object');
+            expect(schema.safeParse({ sound: 'goalReached', extra: 1 }).success,
+                'an event payload must reject an undeclared key').toBe(false);
+        }
+    });
+
     it('rejects unknown keys and invalid values on the companies and settings inputs', () => {
         const create = ipcContract['companies:create'].input;
         expect(create.safeParse({ name: 'Acme', noteRequired: false }).success).toBe(true);
@@ -313,9 +327,11 @@ describe('D-19: no date, coercion, catch-all, transform or default anywhere in t
         const roots: [string, unknown][] = [
             ...exported,
             ...Object.entries(ipcContract).flatMap(([name, spec]): [string, unknown][] =>
-                [[name + '.input', spec.input], [name + '.output', spec.output]])
+                [[name + '.input', spec.input], [name + '.output', spec.output]]),
+            // An event payload crosses the same wire in the other direction, so it obeys the same bans.
+            ...Object.entries(ipcEvents).map(([name, schema]): [string, unknown] => [name + '.payload', schema])
         ];
-        expect(roots.length).toBe(exported.length + 2 * CHANNELS.length);
+        expect(roots.length).toBe(exported.length + 2 * CHANNELS.length + EVENTS.length);
         expect(roots.flatMap(([label, schema]) => violations(schema, label)),
             'D-19: a shared schema can coerce, default or transform, so z.input and z.output diverge or a Date slips through')
             .toEqual([]);

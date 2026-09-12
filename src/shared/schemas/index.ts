@@ -52,3 +52,7 @@ export const SettingsSchema = z.strictObject({
     pomodoroAutoStartBreaks: z.boolean(),
     pomodoroAutoStartWork: z.boolean()
 });
+
+// The sounds main asks the renderer to play. Main owns the decision and the clock; the renderer owns the audio
+// element, as v1.2.1's `new Audio(...)` did. Slice E adds the pomodoro sound with the cycle that raises it.
+export const SoundIdSchema = z.enum(['goalReached']);

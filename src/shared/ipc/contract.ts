@@ -1,7 +1,8 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
 import {
-    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, WorkSessionSchema
+    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, SoundIdSchema,
+    WorkSessionSchema
 } from '@shared/schemas';
 import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
@@ -88,5 +89,9 @@ export type IpcApi = ApiOf<IpcContract>;
 export type IpcHandlers = HandlersOf<IpcContract>;
 
 // Main-to-renderer events; each entry arrives with the phase that designs the event (D-20).
-export const ipcEvents = {} as const satisfies Readonly<Record<ChannelName, z.ZodType>>;
+export const ipcEvents = {
+    // The main process decides when a sound is due; only the renderer can play one.
+    'app:playSound': z.strictObject({ sound: SoundIdSchema })
+} as const satisfies Readonly<Record<ChannelName, z.ZodType>>;
 export type IpcEventChannel = keyof typeof ipcEvents;
+export type IpcEventPayload<C extends IpcEventChannel> = z.output<(typeof ipcEvents)[C]>;
