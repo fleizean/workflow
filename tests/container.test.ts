@@ -17,6 +17,8 @@ import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
 import { closeDatabaseNow } from '../src/main/lifecycle';
 import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME } from '../src/main/notifications';
+import { MAX_CREDIT_MS } from '../src/main/services/timer.service';
+import { instantFromEpochMs } from '../src/shared/utils/date';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
 import type { IpcEventChannel, SoundId } from '../src/shared/types';
 import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
@@ -88,13 +90,15 @@ interface DrivenPorts {
     readonly events: IpcEventChannel[];
     /** Advances the monotonic and wall clocks together and runs every scheduled repeat once per whole second. */
     tick(seconds: number): void;
+    /** The same at a chosen cadence: MAX_CREDIT_MS is the latest a tick may arrive and still be credited in full. */
+    tickEvery(intervalMs: number, times: number): void;
 }
 
 /*
  * The container builds its own services, so the only way to drive them is through the ports it was handed. This is
  * the same trick tests/timer-service.test.ts uses: the scheduler is a port precisely so a test can be the clock.
  */
-function drivenPorts(): DrivenPorts {
+function drivenPorts(wallOriginMs: number = WALL_ORIGIN_MS): DrivenPorts {
     const notifications: NotificationRequest[] = [];
     const sounds: SoundId[] = [];
     const events: IpcEventChannel[] = [];
@@ -102,7 +106,7 @@ function drivenPorts(): DrivenPorts {
     let monotonic = 0;
 
     const ports: AppPorts = {
-        clock: { now: () => WALL_ORIGIN_MS + monotonic, monotonicNow: () => monotonic },
+        clock: { now: () => wallOriginMs + monotonic, monotonicNow: () => monotonic },
         notifier: { notify: (request) => notifications.push(request) },
         sound: { play: (sound) => sounds.push(sound) },
         bus: { emit: (channel) => events.push(channel) },
@@ -120,8 +124,12 @@ function drivenPorts(): DrivenPorts {
         sounds,
         events,
         tick(seconds) {
-            for (let i = 0; i < seconds; i++) {
-                monotonic += 1000;
+            this.tickEvery(1000, seconds);
+        },
+
+        tickEvery(intervalMs, times) {
+            for (let i = 0; i < times; i++) {
+                monotonic += intervalMs;
                 for (const run of [...repeats]) run();
             }
         }
@@ -503,5 +511,81 @@ describe('the services the container composes', () => {
 
         expect(container.services.timer.snapshot().elapsedSeconds).toBe(timerBefore);
         expect(container.services.pomodoro.snapshot().elapsedSeconds).toBe(pomodoroBefore);
+    });
+});
+
+/*
+ * The goal decision, which the shell review found sampling the wrong way and counting the wrong seconds. Every case
+ * below is driven through the real createContainer over stub ports and a real migrated fixture, which is how the
+ * reviewer reproduced both blockers.
+ */
+describe('CORE-13: the goal is a fact about the local day, not about the timer', () => {
+    interface Driven {
+        readonly container: AppContainer;
+        readonly driver: DrivenPorts;
+        readonly connection: DatabaseType.Database;
+    }
+
+    async function driven(options: {
+        readonly wallOriginMs?: number;
+        /** Seconds a previous launch left unsaved in app_state, as a quit with the timer paused leaves them. */
+        readonly carriedSeconds?: number;
+    } = {}): Promise<Driven> {
+        const connection = await migratedConnection(makeCleanFixture());
+        if (options.carriedSeconds !== undefined) {
+            realLayer.writeTimerState(
+                connection,
+                { accumulatedSeconds: options.carriedSeconds, mode: 'work' },
+                instantFromEpochMs(options.wallOriginMs ?? WALL_ORIGIN_MS)
+            );
+        }
+        const driver = drivenPorts(options.wallOriginMs);
+        const container = createContainer({
+            layer: guardedLayer(), connection, log: () => undefined, ports: driver.ports
+        });
+        return { container, driver, connection };
+    }
+
+    /*
+     * CR-02. MAX_CREDIT_MS deliberately lets one tick credit two seconds, so elapsedSeconds is not a counter that
+     * lands on every multiple of ten. From an odd second a sustained two-second cadence lands on none of them, and
+     * the residue sampler stopped asking for the rest of the day. The tests already here only tick clean seconds,
+     * which is why this shipped.
+     */
+    it('keeps sampling the goal when every tick arrives as late as the clamp allows', async () => {
+        const { container, driver } = await driven({ carriedSeconds: 1 });
+        const savedToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({ dailyTargetSeconds: savedToday + 20, goalNotification: true });
+
+        container.services.timer.start();
+        driver.tickEvery(MAX_CREDIT_MS, 200);
+
+        expect(container.services.timer.snapshot().elapsedSeconds, 'the clamp stopped crediting two seconds a tick')
+            .toBe(401);
+        expect(driver.notifications, '381 seconds past the target and nothing fired').toEqual([GOAL_NOTIFICATION]);
+        expect(driver.sounds).toEqual(['goalReached']);
+    });
+
+    /** The other half of comparing rather than taking a residue: the mark has to rewind when the clock does. */
+    it('rewinds the sampler with the timer, so a reset does not silence the rest of the day', async () => {
+        const { container, driver } = await driven();
+        const today = container.services.stats.today();
+        container.services.settings.update({ dailyTargetSeconds: today.totalSeconds + 100, goalNotification: true });
+
+        container.services.timer.start();
+        driver.tick(95);
+        expect(driver.notifications).toEqual([]);
+        container.services.timer.reset();
+
+        // A minute of the day saved by hand, which leaves it forty seconds short of the target.
+        container.services.sessions.create({
+            name: 'Saved by hand', durationSeconds: 60, date: today.date, companyId: null, note: null
+        });
+        expect(driver.notifications).toEqual([]);
+
+        container.services.timer.start();
+        driver.tick(50);
+        expect(driver.notifications, 'the sampler was still waiting for a second the reset clock will never reach')
+            .toEqual([GOAL_NOTIFICATION]);
     });
 });

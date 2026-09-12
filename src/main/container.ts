@@ -160,12 +160,30 @@ export function createContainer(input: ContainerInput): AppContainer {
         log
     });
 
+    // The second the goal was last measured at, so the sampler below compares rather than takes a residue.
+    let lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
+
     // The whole day, including the seconds the running timer is still holding: a goal is met by time worked, not by
     // time already written to a row (CORE-08, B7).
     function evaluateGoal(snapshot: TimerSnapshot): void {
-        if (snapshot.status !== 'running' || snapshot.elapsedSeconds % GOAL_EVALUATION_INTERVAL_SECONDS !== 0) {
+        // A reset rewinds elapsedSeconds, so the mark rewinds with it - otherwise the rest of the day would be spent
+        // waiting for a second the restarted clock will never reach.
+        if (snapshot.elapsedSeconds < lastGoalCheckAt) {
+            lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
+        }
+        if (snapshot.status !== 'running') {
             return;
         }
+        /*
+         * Measured against the last second evaluated, never against a residue. MAX_CREDIT_MS lets one tick credit two
+         * seconds on purpose, so elapsedSeconds does not land on every multiple of ten - and a sustained late cadence
+         * from an odd second lands on none of them, which silenced the goal for the rest of the day (CR-02).
+         */
+        if (snapshot.elapsedSeconds - lastGoalCheckAt < GOAL_EVALUATION_INTERVAL_SECONDS) {
+            return;
+        }
+        lastGoalCheckAt = snapshot.elapsedSeconds;
+
         const current = settings.get();
         const decision = goal.evaluate({
             totalSecondsToday: stats.today().totalSeconds + snapshot.elapsedSeconds,
