@@ -1,30 +1,39 @@
-// The --smoke launch for tools/smoke-packaged.mjs (BUILD-06): opens only the injected, new database, then reports.
+// The --smoke launch for tools/smoke-packaged.mjs: the real D-30 bootstrap, with reports on stdout instead of a
+// modal dialog (Pitfall 6) and exits recorded rather than taken (D-37).
 // The database layer arrives as runSmoke's argument, so loading this module never loads it.
 
 import { app, BrowserWindow } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
-import type { openDatabase, closeDatabase } from '../lib/db/client';
+import type * as DatabaseLayerModule from '../lib/db';
 import {
-    RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS, SMOKE_NAVIGATION_TIMEOUT_MS,
-    SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, mainConfig
+    PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
+    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, mainConfig
 } from './config';
+import { startDatabase } from './database-startup';
+import type { LegacyImportStatus } from './database-startup';
 import { describeError } from './errors';
+import { readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
 import { createMainWindow, loadRenderer } from './window';
 
-export interface SmokeDatabase {
-    readonly openDatabase: typeof openDatabase;
-    readonly closeDatabase: typeof closeDatabase;
-}
+export type SmokeDatabase = typeof DatabaseLayerModule;
 
 interface SmokeOutcome {
     ok: boolean;
     lines: string[];
+    /** An exit code startup asked for; absent means the smoke's own 0/1 verdict stands. */
+    code?: number;
 }
 
-export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
+function describeLegacyImport(status: LegacyImportStatus): string {
+    return 'failed' in status
+        ? 'failed'
+        : 'timerState=' + status.timerState + ' goalDate=' + status.goalDate;
+}
+
+export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
     const appName = app.getName();
     const appData = app.getPath('appData');
     const userData = app.getPath('userData');
@@ -58,8 +67,65 @@ export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
     }
     lines.push('SMOKE_DB=' + dbPath);
 
-    // Injected by src/main/index.ts, which loads the database layer only once the lock is held.
-    const { openDatabase, closeDatabase } = database;
+    // D-37: the real bootstrap, over ports that print instead of showing a dialog or exiting.
+    let exitCode: number | undefined;
+    let win: BrowserWindow | undefined;
+    const started = await startDatabase(
+        layer,
+        {
+            userDataDir: userData,
+            productionDir: productionUserData,
+            isPackaged: app.isPackaged,
+            smoke: true,
+            doorOpen: PRODUCTION_DATA_DOOR_OPEN,
+            now: new Date()
+        },
+        {
+            report: (kind, title) => {
+                lines.push('SMOKE_REPORT_KIND=' + kind, 'SMOKE_REPORT_TITLE=' + title);
+            },
+            exit: (code) => { exitCode = code; },
+            log: (line) => { lines.push('SMOKE_DB_MIGRATION=' + line); },
+            readLegacyStorage: () => readLegacyStorage(),
+            openMainWindow: () => {
+                win = createMainWindow({ show: false });
+                lines.push('SMOKE_WINDOW_CREATED=true');
+            }
+        }
+    );
+    if (started === null) {
+        return { ok: false, lines, code: exitCode ?? 1 };
+    }
+    lines.push('SMOKE_DB_CLASS=' + started.report.dbClass);
+    lines.push('SMOKE_DB_VERSION=' + String(started.report.toVersion));
+    lines.push('SMOKE_TIMER_IMPORT=' + describeLegacyImport(started.legacyImport));
+
+    try {
+        // BUILD-06: the injected, brand-new database, through the same driver the bootstrap just used.
+        const databaseFailure = checkInjectedDatabase(layer, dbPath, lines);
+        if (databaseFailure !== null) {
+            return fail(databaseFailure);
+        }
+        if (win === undefined) {
+            return fail('startup returned a database without ever opening a main window');
+        }
+        const rendererFailure = await checkRenderer(win, lines);
+        if (rendererFailure !== null) {
+            return fail(rendererFailure);
+        }
+    } finally {
+        // D-32: before the window goes, so the -wal is folded back in even if a check threw.
+        started.close();
+        win?.destroy();
+    }
+
+    lines.push('SMOKE_OK');
+    return { ok: true, lines };
+}
+
+/** Returns the failure reason, or null when every check passed. */
+function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: string[]): string | null {
+    const { openDatabase, closeDatabase } = layer;
     try {
         const db = openDatabase(dbPath);
         try {
@@ -69,24 +135,26 @@ export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
             db.prepare('INSERT INTO smoke (value) VALUES (?)').run(token);
             const row = db.prepare<[], { value: string }>('SELECT value FROM smoke').get();
             if (row === undefined || row.value !== token) {
-                return fail('read back ' + JSON.stringify(row) + ', expected the row just written');
+                return 'read back ' + JSON.stringify(row) + ', expected the row just written';
             }
             lines.push('SMOKE_ROW=' + row.value);
         } finally {
             closeDatabase(db);
         }
     } catch (error) {
-        return fail('database: ' + describeError(error));
+        return 'database: ' + describeError(error);
     }
+    return null;
+}
 
-    // The renderer and preload, through the same resolution the real window uses.
-    const win = createMainWindow({ show: false });
+/** Returns the failure reason, or null when every check passed. The window is the one startup opened. */
+async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<string | null> {
     try {
         await loadRenderer(win);
         const rendered = await waitForRendererText(win);
         lines.push('SMOKE_RENDERER_TEXT=' + rendered);
         if (!rendered.includes(RENDERER_MARKER_TEXT)) {
-            return fail('the renderer never rendered "' + RENDERER_MARKER_TEXT + '"');
+            return 'the renderer never rendered "' + RENDERER_MARKER_TEXT + '"';
         }
         const bridgeVersion: unknown = await win.webContents.executeJavaScript(
             'typeof window.' + SHELL_BRIDGE_KEY + ' === "object" ? String(window.' +
@@ -95,7 +163,7 @@ export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
         const version = typeof bridgeVersion === 'string' ? bridgeVersion : '';
         lines.push('SMOKE_PRELOAD_VERSION=' + version);
         if (version === '') {
-            return fail('the sandboxed preload did not expose window.' + SHELL_BRIDGE_KEY);
+            return 'the sandboxed preload did not expose window.' + SHELL_BRIDGE_KEY;
         }
 
         // WR-01: the guard installed on every web contents, exercised from inside the page.
@@ -103,19 +171,15 @@ export async function runSmoke(database: SmokeDatabase): Promise<SmokeOutcome> {
         lines.push('SMOKE_WINDOW_OPEN_BLOCKED=' + String(containment.windowOpenBlocked));
         lines.push('SMOKE_NAVIGATION_BLOCKED=' + String(containment.navigationBlocked));
         if (!containment.windowOpenBlocked) {
-            return fail('window.open from the page was not refused');
+            return 'window.open from the page was not refused';
         }
         if (!containment.navigationBlocked) {
-            return fail('a navigation to ' + SMOKE_ESCAPE_URL + ' was not refused');
+            return 'a navigation to ' + SMOKE_ESCAPE_URL + ' was not refused';
         }
     } catch (error) {
-        return fail('renderer: ' + describeError(error));
-    } finally {
-        win.destroy();
+        return 'renderer: ' + describeError(error);
     }
-
-    lines.push('SMOKE_OK');
-    return { ok: true, lines };
+    return null;
 }
 
 /** Polls the page until #root has text containing the marker, or the timeout passes. */
@@ -172,7 +236,7 @@ async function probeContainment(win: BrowserWindow): Promise<{ windowOpenBlocked
 
 /** Writes the report and exits only once stdout has flushed it; pipes are asynchronous on macOS. */
 export function finishSmoke(outcome: SmokeOutcome): void {
-    const code = outcome.ok ? 0 : 1;
+    const code = outcome.code ?? (outcome.ok ? 0 : 1);
     const fallback = setTimeout(() => app.exit(code), SMOKE_EXIT_FALLBACK_MS);
     process.stdout.write(outcome.lines.join('\n') + '\n', () => {
         clearTimeout(fallback);
