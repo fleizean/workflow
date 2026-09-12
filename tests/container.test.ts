@@ -646,4 +646,60 @@ describe('CORE-13: the goal is a fact about the local day, not about the timer',
         expect(driver.notifications, 'the sampler was still waiting for a second the reset clock will never reach')
             .toEqual([GOAL_NOTIFICATION]);
     });
+
+    /*
+     * WR-10. A completed pomodoro interval is written as a real session row, which the day's total counts. Adding
+     * the main timer's seconds on top while it is in pomodoro mode would count the same wall clock twice.
+     */
+    it('does not add the main timer to the day while it is in pomodoro mode', async () => {
+        const { container, driver } = await driven();
+        const savedToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({ dailyTargetSeconds: savedToday + 60, goalNotification: true });
+
+        container.services.timer.setMode('pomodoro');
+        container.services.timer.start();
+        driver.tick(180);
+        expect(driver.notifications, 'the cycle writes its own rows; the main clock must not be added on top')
+            .toEqual([]);
+
+        // The same seconds in work mode are the day's own, so the term is scoped rather than dropped.
+        container.services.timer.setMode('work');
+        driver.tick(10);
+        expect(driver.notifications).toEqual([GOAL_NOTIFICATION]);
+    });
+
+    /*
+     * The services review's WR-01: the decision hung on the main timer's tick, so a day carried over the line by a
+     * session written or edited, or by a pomodoro-only day, passed the target in silence.
+     */
+    it('announces a day carried over the line by a session written or edited, with no timer running', async () => {
+        const { container, driver } = await driven();
+        const today = container.services.stats.today();
+        container.services.settings.update({ dailyTargetSeconds: today.totalSeconds + 600, goalNotification: true });
+
+        const values = {
+            name: 'Typed in on History', durationSeconds: 60, date: today.date, companyId: null, note: null
+        };
+        const created = container.services.sessions.create(values);
+        expect(driver.notifications, 'a session nine minutes short announced the day').toEqual([]);
+
+        container.services.sessions.update(created.id, { ...values, durationSeconds: 600 });
+        expect(container.services.timer.snapshot().status, 'the main timer must never have run').toBe('idle');
+        expect(driver.notifications).toEqual([GOAL_NOTIFICATION]);
+        expect(driver.sounds).toEqual(['goalReached']);
+    });
+
+    it('announces a pomodoro-only day, where the main timer never runs', async () => {
+        const { container, driver } = await driven();
+        const savedToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({
+            pomodoroWorkSeconds: 60, dailyTargetSeconds: savedToday + 60, goalNotification: true
+        });
+
+        container.services.pomodoro.start();
+        driver.tick(60);
+        expect(container.services.timer.snapshot().status, 'the main timer must never have run').toBe('idle');
+        expect(driver.notifications.map((n) => n.title)).toEqual(['Pomodoro complete', 'Daily goal reached']);
+        expect(driver.sounds).toEqual(['pomodoroCompleted', 'goalReached']);
+    });
 });

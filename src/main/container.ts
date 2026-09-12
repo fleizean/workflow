@@ -5,6 +5,7 @@
 
 import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
+import { describeError } from './errors';
 import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME, notificationForCompletion } from './notifications';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
 import type { AppPorts, ClockPort } from './ports';
@@ -163,16 +164,7 @@ export function createContainer(input: ContainerInput): AppContainer {
     // The second the goal was last measured at, so the sampler below compares rather than takes a residue.
     let lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
 
-    /*
-     * The whole day, including the seconds the running timer is still holding: a goal is met by time worked, not by
-     * time already written to a row (CORE-08, B7). Only the part of the accumulation counted on this same local day,
-     * though - stats.today() is day-scoped and the accumulation is not, and adding the two as though they were the
-     * same quantity credited last night's unsaved hours to this morning's goal (CR-01).
-     *
-     * A restored accumulation is counted on no day, so it adds nothing until the timer counts fresh seconds. Those
-     * seconds are not lost: they are still in the snapshot, and saving them as a session is what says which day they
-     * belong to - which is the question G3/G4 puts to the user rather than one this module may answer for them.
-     */
+    /** The tick's way in: how often the question is worth its cost, and whose seconds count when it is asked. */
     function evaluateGoal(snapshot: TimerSnapshot, counted: CountedDay): void {
         // A reset rewinds elapsedSeconds, so the mark rewinds with it - otherwise the rest of the day would be spent
         // waiting for a second the restarted clock will never reach.
@@ -191,22 +183,58 @@ export function createContainer(input: ContainerInput): AppContainer {
             return;
         }
         lastGoalCheckAt = snapshot.elapsedSeconds;
+        /*
+         * WR-10: in pomodoro mode the cycle writes each completed interval as its own session row, which the day's
+         * total already counts. Adding the main clock's seconds on top would count the same wall clock twice and
+         * announce at roughly half the target. Under-counting delays a notification; over-counting invents a day
+         * that was not worked, and this app exists not to invent time.
+         */
+        announceGoalIfReached(snapshot.mode === 'pomodoro' ? null : counted);
+    }
 
-        const today = stats.today();
-        const current = settings.get();
-        const decision = goal.evaluate({
-            totalSecondsToday: today.totalSeconds + (counted.day === today.date ? counted.seconds : 0),
-            settings: {
-                dailyTargetSeconds: current.dailyTargetSeconds,
-                goalNotification: current.goalNotification
+    /*
+     * The day's own total: the seconds already written to a row plus the part of the running accumulation counted on
+     * that same local day (CORE-08, B7). Scoping the second term is CR-01 - stats.today() is day-scoped and the
+     * timer's accumulation is not, so adding them whole credited last night's unsaved hours to this morning. A
+     * restored accumulation is counted on no day and adds nothing until the timer counts fresh seconds; saving it as
+     * a session is what says which day it belongs to, which is the question G3/G4 puts to the user.
+     *
+     * Reachable from every path that can carry the day over the line, not from the tick alone: a pomodoro-only day,
+     * a day typed in on History and a timer paused inside the sampling window each used to pass the target in
+     * silence. goal.evaluate records the day before it answers yes, so asking three times announces once.
+     *
+     * A caller that measures the day by what is on disk passes null. The tick is the only one that adds running
+     * seconds, so a save that does not also reset cannot have the same seconds counted as a row and as a total.
+     */
+    function announceGoalIfReached(counted: CountedDay | null): void {
+        try {
+            const today = stats.today();
+            const current = settings.get();
+            const running = counted !== null && counted.day === today.date ? counted.seconds : 0;
+            const decision = goal.evaluate({
+                totalSecondsToday: today.totalSeconds + running,
+                settings: {
+                    dailyTargetSeconds: current.dailyTargetSeconds,
+                    goalNotification: current.goalNotification
+                }
+            });
+            if (decision.notify) {
+                // Both, and from main: v1.2.1 raised the notification from a renderer that is not running while the
+                // window is hidden in the tray, which is the half of B1 the user never saw at all.
+                ports.notifier.notify(GOAL_NOTIFICATION);
+                ports.sound.play('goalReached');
             }
-        });
-        if (decision.notify) {
-            // Both, and from main: v1.2.1 raised the notification from a renderer that is not running while the
-            // window is hidden in the tray, which is the half of B1 the user never saw at all.
-            ports.notifier.notify(GOAL_NOTIFICATION);
-            ports.sound.play('goalReached');
+        } catch (error) {
+            // A day that cannot be measured must never cost the caller its write, or the clock its tick.
+            log('goal: the day could not be measured - ' + describeError(error));
         }
+    }
+
+    /** The write first and the announcement after it, so the answer is measured against what is now on disk. */
+    function announcingGoal<T>(write: () => T): T {
+        const written = write();
+        announceGoalIfReached(null);
+        return written;
     }
 
     const timer = createTimerService({
@@ -238,6 +266,9 @@ export function createContainer(input: ContainerInput): AppContainer {
         }
         ports.notifier.notify(notificationForCompletion(completion.interval));
         ports.sound.play('pomodoroCompleted');
+        // The row the transaction above wrote may be the one that carried the day: a pomodoro-only day never starts
+        // the main timer, so without this nothing would ever ask.
+        announceGoalIfReached(null);
     }
 
     const pomodoro = createPomodoroService({
@@ -258,11 +289,19 @@ export function createContainer(input: ContainerInput): AppContainer {
         log
     });
 
+    const sessions = createSessionsService(repositories.sessions, repositories.companies);
+
     return {
         ports,
         repositories,
         services: {
-            sessions: createSessionsService(repositories.sessions, repositories.companies),
+            // A session written or edited can carry the day with no timer running at all - History's own screen does
+            // exactly that. The rule belongs to the composition root: the service below owns sessions, not goals.
+            sessions: {
+                ...sessions,
+                create: (input) => announcingGoal(() => sessions.create(input)),
+                update: (id, input) => announcingGoal(() => sessions.update(id, input))
+            },
             companies: createCompaniesService({
                 companies: repositories.companies,
                 sessions: repositories.sessions,
