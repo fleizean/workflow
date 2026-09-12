@@ -11,7 +11,7 @@ import { ipcContract } from '@shared/ipc/contract';
 import type { ApiOf, ContractMap, HandlersOf, IpcApi, IpcChannel, IpcContract, IpcHandlers } from '@shared/ipc/contract';
 import * as schemas from '@shared/schemas';
 import { LocalDateSchema, SettingsSchema, WorkSessionSchema } from '@shared/schemas';
-import type { Company, PomodoroSession, Settings, SheetsTarget, WorkSession } from '@shared/types';
+import type { Company, PomodoroSession, Settings, WorkSession } from '@shared/types';
 import { isLocalDate } from '@shared/utils/date';
 import type { LocalDate } from '@shared/utils/date';
 import { findAll, read, repoRoot, stripCommentsAndStrings } from './helpers/ts-imports';
@@ -19,12 +19,12 @@ import { findAll, read, repoRoot, stripCommentsAndStrings } from './helpers/ts-i
 const CHANNELS = [
     'sessions:list', 'sessions:listByDateRange', 'sessions:listByDateAndCompany', 'sessions:create', 'sessions:update',
     'sessions:delete', 'sessions:deleteAll', 'companies:list', 'companies:get', 'companies:create', 'companies:update',
-    'companies:updateSheetsTarget', 'companies:delete', 'settings:get', 'settings:update'
+    'companies:delete', 'settings:get', 'settings:update'
 ];
 const VOID_INPUT_CHANNELS = ['companies:list', 'sessions:list', 'settings:get'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema', 'PomodoroSessionSchema',
-    'ScriptUrlSchema', 'SettingsSchema', 'SheetsTargetSchema', 'WorkSessionSchema'
+    'SettingsSchema', 'WorkSessionSchema'
 ];
 
 const isoOnTheWire: unknown = JSON.parse(JSON.stringify(new Date()));
@@ -151,8 +151,8 @@ function v121SettingSeeds(): Map<string, string> {
     return seeds;
 }
 
-// [domain key, v1.2.1 seed key, default]; scriptUrl has no seed.
-const SETTING_SEEDS: [keyof Settings, string | null, Settings[keyof Settings]][] = [
+// [domain key, v1.2.1 seed key, default].
+const SETTING_SEEDS: [keyof Settings, string, Settings[keyof Settings]][] = [
     ['dailyTargetSeconds', 'daily_target', 28800],
     ['goalNotification', 'goal_notification', true],
     ['excludeWeekendsFromStreak', 'exclude_weekends_from_streak', false],
@@ -162,11 +162,11 @@ const SETTING_SEEDS: [keyof Settings, string | null, Settings[keyof Settings]][]
     ['pomodoroLongBreakSeconds', 'pomodoro_long_break', 900],
     ['pomodoroSessionsUntilLongBreak', 'pomodoro_sessions_until_long_break', 4],
     ['pomodoroAutoStartBreaks', 'pomodoro_auto_start_breaks', true],
-    ['pomodoroAutoStartWork', 'pomodoro_auto_start_work', false],
-    ['exportHalfHourPrecision', 'export_half_hour_precision', false],
-    ['scriptUrl', null, '']
+    ['pomodoroAutoStartWork', 'pomodoro_auto_start_work', false]
 ];
 const UNREAD_SEEDS = ['haptic_feedback', 'start_reminder'];
+// Seeded by v1.2.1, kept in the database, outside the v2 domain surface: the owner removed the export on 2026-09-11.
+const RETIRED_SEEDS = ['export_half_hour_precision'];
 
 describe('SHARED-04 / D-19: LocalDateSchema', () => {
     it('accepts a real local day, exactly as isLocalDate does', () => {
@@ -214,7 +214,7 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         expect(voidInputs, 'D-16: a channel without input must still declare z.void()').toEqual(VOID_INPUT_CHANNELS);
     });
 
-    it('holds exactly the 15 proving channels, each named domain:action, none of them navigate', () => {
+    it('holds exactly the 14 proving channels, each named domain:action, none of them navigate', () => {
         const keys = Object.keys(ipcContract);
         expect([...keys].sort(), 'D-20: the proving catalogue changed').toEqual([...CHANNELS].sort());
         for (const key of keys) {
@@ -228,6 +228,10 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         expect(create.safeParse({ name: 'Acme', noteRequired: false }).success).toBe(true);
         expect(create.safeParse({ name: 'Acme', noteRequired: false, excelColumn: 'B' }).success,
             'T-03-14: companies:create accepted an undeclared key').toBe(false);
+        const company = ipcContract['companies:update'].input;
+        expect(company.safeParse({ id: 1, name: 'Acme', noteRequired: false }).success).toBe(true);
+        expect(company.safeParse({ id: 1, name: 'Acme', noteRequired: false, sheets: { excelColumn: 'B', noteColumn: 'C' } })
+            .success, 'SC4: companies:update accepted a sheets target the contract no longer declares').toBe(false);
         const update = ipcContract['settings:update'].input;
         expect(update.safeParse({}).success).toBe(true);
         expect(update.safeParse({ pomodoroEnabled: true }).success).toBe(true);
@@ -258,43 +262,27 @@ describe('WR-05: sessions:deleteAll cannot erase every session by accident', () 
     });
 });
 
-describe('WR-06: settings:update constrains where the export is sent', () => {
-    const update = ipcContract['settings:update'].input;
-    const ACCEPTED_SCRIPT_URLS = [
-        '',
-        'https://script.google.com/macros/s/AKfycbx0/exec',
-        'https://script.google.com/a/macros/example.com/s/AKfycbx0/exec'
-    ];
-    const REJECTED_SCRIPT_URLS: [string, string][] = [
-        ['plaintext http', 'http://script.google.com/macros/s/AKfycbx0/exec'],
-        ['a file URL', 'file:///C:/Users/x/exfil.txt'],
-        ['another host', 'https://attacker.example/macros/s/AKfycbx0/exec'],
-        ['a look-alike host', 'https://script.google.com.attacker.example/exec'],
-        ['credentials before the host', 'https://user@script.google.com/macros/s/AKfycbx0/exec'],
-        ['an explicit port', 'https://script.google.com:8443/macros/s/AKfycbx0/exec'],
-        ['the bare host', 'https://script.google.com'],
-        ['leading whitespace', ' https://script.google.com/macros/s/AKfycbx0/exec'],
-        ['trailing whitespace', 'https://script.google.com/macros/s/AKfycbx0/exec '],
-        ['an embedded tab', 'https://script.google.com/macros/s/AKfy\tcbx0/exec'],
-        ['an embedded newline', 'https://script.google.com/macros/s/AKfy\ncbx0/exec'],
-        ['not a URL', 'not a url']
+// Replaces the WR-06 scriptUrl-validation block: with the export gone there is nowhere to send anything, so what
+// still bites is the other direction - neither removed setting can re-enter through the wire in either direction.
+describe('SC4: the settings the export took with it cannot cross the contract', () => {
+    const REMOVED: [string, unknown][] = [
+        ['scriptUrl', 'https://script.google.com/macros/s/AKfycbx0/exec'],
+        ['exportHalfHourPrecision', true]
     ];
 
-    it.each(ACCEPTED_SCRIPT_URLS)('accepts %j and returns it unchanged', (scriptUrl) => {
-        const parsed = update.safeParse({ scriptUrl });
-        expect(parsed.success, 'WR-06: settings:update refused ' + JSON.stringify(scriptUrl)).toBe(true);
-        expect(parsed.data, 'D-19: the boundary rewrote the value instead of validating it').toEqual({ scriptUrl });
+    it('carries the ten settings the app kept', () => {
+        expect(ipcContract['settings:get'].output.safeParse(DEFAULT_SETTINGS).success).toBe(true);
+        expect(ipcContract['settings:update'].input.safeParse(DEFAULT_SETTINGS).success).toBe(true);
     });
 
-    it.each(REJECTED_SCRIPT_URLS)('rejects %s', (_label, scriptUrl) => {
-        expect(update.safeParse({ scriptUrl }).success,
-            'WR-06: settings:update would direct every exported session to ' + JSON.stringify(scriptUrl)).toBe(false);
+    it.each(REMOVED)('settings:update refuses to write %s', (key, value) => {
+        expect(ipcContract['settings:update'].input.safeParse({ [key]: value }).success,
+            'SC4: settings:update accepted ' + key + ', so the removed export setting is writable again').toBe(false);
     });
 
-    it('stays lenient on read, so a stored v1.2.1 value never makes every setting unreadable', () => {
-        const legacy = { ...DEFAULT_SETTINGS, scriptUrl: ' http://legacy.example/exec' };
-        expect(ipcContract['settings:get'].output.safeParse(legacy).success,
-            'WR-06: settings:get refused a legacy scriptUrl, so no setting could be read at all').toBe(true);
+    it.each(REMOVED)('settings:get refuses to report %s', (key, value) => {
+        expect(ipcContract['settings:get'].output.safeParse({ ...DEFAULT_SETTINGS, [key]: value }).success,
+            'SC4: settings:get carried ' + key + ' back to the renderer').toBe(false);
     });
 });
 
@@ -366,27 +354,23 @@ describe('D-19: no date, coercion, catch-all, transform or default anywhere in t
 describe('D-20: DEFAULT_SETTINGS mirrors v1.2.1', () => {
     const seeds = v121SettingSeeds();
 
-    it('parses under SettingsSchema, holds exactly its 12 keys, and is frozen', () => {
+    it('parses under SettingsSchema, holds exactly its 10 keys, and is frozen', () => {
         expect(() => SettingsSchema.parse(DEFAULT_SETTINGS)).not.toThrow();
         const schemaKeys = Object.keys(SettingsSchema.shape).sort();
         expect(Object.keys(DEFAULT_SETTINGS).sort()).toEqual(schemaKeys);
-        expect(schemaKeys).toHaveLength(12);
+        expect(schemaKeys).toHaveLength(10);
         expect(Object.isFrozen(DEFAULT_SETTINGS), 'D-20: a caller could rewrite the shared defaults').toBe(true);
     });
 
-    it('accounts for every v1.2.1 seed: mapped to a domain key, or one of the two never read', () => {
-        const mapped = SETTING_SEEDS.map(([, seed]) => seed).filter((seed): seed is string => seed !== null);
-        expect([...seeds.keys()].sort()).toEqual([...mapped, ...UNREAD_SEEDS].sort());
+    it('accounts for every v1.2.1 seed: mapped to a domain key, never read, or retired with the export', () => {
+        const mapped = SETTING_SEEDS.map(([, seed]) => seed);
+        expect([...seeds.keys()].sort()).toEqual([...mapped, ...UNREAD_SEEDS, ...RETIRED_SEEDS].sort());
         expect(SETTING_SEEDS.map(([key]) => key).sort()).toEqual(Object.keys(SettingsSchema.shape).sort());
     });
 
     it.each(SETTING_SEEDS)('%s defaults to the v1.2.1 seed %s', (key, seed, expected) => {
         expect(DEFAULT_SETTINGS[key]).toBe(expected);
-        if (seed === null) {
-            expect(seeds.has('script_url'), 'v1.2.1 now seeds script_url; the default must follow it').toBe(false);
-        } else {
-            expect(seeds.get(seed), 'D-20: the default drifted from database/db.js').toBe(String(expected));
-        }
+        expect(seeds.get(seed), 'D-20: the default drifted from database/db.js').toBe(String(expected));
     });
 });
 
@@ -439,7 +423,6 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'companies:get': reject,
         'companies:create': reject,
         'companies:update': reject,
-        'companies:updateSheetsTarget': reject,
         'companies:delete': reject,
         'settings:get': reject,
         'settings:update': reject
@@ -463,18 +446,16 @@ export function inferenceProofs(): void {
     const noAsymmetricChannel: Eq<AsymmetricChannel, never> = true;
     const domainTypesInferred: [
         Eq<Company, z.output<typeof schemas.CompanySchema>>,
-        Eq<SheetsTarget, z.output<typeof schemas.SheetsTargetSchema>>,
         Eq<WorkSession, z.output<typeof schemas.WorkSessionSchema>>,
         Eq<PomodoroSession, z.output<typeof schemas.PomodoroSessionSchema>>,
         Eq<Settings, z.output<typeof schemas.SettingsSchema>>
-    ] = [true, true, true, true, true];
+    ] = [true, true, true, true];
     const domainSchemasSymmetric: [
         Symmetric<typeof schemas.CompanySchema>,
-        Symmetric<typeof schemas.SheetsTargetSchema>,
         Symmetric<typeof schemas.WorkSessionSchema>,
         Symmetric<typeof schemas.PomodoroSessionSchema>,
         Symmetric<typeof schemas.SettingsSchema>
-    ] = [true, true, true, true, true];
+    ] = [true, true, true, true];
     void localDateInferred;
     void noAsymmetricChannel;
     void domainTypesInferred;

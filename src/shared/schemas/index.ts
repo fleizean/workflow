@@ -22,17 +22,10 @@ export const WorkSessionSchema = z.strictObject({
     createdAt: EpochMsSchema
 });
 
-// The Google Sheets target, grouped so the Phase 5 export seam can own it without renaming Company (D-20).
-export const SheetsTargetSchema = z.strictObject({
-    excelColumn: z.string().nullable(),
-    noteColumn: z.string().nullable()
-});
-
 export const CompanySchema = z.strictObject({
     id: IdSchema,
     name: z.string().min(1),
     noteRequired: z.boolean(),
-    sheets: SheetsTargetSchema,
     // v1.2.1 shows a company's creation date on Companies.
     createdAt: EpochMsSchema
 });
@@ -45,7 +38,8 @@ export const PomodoroSessionSchema = z.strictObject({
     pomodorosCompleted: z.int().nonnegative()
 });
 
-// Exactly the 12 keys v1.2.1 reads or writes (D-20); the two seeded-but-unread keys stay out.
+// The 10 keys v1.2.1 reads or writes that v2 still has a use for (D-20). Out: the two seeded-but-unread keys, and
+// export_half_hour_precision / script_url, whose rows stay in the database after the owner removed the export.
 export const SettingsSchema = z.strictObject({
     dailyTargetSeconds: z.int().positive(),
     goalNotification: z.boolean(),
@@ -56,11 +50,5 @@ export const SettingsSchema = z.strictObject({
     pomodoroLongBreakSeconds: z.int().positive(),
     pomodoroSessionsUntilLongBreak: z.int().positive(),
     pomodoroAutoStartBreaks: z.boolean(),
-    pomodoroAutoStartWork: z.boolean(),
-    exportHalfHourPrecision: z.boolean(),
-    scriptUrl: z.string()
+    pomodoroAutoStartWork: z.boolean()
 });
-
-// Where settings:update may point the export (WR-06): unset, or https to the Apps Script host with no port, credentials
-// or whitespace. Reads keep z.string(), so a stored v1.2.1 value can never make every setting unreadable.
-export const ScriptUrlSchema = z.union([z.literal(''), z.string().regex(/^https:\/\/script\.google\.com\/[\x21-\x7E]*$/)]);

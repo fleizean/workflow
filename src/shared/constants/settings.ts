@@ -11,8 +11,5 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
     pomodoroLongBreakSeconds: 900,
     pomodoroSessionsUntilLongBreak: 4,
     pomodoroAutoStartBreaks: true,
-    pomodoroAutoStartWork: false,
-    exportHalfHourPrecision: false,
-    // Never seeded by v1.2.1.
-    scriptUrl: ''
+    pomodoroAutoStartWork: false
 });

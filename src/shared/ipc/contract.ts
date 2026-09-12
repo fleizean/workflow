@@ -1,8 +1,7 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
 import {
-    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, ScriptUrlSchema, SettingsSchema, SheetsTargetSchema,
-    WorkSessionSchema
+    CompanySchema, DurationSecondsSchema, IdSchema, LocalDateSchema, SettingsSchema, WorkSessionSchema
 } from '@shared/schemas';
 import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
@@ -68,11 +67,7 @@ export const ipcContract = {
         output: CompanySchema
     },
     'companies:update': {
-        input: z.strictObject({ id: IdSchema, name: z.string().min(1), noteRequired: z.boolean(), sheets: SheetsTargetSchema }),
-        output: CompanySchema
-    },
-    'companies:updateSheetsTarget': {
-        input: z.strictObject({ id: IdSchema, sheets: SheetsTargetSchema }),
+        input: z.strictObject({ id: IdSchema, name: z.string().min(1), noteRequired: z.boolean() }),
         output: CompanySchema
     },
     // The delete reports how many sessions went with the company (COMP-05).
@@ -81,8 +76,8 @@ export const ipcContract = {
         output: z.strictObject({ deletedSessionCount: z.int().nonnegative() })
     },
     'settings:get': { input: z.void(), output: SettingsSchema },
-    // Strict on write, lenient on read (WR-06).
-    'settings:update': { input: SettingsSchema.extend({ scriptUrl: ScriptUrlSchema }).partial(), output: SettingsSchema }
+    // Partial: the form sends the keys it changed, never the whole settings object.
+    'settings:update': { input: SettingsSchema.partial(), output: SettingsSchema }
 } as const satisfies ContractMap;
 
 export type IpcContract = typeof ipcContract;
