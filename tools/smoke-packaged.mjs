@@ -156,12 +156,17 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
 
     // ARCH-01: the composition root and its adapters, built inside the packaged app. The repository read is the
     // only thing in this harness that runs the bundled drizzle-orm chunk.
-    check('the composition root built all four ports', f.SMOKE_CONTAINER_PORTS === 'bus,clock,notifier,sound',
+    check('the composition root built all five ports',
+        f.SMOKE_CONTAINER_PORTS === 'bus,clock,notifier,scheduler,sound',
         'reported ' + JSON.stringify(f.SMOKE_CONTAINER_PORTS));
     check('a repository read through Drizzle in the packaged app',
         /^\d+$/.test(f.SMOKE_CONTAINER_COMPANIES ?? '') && Number(f.SMOKE_CONTAINER_TARGET) > 0,
         'companies=' + JSON.stringify(f.SMOKE_CONTAINER_COMPANIES) +
         ' dailyTarget=' + JSON.stringify(f.SMOKE_CONTAINER_TARGET));
+    // CORE-05/G3/G4: an injected database with no timer state must restore at zero and idle, in the real app.
+    check('the timer service restored idle at zero in the packaged app',
+        f.SMOKE_CONTAINER_TIMER === 'idle/work/0/false',
+        'reported ' + JSON.stringify(f.SMOKE_CONTAINER_TIMER));
 
     check('the renderer loaded and rendered "' + RENDERER_MARKER_TEXT + '"',
         typeof f.SMOKE_RENDERER_TEXT === 'string' && f.SMOKE_RENDERER_TEXT.includes(RENDERER_MARKER_TEXT),

@@ -1,14 +1,15 @@
 // App lifecycle handlers, the first interactive window, and the launch that opens the database before it.
 // The database layer arrives as launchApplication's argument, so loading this module never loads it.
 
-import { app, dialog } from 'electron';
+import { app, dialog, powerMonitor } from 'electron';
 import { join } from 'node:path';
 import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
-import { clearActiveContainer, createContainer, setActiveContainer } from './container';
+import { clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer } from './database-startup';
 import { describeError } from './errors';
 import { readLegacyStorage } from './legacy-storage';
+import type { TimerService } from './services/timer.service';
 import { createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, showRenderer } from './window';
 
 export function registerLifecycle(): void {
@@ -66,6 +67,11 @@ export function registerDatabaseCloser(close: () => void): void {
 export function closeDatabaseNow(): void {
     const close = databaseCloser;
     databaseCloser = undefined;
+    // The timer flushes first: a write after the close would lose the last seconds counted to a driver error.
+    const flushFailure = disposeActiveContainer();
+    if (flushFailure !== null) {
+        console.error('src/main/lifecycle.ts: the elapsed time did not flush at quit - ' + flushFailure);
+    }
     // Before the close, so nothing can be handed a repository over a connection on its way out.
     clearActiveContainer();
     if (close === undefined) {
@@ -77,6 +83,22 @@ export function closeDatabaseNow(): void {
     } catch (error) {
         console.error('src/main/lifecycle.ts: the database did not close at quit - ' + describeError(error));
     }
+}
+
+let powerHandlersRegistered = false;
+
+/**
+ * CORE-06: powerMonitor is the precision layer over the clamp, not a substitute for it — it makes a suspended
+ * interval exactly zero rather than merely bounded. It is usable only after app.whenReady(), so it is registered
+ * with the container rather than in registerLifecycle.
+ */
+export function registerPowerMonitor(timer: TimerService): void {
+    if (powerHandlersRegistered) {
+        return;
+    }
+    powerHandlersRegistered = true;
+    powerMonitor.on('suspend', () => { timer.suspend(); });
+    powerMonitor.on('resume', () => { timer.resume(); });
 }
 
 /** Pitfall 4: the hidden extractor window must not quit the app before a main window has ever existed. */
@@ -109,11 +131,13 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
         registerDatabaseCloser(started.close);
         // After startDatabase, which owns the door, the classification and the migration; the container only wires
         // what that left open. The main window already exists, so the bus has somewhere to deliver to.
-        setActiveContainer(createContainer({
+        const container = createContainer({
             layer: database,
             connection: started.db,
             log: (line) => { console.log(line); }
-        }));
+        });
+        setActiveContainer(container);
+        registerPowerMonitor(container.services.timer);
     }
 }
 

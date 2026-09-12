@@ -3,9 +3,12 @@
 // database-startup.ts - and it names no Electron API, only the adapter factories that do.
 // The database layer arrives as an argument, so loading this module still loads no database code (D-10).
 
+import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
-import type { AppPorts } from './ports';
+import type { AppPorts, ClockPort } from './ports';
+import { createTimerService } from './services/timer.service';
+import type { TimerService, TimerStateStore } from './services/timer.service';
 import type {
     CompaniesRepository, PomodoroRepository, RepositoryOptions, SessionsRepository, SettingsRepository, SkippedRowReport
 } from '../lib/db';
@@ -17,11 +20,18 @@ export interface Repositories {
     readonly pomodoro: PomodoroRepository;
 }
 
+export interface Services {
+    readonly timer: TimerService;
+}
+
 export interface AppContainer {
     readonly ports: AppPorts;
     readonly repositories: Repositories;
+    readonly services: Services;
     /** One BEGIN IMMEDIATE around `work`, so a service can compose two repositories without holding the handle. */
     transaction<T>(work: () => T): T;
+    /** Flushes and stops what the services hold open. Called before the connection closes, never after. */
+    dispose(): void;
 }
 
 export interface ContainerInput {
@@ -68,12 +78,36 @@ export function createSkippedRowReporter(log: (line: string) => void): (skipped:
     };
 }
 
+// The timer reaches the database through one scalar in and one scalar out, and only through app-state.ts (CORE-07).
+function createTimerStateStore(
+    layer: DatabaseLayer,
+    connection: StartedDatabase['db'],
+    clock: ClockPort
+): TimerStateStore {
+    return {
+        read: () => {
+            const restored = layer.readTimerState(connection);
+            return { accumulatedSeconds: restored.accumulatedSeconds, mode: restored.mode };
+        },
+        // The wall clock names the moment of the write and never measures one; the seconds come from the service.
+        write: (state) => { layer.writeTimerState(connection, state, instantFromEpochMs(clock.now())); }
+    };
+}
+
 export function createContainer(input: ContainerInput): AppContainer {
     const { layer, log } = input;
     const ports = input.ports ?? createElectronPorts(log);
     const handle = layer.createDbHandle(input.connection);
     // Slice B's reporter, wired here for the first time: until now an unmappable row was dropped in silence.
     const options: RepositoryOptions = { onSkippedRow: createSkippedRowReporter(log) };
+
+    const timer = createTimerService({
+        clock: ports.clock,
+        scheduler: ports.scheduler,
+        bus: ports.bus,
+        store: createTimerStateStore(layer, input.connection, ports.clock),
+        log
+    });
 
     return {
         ports,
@@ -83,7 +117,9 @@ export function createContainer(input: ContainerInput): AppContainer {
             settings: layer.createSettingsRepository(handle),
             pomodoro: layer.createPomodoroRepository(handle, options)
         },
-        transaction: (work) => layer.transact(handle, work)
+        services: { timer },
+        transaction: (work) => layer.transact(handle, work),
+        dispose: () => { timer.dispose(); }
     };
 }
 
@@ -92,6 +128,22 @@ let active: AppContainer | undefined;
 /** Set once startup has a migrated database; the ipc/ layer resolves its services through activeContainer(). */
 export function setActiveContainer(container: AppContainer): void {
     active = container;
+}
+
+/**
+ * Flushes the services before the connection closes; a timer that persisted afterwards would lose the seconds it
+ * was holding to a driver error far from the cause. Returns why it could not, because quitting must finish anyway.
+ */
+export function disposeActiveContainer(): string | null {
+    if (active === undefined) {
+        return null;
+    }
+    try {
+        active.dispose();
+        return null;
+    } catch (error) {
+        return error instanceof Error ? error.message : 'unknown';
+    }
 }
 
 /** Cleared when the database closes, so a repository over a closed connection is never handed out (D-32). */

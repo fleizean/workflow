@@ -11,7 +11,7 @@ import * as realLayer from '../src/lib/db';
 import type { SkippedRowReport } from '../src/lib/db';
 import {
     SKIPPED_ROW_REPORT_LIMIT, activeContainer, clearActiveContainer, createContainer, createSkippedRowReporter,
-    setActiveContainer, skippedRowLine
+    disposeActiveContainer, setActiveContainer, skippedRowLine
 } from '../src/main/container';
 import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
@@ -94,6 +94,15 @@ async function build(dbPath: string): Promise<Built> {
     return { container, lines, connection };
 }
 
+/** Only what the quit path reads. Nothing on that path touches a repository, which is the point of the flush. */
+const stubContainerShape = (): AppContainer => ({
+    ports: stubPorts(),
+    repositories: {} as AppContainer['repositories'],
+    services: {} as AppContainer['services'],
+    transaction: (work) => work(),
+    dispose: () => undefined
+});
+
 const rawCount = (dbPath: string, table: string): number => {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
     try {
@@ -115,6 +124,43 @@ describe('the container hands out repositories over the connection startup opene
             .toEqual(['Contoso Fixture', 'Northwind Fixture', 'Unassigned']);
         expect(container.repositories.settings.get().dailyTargetSeconds).toBeGreaterThan(0);
         expect(container.repositories.pomodoro.countForDay(ld('2026-01-05'))).toBe(0);
+    });
+
+    it('wires the timer service over app-state, restored paused and counting nothing yet', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, connection } = await build(dbPath);
+
+        expect(Object.keys(container.services).sort()).toEqual(['timer']);
+        expect(container.services.timer.snapshot())
+            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+
+        // The store writes through app-state.ts, not through a repository and not through raw SQL.
+        container.services.timer.setMode('pomodoro');
+        expect(realLayer.readTimerState(connection))
+            .toEqual({ accumulatedSeconds: 0, mode: 'pomodoro', source: 'persisted' });
+    });
+
+    it('flushes the timer on the path that closes the database, before the container is cleared', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, connection } = await build(dbPath);
+        setActiveContainer(container);
+        container.services.timer.setMode('pomodoro');
+
+        expect(disposeActiveContainer(), 'a clean dispose must report no failure').toBeNull();
+        expect(realLayer.readTimerState(connection).mode).toBe('pomodoro');
+
+        clearActiveContainer();
+        expect(disposeActiveContainer(), 'with no container there is nothing to flush').toBeNull();
+    });
+
+    it('reports a dispose that could not finish rather than throwing out of the quit path', () => {
+        const failing: AppContainer = {
+            ...stubContainerShape(),
+            dispose: () => { throw new Error('database connection is not open'); }
+        };
+        setActiveContainer(failing);
+        expect(disposeActiveContainer()).toBe('database connection is not open');
+        clearActiveContainer();
     });
 
     it('hands back the ports it was given, and builds the adapters when it is given none', async () => {
@@ -230,7 +276,16 @@ describe('ARCH-01: the bootstrap builds exactly one container, after the databas
 
         const [handedOut] = callsTo('setActiveContainer');
         expect(handedOut, LIFECYCLE + ' builds a container and hands it to nobody').toBeDefined();
-        expect(handedOut?.getText(source)).toContain('createContainer(');
+        expect(handedOut?.getStart(source) ?? -1).toBeGreaterThan(built[0]?.getStart(source) ?? Infinity);
+    });
+
+    it('registers the power handlers once, on the timer of the container it just built', () => {
+        const [registered] = callsTo('registerPowerMonitor');
+        const [handedOut] = callsTo('setActiveContainer');
+        expect(registered, LIFECYCLE + ' no longer gates the timer on suspend (CORE-06)').toBeDefined();
+        expect(registered?.getText(source)).toContain('services.timer');
+        // After the container is active, so a suspend arriving mid-startup has something to gate.
+        expect(registered?.getStart(source) ?? -1).toBeGreaterThan(handedOut?.getStart(source) ?? Infinity);
     });
 
     it('clears the active container on the path that closes the database', () => {

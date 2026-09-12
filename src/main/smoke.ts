@@ -175,6 +175,11 @@ function checkContainer(layer: SmokeDatabase, connection: StartedDatabase['db'],
         lines.push('SMOKE_CONTAINER_PORTS=' + Object.keys(container.ports).sort().join(','));
         lines.push('SMOKE_CONTAINER_COMPANIES=' + String(container.repositories.companies.list().length));
         lines.push('SMOKE_CONTAINER_TARGET=' + String(container.repositories.settings.get().dailyTargetSeconds));
+        const timer = container.services.timer.snapshot();
+        lines.push('SMOKE_CONTAINER_TIMER=' + [
+            timer.status, timer.mode, String(timer.elapsedSeconds), String(timer.restoredFromPreviousLaunch)
+        ].join('/'));
+        container.dispose();
     } catch (error) {
         return 'container: ' + describeError(error);
     }
