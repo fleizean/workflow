@@ -74,14 +74,16 @@ export function doorMessage(productionDir: string): string {
         'Start the installed version of Workflow instead.';
 }
 
+// WR-03: the app has no restore action, so the backup is described as a file to keep, never as something
+// Workflow will put back on its own.
 export function failureMessage(details: { dbPath: string; backupPath: string | null; reason: string }): string {
     const backup = details.backupPath === null
         ? 'No backup was taken.'
-        : 'A verified backup of it is at:\n' + details.backupPath;
+        : 'A verified copy of it, taken before anything was attempted, is at:\n' + details.backupPath;
     return 'Workflow stopped instead of changing your database, which is still there as it was.\n\n' +
         details.dbPath + '\n\n' + backup + '\n\nReason: ' + details.reason +
         '\n\nNo database was created, renamed or replaced. Install the latest version of Workflow and ' +
-        'start it again; if this repeats, keep that backup safe.';
+        'start it again; if this repeats, copy that file somewhere safe before doing anything else.';
 }
 
 function summaryLine(report: MigrationReport): string {

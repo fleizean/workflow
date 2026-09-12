@@ -795,6 +795,25 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
      * statistics are compared against values measured before the damage rather than against
      * constants.
      */
+    // WR-03: the copy used to go straight over the target, after its sidecars had already been deleted, so a
+    // refused or interrupted restore left the target truncated with no way back.
+    it('leaves every row of the target in place when it refuses a short copy', async () => {
+        const fx = await makeWalFixture();
+        const notAQuiescedBackup = copyFixture(fx);
+        const target = await makeWalFixture();
+        const before = readDatabaseStats(target);
+        expect(before.rows.work_sessions, 'the target holds no uncheckpointed rows, so this proves nothing')
+            .toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+
+        expect(() => restoreDatabase(notAQuiescedBackup, target)).toThrow(/Restore verification failed/);
+
+        const after = readDatabaseStats(target);
+        expect(after.rows.work_sessions, 'a refused restore took rows out of the target it never replaced')
+            .toBe(before.rows.work_sessions);
+        expect(after.totalDuration, 'a refused restore cost the target tracked time').toBe(before.totalDuration);
+        expect(fs.existsSync(target + '.incoming'), 'a refused restore left its staging file behind').toBe(false);
+    });
+
     it('damages a working database, restores it, and recovers the exact pre-damage figures', async () => {
         const fx = await makeWalFixture();
         const live = copyFixture(fx);

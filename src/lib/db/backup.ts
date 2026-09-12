@@ -20,6 +20,9 @@ export const PENDING_SUFFIX = '.partial';
 
 const PENDING_NAME = /\.bak\.partial(-wal|-shm)?$/;
 
+// The staging name a restore copies into before it is verified and moved over the target (WR-03).
+const INCOMING_SUFFIX = '.incoming';
+
 const PAGES_PER_STEP = 100;
 
 export const DEFAULT_BACKUP_DEADLINE_MS = 60_000;
@@ -255,7 +258,12 @@ function refusalReason(error: unknown): string {
 }
 
 // Restores a verified backup over `targetPath` and re-verifies the result; anything unverifiable is refused before
-// the target is touched (T-01-34). The target's stale sidecars go first, so no -wal outlives its database.
+// the target is touched (T-01-34). WR-03: the copy is staged beside the target and verified there, so a failing or
+// interrupted copy can never leave the target truncated with its sidecars already gone. The target's stale
+// sidecars go only in the moment before the rename, so no -wal outlives its database.
+//
+// Not on the database layer's public surface: the app has no restore action, and the failure dialog says so. It is
+// the tested recovery procedure behind DATA-03, not something src/main can reach by accident.
 export function restoreDatabase(backupPath: string, targetPath: string): BackupVerification {
     let verification: BackupVerification;
     try {
@@ -273,23 +281,33 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
         );
     }
 
-    for (const sidecar of SIDECARS) {
-        const stale = targetPath + sidecar;
-        if (fs.existsSync(stale)) fs.rmSync(stale);
-    }
+    const incomingPath = targetPath + INCOMING_SUFFIX;
+    removePendingBackup(incomingPath);
+    try {
+        // eslint-disable-next-line no-restricted-syntax -- the backup API left a quiescent single file (CUSTODY-03)
+        fs.copyFileSync(backupPath, incomingPath);
 
-    // eslint-disable-next-line no-restricted-syntax -- the backup API left a quiescent single file (CUSTODY-03)
-    fs.copyFileSync(backupPath, targetPath);
+        const restored = verifyBackup(incomingPath);
+        const mismatches = describeVerificationMismatches(verification, restored);
+        if (mismatches.length > 0) {
+            throw new Error(
+                'Restore verification failed for ' + targetPath + ': ' + mismatches.join('; ') +
+                '. The restored database does not match the backup it came from.'
+            );
+        }
+        quiesceBackupFile(incomingPath);
 
-    const restored = verifyBackup(targetPath);
-    const mismatches = describeVerificationMismatches(verification, restored);
-    if (mismatches.length > 0) {
-        throw new Error(
-            'Restore verification failed for ' + targetPath + ': ' + mismatches.join('; ') +
-            '. The restored database does not match the backup it came from.'
-        );
+        for (const sidecar of SIDECARS) {
+            const stale = targetPath + sidecar;
+            if (fs.existsSync(stale)) fs.rmSync(stale);
+        }
+        // eslint-disable-next-line no-restricted-syntax -- a verified, quiesced file with no sidecars (CUSTODY-03)
+        fs.renameSync(incomingPath, targetPath);
+        return restored;
+    } catch (error) {
+        removePendingBackup(incomingPath);
+        throw error;
     }
-    return restored;
 }
 
 const SQLITE_HEADER = Buffer.from('SQLite format 3\u0000', 'latin1');
