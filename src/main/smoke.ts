@@ -151,7 +151,7 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             return fail(bridgeFailure);
         }
         // Last, because it ends by telling the app it is quitting - which is the state being proved.
-        const shellFailure = checkShell(lines);
+        const shellFailure = await checkShell(lines);
         if (shellFailure !== null) {
             return fail(shellFailure);
         }
@@ -277,6 +277,16 @@ async function checkBridge(win: BrowserWindow, container: AppContainer, lines: s
     return null;
 }
 
+/** Resolves when the window has actually gone, or once the wait is over - a window that stayed is the finding. */
+const settled = (win: BrowserWindow): Promise<void> =>
+    new Promise((done) => {
+        const timer = setTimeout(() => done(), SMOKE_POLL_INTERVAL_MS * 5);
+        win.once('closed', () => {
+            clearTimeout(timer);
+            done();
+        });
+    });
+
 const asRecord = (value: unknown): Record<string, unknown> =>
     typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
 
@@ -318,7 +328,7 @@ const DISPOSE_SCRIPT = 'window.__smokeBridge.dispose(); window.__smokeBridge.dis
  * the app is running, and a close that lets it go once the app is quitting. The quitting flag is set at the very end
  * of the smoke on purpose - nothing runs after it but the report.
  */
-function checkShell(lines: string[]): string | null {
+async function checkShell(lines: string[]): Promise<string | null> {
     try {
         const actions = { show: () => undefined, hide: () => undefined, isVisible: () => false };
         const log = (line: string): void => { lines.push('SMOKE_TRAY_LOG=' + line); };
@@ -331,11 +341,14 @@ function checkShell(lines: string[]): string | null {
         const probe = createMainWindow({ show: false });
         lines.push('SMOKE_CLOSE_DECISION=' + decideWindowClose({ quitting: false }));
         probe.close();
+        // A close that is allowed through destroys the window on a later turn of the loop, so both readings wait.
+        await settled(probe);
         lines.push('SMOKE_WINDOW_AFTER_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
 
         markQuitting();
         lines.push('SMOKE_QUIT_DECISION=' + decideWindowClose({ quitting: true }));
         probe.close();
+        await settled(probe);
         lines.push('SMOKE_WINDOW_AFTER_QUIT=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
         destroyAppTray();
     } catch (error) {

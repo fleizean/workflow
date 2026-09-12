@@ -188,6 +188,8 @@ const ELECTRON_IMPORTERS: Readonly<Record<string, string>> = {
     'src/main/window.ts': 'the main window factory and its navigation guards',
     'src/main/smoke.ts': 'the --smoke bootstrap, which is the packaged proof of the one above',
     'src/main/legacy-storage.ts': 'the offscreen extractor window that reads v1.2.1 localStorage',
+    'src/main/tray.ts': 'the tray icon the window hides to, and the Quit that means it (criterion 8)',
+    'src/main/ipc/register.ts': 'ipcMain, which is how a handler is reached at all (criterion 11)',
     'src/main/adapters/electron-notifier.adapter.ts': 'the NotifierPort implementation'
 };
 
