@@ -2,13 +2,16 @@
 // The import writes app_state alone: it never creates a work session and never invents elapsed time.
 
 import { z } from 'zod';
+import { TimerModeSchema } from '@shared/schemas';
 import type DatabaseType from 'better-sqlite3';
+import type { TimerMode } from '@shared/types';
 import { utcIsoTimestamp } from '@shared/utils/date';
 import { parseLegacyTimerState } from './legacy-timer';
 
 export const APP_STATE_KEYS = Object.freeze({
     legacyTimerState: 'legacy.v121.timerState',
-    legacyGoalDate: 'legacy.v121.lastGoalNotificationDate'
+    legacyGoalDate: 'legacy.v121.lastGoalNotificationDate',
+    timerState: 'timer.state'
 } as const);
 
 export const LegacyTimerRecordSchema = z.strictObject({
@@ -27,9 +30,18 @@ export const LegacyGoalDateSchema = z.strictObject({
     importedAt: z.string()
 });
 
+// CORE-07: a scalar count of seconds and nothing else. The absence of a startTime field is the point - it is what
+// makes B12 and B13 unexpressible rather than merely unwritten.
+export const TimerStateRecordSchema = z.strictObject({
+    accumulatedSeconds: z.int().nonnegative(),
+    mode: TimerModeSchema,
+    updatedAt: z.string()
+});
+
 const SCHEMAS = {
     'legacy.v121.timerState': LegacyTimerRecordSchema,
-    'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema
+    'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema,
+    'timer.state': TimerStateRecordSchema
 } as const;
 
 export type AppStateKey = keyof typeof SCHEMAS;
@@ -94,6 +106,48 @@ function recorded<K extends AppStateKey>(db: DatabaseType.Database, key: K): App
     } catch {
         return null;
     }
+}
+
+/** Where a restored value came from, so a caller can tell a real carry-over from an empty database. */
+export type TimerStateSource = 'persisted' | 'legacy' | 'none';
+
+export interface RestoredTimerState {
+    readonly accumulatedSeconds: number;
+    readonly mode: TimerMode;
+    readonly source: TimerStateSource;
+}
+
+/**
+ * The seconds a previous launch had counted, and nothing derived from how long ago that launch was: this reads no
+ * clock, so the gap between the two runs cannot be credited (CORE-05, B12). A v2 value wins; with none, the v1.2.1
+ * state Phase 4 imported is the fallback; with neither, the timer starts at zero.
+ */
+export function readTimerState(db: DatabaseType.Database): RestoredTimerState {
+    const persisted = recorded(db, APP_STATE_KEYS.timerState);
+    if (persisted !== null) {
+        return { accumulatedSeconds: persisted.accumulatedSeconds, mode: persisted.mode, source: 'persisted' };
+    }
+    const legacy = recorded(db, APP_STATE_KEYS.legacyTimerState);
+    if (legacy === null || legacy.elapsedSeconds === null || legacy.elapsedSeconds === 0) {
+        return { accumulatedSeconds: 0, mode: 'work', source: 'none' };
+    }
+    // legacy.wasRunning is left unread on purpose: v1.2.1 resumed a running timer by subtracting a stored startTime
+    // from the current wall clock, which is the whole of B12. Restoring paused is the owner's decision G3/G4.
+    return {
+        accumulatedSeconds: legacy.elapsedSeconds,
+        mode: legacy.pomodoroMode === true ? 'pomodoro' : 'work',
+        source: 'legacy'
+    };
+}
+
+export interface TimerStateInput {
+    readonly accumulatedSeconds: number;
+    readonly mode: TimerMode;
+}
+
+/** Writes the v2 key only. The imported v1.2.1 record is a record of what was found and is never overwritten. */
+export function writeTimerState(db: DatabaseType.Database, state: TimerStateInput, now: Date): void {
+    writeAppState(db, APP_STATE_KEYS.timerState, { ...state, updatedAt: utcIsoTimestamp(now) }, now);
 }
 
 // The raw string decides whenever either side carries no lastUpdated to compare (D-34).

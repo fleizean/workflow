@@ -12,7 +12,9 @@ import { closeDatabase, openDatabase } from '../src/lib/db/client';
 import { probeDatabase } from '../src/lib/db/probe';
 import { migrateDatabase } from '../src/lib/db/runner';
 import { LATEST } from '../src/lib/db/migrations/registry';
-import { APP_STATE_KEYS, importLegacyState, readAppState, writeAppState } from '../src/lib/db/app-state';
+import {
+    APP_STATE_KEYS, importLegacyState, readAppState, readTimerState, writeAppState, writeTimerState
+} from '../src/lib/db/app-state';
 
 const NOW = instantFromEpochMs(Date.UTC(2026, 8, 12, 9, 0, 0));
 const NOW_ISO = '2026-09-12T09:00:00.000Z';
@@ -241,6 +243,83 @@ describe('D-18: every app_state value is validated by its own key schema', () =>
             readAppState(db, 'legacy.v121.unknown');
             // @ts-expect-error the goal-date schema does not accept a timer record
             writeAppState(db, APP_STATE_KEYS.legacyGoalDate, { raw: GOAL_DATE, elapsedSeconds: 1 }, NOW);
+        };
+        expect(typeof neverCalled).toBe('function');
+    });
+});
+
+/*
+ * CORE-07/CORE-05: what a launch resumes from. Every assertion here is on an exact scalar, because "close enough"
+ * is how 63 invented hours passed review in v1.2.1.
+ */
+describe('the persisted timer state', () => {
+    it('starts at zero on a database that has never held one', async () => {
+        const db = await migratedDatabase('timer-empty');
+        expect(readTimerState(db)).toEqual({ accumulatedSeconds: 0, mode: 'work', source: 'none' });
+    });
+
+    it('stores a scalar second count and no start timestamp, and reads it back unchanged', async () => {
+        const db = await migratedDatabase('timer-roundtrip');
+
+        writeTimerState(db, { accumulatedSeconds: 3600, mode: 'work' }, NOW);
+        expect(readTimerState(db)).toEqual({ accumulatedSeconds: 3600, mode: 'work', source: 'persisted' });
+
+        const stored: unknown = JSON.parse(
+            db.prepare<[string], { value: string }>('SELECT value FROM app_state WHERE key = ?')
+                .get(APP_STATE_KEYS.timerState)?.value ?? 'null'
+        );
+        expect(Object.keys(stored as object).sort(),
+            'CORE-07: the persisted shape grew a field the clamp cannot protect')
+            .toEqual(['accumulatedSeconds', 'mode', 'updatedAt']);
+    });
+
+    it('adds nothing for the week between the write and the read (CORE-05, B12)', async () => {
+        const db = await migratedDatabase('timer-gap');
+        // A value written a week ago, read now. v1.2.1 would have credited the whole gap.
+        writeTimerState(db, { accumulatedSeconds: 3600, mode: 'work' }, instantFromEpochMs(SAVED_AT));
+        expect(readTimerState(db).accumulatedSeconds).toBe(3600);
+    });
+
+    it('falls back to the imported v1.2.1 elapsed seconds, and never to its running flag', async () => {
+        const db = await migratedDatabase('timer-legacy');
+        importLegacyState(db, { timerState: RUNNING_RAW, lastGoalNotificationDate: null }, NOW);
+
+        // RUNNING_RAW says running:true and was last updated a week before NOW.
+        expect(readTimerState(db)).toEqual({ accumulatedSeconds: 3600, mode: 'work', source: 'legacy' });
+    });
+
+    it('carries the v1.2.1 pomodoro mode over without carrying its elapsed reset', async () => {
+        const db = await migratedDatabase('timer-legacy-pomodoro');
+        const raw = savedState({
+            elapsed: 42, running: false, pomodoroMode: true,
+            pomodoroState: 'work', pomodoroSessionCount: 2, lastUpdated: SAVED_AT
+        });
+        importLegacyState(db, { timerState: raw, lastGoalNotificationDate: null }, NOW);
+        expect(readTimerState(db)).toEqual({ accumulatedSeconds: 42, mode: 'pomodoro', source: 'legacy' });
+    });
+
+    it('prefers a v2 value over the imported v1.2.1 one, and leaves the import untouched', async () => {
+        const db = await migratedDatabase('timer-precedence');
+        importLegacyState(db, { timerState: RUNNING_RAW, lastGoalNotificationDate: null }, NOW);
+        writeTimerState(db, { accumulatedSeconds: 10, mode: 'pomodoro' }, NOW);
+
+        expect(readTimerState(db)).toEqual({ accumulatedSeconds: 10, mode: 'pomodoro', source: 'persisted' });
+        expect(readAppState(db, APP_STATE_KEYS.legacyTimerState)?.raw,
+            'the v1.2.1 record is evidence of what was found and must not be rewritten').toBe(RUNNING_RAW);
+    });
+
+    it('treats a corrupt v2 value as none rather than resuming from garbage', async () => {
+        const db = await migratedDatabase('timer-corrupt');
+        db.prepare<[string, string, string]>(
+            'INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)'
+        ).run(APP_STATE_KEYS.timerState, '{"accumulatedSeconds":-5,"mode":"work","updatedAt":"x"}', NOW_ISO);
+        expect(readTimerState(db).source).toBe('none');
+    });
+
+    it('refuses a start timestamp at compile time', () => {
+        const neverCalled = (db: Database.Database): void => {
+            // @ts-expect-error CORE-07: the timer state has no startTime and must never grow one
+            writeTimerState(db, { accumulatedSeconds: 1, mode: 'work', startTime: 1 }, NOW);
         };
         expect(typeof neverCalled).toBe('function');
     });
