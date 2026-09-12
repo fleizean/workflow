@@ -1,7 +1,7 @@
 // CORE-08: the streak and the day and week totals. Pure functions over day totals - the tables below pass them
 // literals, and the B7 group feeds them a real fixture database through the sessions repository.
 
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import path from 'node:path';
 import { classify } from '../src/lib/db/classify';
 import { closeDatabase, openDatabase } from '../src/lib/db/client';
@@ -14,6 +14,12 @@ import { currentStreak, isGoalMet, totalForDay, weekTotals } from '../src/main/s
 import { formatLocalDate, startOfWeek } from '../src/shared/utils/date';
 import { cleanupFixtures, makeEmptyFixture } from './fixtures/seed';
 import type { DayTotal, LocalDate } from '../src/shared/types';
+
+// Criterion 3: this suite must pass with electron refusing to load. tests/services-electron-free.test.ts requires
+// the call in every test that imports a service, and would report this file the day it went missing.
+vi.mock('electron', () => {
+    throw new Error('electron was imported by a module that must load without it');
+});
 
 const ld = (text: string): LocalDate => text as LocalDate;
 const day = (date: string, totalSeconds: number): DayTotal => ({ date: ld(date), totalSeconds });
