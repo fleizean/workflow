@@ -38,7 +38,8 @@ export interface StartupPorts {
     exit(code: number): void;
     log(line: string): void;
     readLegacyStorage(): Promise<LegacyStorageSession>;
-    openMainWindow(): void;
+    /** Handed the open connection, so the caller can restore what the last session left in app_state (IPC-05). */
+    openMainWindow(connection: DatabaseHandle): void;
 }
 
 export interface StartedDatabase {
@@ -309,7 +310,7 @@ export async function startDatabase(
     const legacy = await importLegacyTimer(layer, db, env, ports);
 
     try {
-        ports.openMainWindow();
+        ports.openMainWindow(db);
     } catch (error) {
         // WR-08: no window means no app, and index.ts's catch-all calls app.exit, which skips will-quit. Nothing
         // else would ever close this connection, so it closes here.

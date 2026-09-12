@@ -1,11 +1,14 @@
 // The main window: its factory, the renderer loader and the WR-01 navigation guards.
 // The dev-server URL is honoured only unpackaged, so a packaged app never loads an address taken from the environment.
 
-import { app, BrowserWindow, type WebContents } from 'electron';
+import { app, BrowserWindow, screen, type WebContents } from 'electron';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MAIN_WINDOW, mainConfig } from './config';
+import { MAIN_WINDOW, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './config';
 import { describeError } from './errors';
+import { decideWindowClose, isQuitting } from './quit';
+import { chooseWindowBounds } from './window-bounds';
+import type { WindowBounds } from './window-bounds';
 
 // A failed load is logged, never fatal. ERR_ABORTED (the dev server's first-run reload superseding the load) is not
 // even logged; the smoke launch calls loadRenderer directly, where any failed load is a failure.
@@ -37,12 +40,84 @@ export function hasCreatedMainWindow(): boolean {
     return everCreated;
 }
 
+/*
+ * IPC-05: where the window was last put away, in app_state. Injected rather than imported, so this module still
+ * names no database code (D-10) - lifecycle.ts builds the store over the connection startDatabase opened.
+ */
+export interface WindowBoundsStore {
+    read(): WindowBounds | null;
+    write(bounds: WindowBounds): void;
+}
+
+let boundsStore: WindowBoundsStore | undefined;
+
+export function registerWindowBoundsStore(store: WindowBoundsStore | undefined): void {
+    boundsStore = store;
+}
+
+const MINIMUM = { width: MAIN_WINDOW.minWidth, height: MAIN_WINDOW.minHeight };
+
+/** Criterion 9: restored only onto a display that exists now, which is not the same as the one it was saved on. */
+function openingBounds(defaultSize: { width: number; height: number }): ReturnType<typeof chooseWindowBounds> {
+    let saved: WindowBounds | null = null;
+    try {
+        saved = boundsStore?.read() ?? null;
+    } catch (error) {
+        // A bounds read is never worth failing a launch for; the default position is always available.
+        console.error('src/main/window.ts: the saved window bounds could not be read - ' + describeError(error));
+    }
+    return chooseWindowBounds(saved, screen.getAllDisplays(), defaultSize, MINIMUM);
+}
+
+/** A resize fires continuously, so the write lands once the user has stopped, and again when the window goes away. */
+function persistBoundsOn(win: BrowserWindow): void {
+    let pending: NodeJS.Timeout | undefined;
+
+    const save = (): void => {
+        pending = undefined;
+        if (win.isDestroyed() || win.isMinimized() || !win.isVisible()) {
+            return; // a hidden or minimised window reports bounds nobody chose
+        }
+        try {
+            boundsStore?.write(win.getBounds());
+        } catch (error) {
+            console.error('src/main/window.ts: the window bounds could not be saved - ' + describeError(error));
+        }
+    };
+
+    const schedule = (): void => {
+        if (pending !== undefined) {
+            clearTimeout(pending);
+        }
+        pending = setTimeout(save, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS);
+        pending.unref();
+    };
+
+    win.on('resize', schedule);
+    win.on('move', schedule);
+    win.on('close', () => {
+        if (pending !== undefined) {
+            clearTimeout(pending);
+            pending = undefined;
+        }
+        save();
+    });
+}
+
 /** The window main.js creates today, plus the sandbox (T-02-04). */
 export function createMainWindow(options: { show: boolean }): BrowserWindow {
     const isMac = process.platform === 'darwin';
-    const win = new BrowserWindow({
+    const opening = openingBounds({
         width: MAIN_WINDOW.width,
-        height: isMac ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height,
+        height: isMac ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height
+    });
+    const win = new BrowserWindow({
+        width: opening.size.width,
+        height: opening.size.height,
+        ...(opening.position ?? {}),
+        // Criterion 9: Electron refuses a drag below these, so there is no size at which the app cannot be used.
+        minWidth: MAIN_WINDOW.minWidth,
+        minHeight: MAIN_WINDOW.minHeight,
         resizable: true,
         frame: false,
         autoHideMenuBar: true,
@@ -60,6 +135,19 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
 
     created.push(win);
     everCreated = true;
+    persistBoundsOn(win);
+
+    /*
+     * Criterion 8: the close button hides to the tray, as v1.2.1 did - the timer is in main and keeps counting. Once
+     * the app is actually quitting the close is allowed through, which is what makes Quit exit rather than re-hide.
+     */
+    win.on('close', (event) => {
+        if (decideWindowClose({ quitting: isQuitting() }) === 'hide') {
+            event.preventDefault();
+            win.hide();
+        }
+    });
+
     win.on('closed', () => {
         const index = created.indexOf(win);
         if (index >= 0) {

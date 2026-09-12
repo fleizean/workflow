@@ -781,10 +781,23 @@ describe('Pitfall 4: a hidden window can neither quit the app nor be surfaced', 
             .toEqual(expect.arrayContaining(['shouldQuitOnAllClosed', 'hasCreatedMainWindow']));
         expect(handlerCalls('will-quit'), 'will-quit no longer closes the database (D-32)')
             .toContain('closeDatabaseNow');
+        // Criterion 8: a second launch surfaces the window this instance already has, through the one function the
+        // tray's Show uses as well - so there is no second path that could open a second window or a second tray icon.
         const secondInstance = handlerCalls('second-instance');
-        expect(secondInstance, 'second-instance no longer surfaces a window createMainWindow made')
-            .toContain('mainWindows');
-        expect(secondInstance, 'second-instance may surface only a main window, never any window')
+        expect(secondInstance, 'second-instance no longer surfaces the existing window')
+            .toContain('surfaceMainWindow');
+        const surfacing = findAll(
+            lifecycleSource(),
+            (node): node is ts.FunctionDeclaration =>
+                ts.isFunctionDeclaration(node) && node.name?.text === 'surfaceMainWindow'
+        );
+        expect(surfacing, 'surfaceMainWindow is gone, so this proves nothing').toHaveLength(1);
+        const surfaced = findAll(surfacing[0] as ts.FunctionDeclaration,
+            (node): node is ts.CallExpression => ts.isCallExpression(node))
+            .map((call) => ts.isIdentifier(call.expression) ? call.expression.text
+                : ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : '(computed)');
+        expect(surfaced, 'the surfaced window is no longer one createMainWindow made').toContain('mainWindows');
+        expect([...secondInstance, ...surfaced], 'a second instance may surface only a main window, never any window')
             .not.toContain('getAllWindows');
     });
 

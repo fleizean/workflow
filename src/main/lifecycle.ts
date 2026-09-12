@@ -6,13 +6,19 @@ import { join } from 'node:path';
 import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
 import { activeContainer, clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
-import type { DatabaseLayer } from './database-startup';
+import type { DatabaseLayer, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
 import { registerIpcHandlers } from './ipc';
 import type { HandlerContext } from './ipc';
 import { readLegacyStorage } from './legacy-storage';
+import { markQuitting } from './quit';
+import { createAppTray, destroyAppTray } from './tray';
 import type { TimerService } from './services/timer.service';
-import { createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, showRenderer, windowControls } from './window';
+import {
+    createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerWindowBoundsStore, showRenderer,
+    windowControls
+} from './window';
+import type { WindowBoundsStore } from './window';
 
 export function registerLifecycle(): void {
     // WR-01: registered before any window exists, so every web contents gets the guard.
@@ -20,21 +26,13 @@ export function registerLifecycle(): void {
         hardenWebContents(contents);
     });
 
-    // WR-07: a second launch quits at the lock, so this instance surfaces its window instead.
+    // WR-07: a second launch quits at the lock, so this instance surfaces its window instead - the same window,
+    // over the same database, under the same tray icon.
     app.on('second-instance', () => {
         if (mainConfig.smoke) {
             return; // the smoke window stays hidden
         }
-        const [win] = mainWindows();
-        if (win === undefined) {
-            showRenderer(createMainWindow({ show: true }));
-            return;
-        }
-        if (win.isMinimized()) {
-            win.restore();
-        }
-        win.show();
-        win.focus();
+        surfaceMainWindow();
     });
 
     // WR-07: registered here, once by construction. It used to live inside openMainWindow, where a second call
@@ -46,6 +44,12 @@ export function registerLifecycle(): void {
         }
     });
 
+    // Criterion 8: whatever started the quit - the tray menu, a system shutdown - the close handler must stop
+    // hiding the window and let it go. Registered here so it is set before any window can receive a close.
+    app.on('before-quit', () => {
+        markQuitting();
+    });
+
     app.on('window-all-closed', () => {
         if (shouldQuitOnAllClosed(hasCreatedMainWindow(), process.platform)) {
             app.quit();
@@ -55,6 +59,8 @@ export function registerLifecycle(): void {
     // D-32: app.exit skips this, so every exit path inside startDatabase closes the database for itself.
     app.on('will-quit', () => {
         closeDatabaseNow();
+        // Windows leaves the icon in the notification area until something moves over it otherwise.
+        destroyAppTray();
     });
 }
 
@@ -108,6 +114,28 @@ export function shouldQuitOnAllClosed(mainWindowCreated: boolean, platform: stri
     return mainWindowCreated && platform !== 'darwin';
 }
 
+/** Brings the one main window back, or opens it again if it has somehow gone. Used by the tray and by a relaunch. */
+export function surfaceMainWindow(): void {
+    const [win] = mainWindows();
+    if (win === undefined) {
+        openMainWindow();
+        return;
+    }
+    if (win.isMinimized()) {
+        win.restore();
+    }
+    win.show();
+    win.focus();
+}
+
+/** IPC-05: the window's own row in app_state. The window module never names the database; this is where it meets it. */
+function createWindowBoundsStore(layer: DatabaseLayer, connection: StartedDatabase['db']): WindowBoundsStore {
+    return {
+        read: () => layer.readWindowBounds(connection),
+        write: (bounds) => { layer.writeWindowBounds(connection, bounds, new Date()); }
+    };
+}
+
 /** The services the container holds, plus the window the titlebar drives. Resolved per call, never held. */
 function handlerContext(): HandlerContext {
     return { ...activeContainer().services, window: windowControls };
@@ -137,7 +165,17 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
             exit: (code) => { app.exit(code); },
             log: (line) => { console.log(line); },
             readLegacyStorage: () => readLegacyStorage(),
-            openMainWindow
+            openMainWindow: (connection) => {
+                // The store is registered first: the window reads its saved bounds as it is constructed, and a
+                // window that opened at the default and then jumped would be worse than one that never moved.
+                registerWindowBoundsStore(createWindowBoundsStore(database, connection));
+                openMainWindow();
+                createAppTray({
+                    show: surfaceMainWindow,
+                    isVisible: () => mainWindows()[0]?.isVisible() ?? false,
+                    hide: () => { mainWindows()[0]?.hide(); }
+                }, (line) => { console.log(line); });
+            }
         }
     );
 
