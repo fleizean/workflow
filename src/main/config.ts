@@ -16,6 +16,8 @@ export const SMOKE_EXIT_FALLBACK_MS = 3_000;
 // WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
 export const SMOKE_ESCAPE_URL = 'https://example.invalid/';
 export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
+// Long enough for at least one main-process tick to cross the bus, the preload and the page (IPC-06 smoke check).
+export const SMOKE_TICK_WAIT_MS = 1_500;
 // flushStorageData is asynchronous; app.exit must not race it (D-37 seed mode).
 export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 

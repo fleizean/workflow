@@ -5,19 +5,23 @@
 import { app, BrowserWindow, session } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
-import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
+import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
+import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
     PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
-    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS, mainConfig
+    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS,
+    SMOKE_TICK_WAIT_MS, mainConfig
 } from './config';
-import { createContainer } from './container';
+import { clearActiveContainer, createContainer, setActiveContainer } from './container';
+import type { AppContainer } from './container';
+import { registerIpcHandlers, removeIpcHandlers } from './ipc';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
 import { LEGACY_STORAGE_PAGE, readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
-import { createMainWindow, loadRenderer } from './window';
+import { createMainWindow, loadRenderer, windowControls } from './window';
 
 export type SmokeDatabase = typeof DatabaseLayerModule;
 
@@ -112,13 +116,22 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
     lines.push('SMOKE_DB_VERSION=' + String(started.report.toVersion));
     lines.push('SMOKE_TIMER_IMPORT=' + describeLegacyImport(started.legacyImport));
 
+    let container: AppContainer | undefined;
     try {
         // BUILD-06: the composition root, the adapters and one Drizzle read, inside the packaged app. Nothing else
         // here exercises the bundled drizzle-orm chunk, so a bundling fault in it would otherwise wait for Phase 7.
-        const containerFailure = checkContainer(layer, started.db, lines);
-        if (containerFailure !== null) {
-            return fail(containerFailure);
+        const built = buildContainer(layer, started.db, lines);
+        if (typeof built === 'string') {
+            return fail(built);
         }
+        container = built;
+        // IPC-01: the real registration, over the real container, so the page below calls the app rather than a stub.
+        setActiveContainer(container);
+        registerIpcHandlers({
+            context: () => ({ ...built.services, window: windowControls }),
+            log: (line) => lines.push('SMOKE_IPC_LOG=' + line)
+        });
+
         // BUILD-06: the injected, brand-new database, through the same driver the bootstrap just used.
         const databaseFailure = checkInjectedDatabase(layer, dbPath, lines);
         if (databaseFailure !== null) {
@@ -131,8 +144,15 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         if (rendererFailure !== null) {
             return fail(rendererFailure);
         }
+        const bridgeFailure = await checkBridge(win, container, lines);
+        if (bridgeFailure !== null) {
+            return fail(bridgeFailure);
+        }
     } finally {
+        removeIpcHandlers();
+        clearActiveContainer();
         // D-32: before the window goes, so the -wal is folded back in even if a check threw.
+        container?.dispose();
         started.close();
         win?.destroy();
     }
@@ -164,8 +184,12 @@ async function seedLegacyTimerState(raw: string): Promise<string | null> {
     return null;
 }
 
-/** Returns the failure reason, or null when the container built and read through a repository. */
-function checkContainer(layer: SmokeDatabase, connection: StartedDatabase['db'], lines: string[]): string | null {
+/** The built container, or the reason it could not be built. The caller disposes it. */
+function buildContainer(
+    layer: SmokeDatabase,
+    connection: StartedDatabase['db'],
+    lines: string[]
+): AppContainer | string {
     try {
         const container = createContainer({
             layer,
@@ -173,18 +197,114 @@ function checkContainer(layer: SmokeDatabase, connection: StartedDatabase['db'],
             log: (line) => lines.push('SMOKE_CONTAINER_LOG=' + line)
         });
         lines.push('SMOKE_CONTAINER_PORTS=' + Object.keys(container.ports).sort().join(','));
+        lines.push('SMOKE_CONTAINER_SERVICES=' + Object.keys(container.services).sort().join(','));
         lines.push('SMOKE_CONTAINER_COMPANIES=' + String(container.repositories.companies.list().length));
         lines.push('SMOKE_CONTAINER_TARGET=' + String(container.repositories.settings.get().dailyTargetSeconds));
         const timer = container.services.timer.snapshot();
         lines.push('SMOKE_CONTAINER_TIMER=' + [
             timer.status, timer.mode, String(timer.elapsedSeconds), String(timer.restoredFromPreviousLaunch)
         ].join('/'));
-        container.dispose();
+        return container;
     } catch (error) {
         return 'container: ' + describeError(error);
     }
+}
+
+/*
+ * Criteria 6, 7 and 10 inside the packaged app: the page calls through the generated bridge, a malformed payload is
+ * refused by main before any service runs, a main-process tick is delivered to a subscription, and the disposer that
+ * subscription returned actually stops the next one.
+ */
+async function checkBridge(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
+    try {
+        const opened: unknown = await win.webContents.executeJavaScript(SUBSCRIBE_SCRIPT);
+        const surface = asRecord(opened);
+        lines.push('SMOKE_BRIDGE_CHANNELS=' + text(surface.channels));
+        lines.push('SMOKE_BRIDGE_CALL=' + text(surface.call));
+        lines.push('SMOKE_BRIDGE_REFUSAL=' + text(surface.refusal));
+        lines.push('SMOKE_BRIDGE_DISPOSER=' + text(surface.disposer));
+
+        if (surface.channels !== IPC_CHANNELS.length) {
+            return 'the bridge exposed ' + text(surface.channels) + ' channels, expected ' +
+                String(IPC_CHANNELS.length);
+        }
+        if (surface.call !== 'ok') {
+            return 'companies:list through the bridge answered ' + text(surface.call);
+        }
+        if (surface.refusal !== 'INVALID_INPUT') {
+            return 'a malformed timer:setMode was answered with ' + text(surface.refusal);
+        }
+        if (surface.disposer !== 'function') {
+            return 'a subscription returned ' + text(surface.disposer) + ' instead of a disposer';
+        }
+
+        // One second of the real clock, delivered by the real bus to the real preload subscription.
+        container.services.timer.start();
+        await new Promise((done) => setTimeout(done, SMOKE_TICK_WAIT_MS));
+        container.services.timer.pause();
+        const delivered = asRecord(await win.webContents.executeJavaScript(READ_TICKS_SCRIPT));
+        lines.push('SMOKE_BRIDGE_TICKS=' + text(delivered.ticks));
+        lines.push('SMOKE_BRIDGE_TICK_KEYS=' + text(delivered.keys));
+        if (typeof delivered.ticks !== 'number' || delivered.ticks < 1) {
+            return 'no timer:tick reached the page in ' + String(SMOKE_TICK_WAIT_MS) + ' ms';
+        }
+        if (delivered.keys !== 'elapsedSeconds,mode,restoredFromPreviousLaunch,status') {
+            return 'a tick arrived shaped as ' + text(delivered.keys);
+        }
+
+        // Criterion 10: after the disposer, the next tick must reach nobody.
+        await win.webContents.executeJavaScript(DISPOSE_SCRIPT);
+        container.services.timer.start();
+        await new Promise((done) => setTimeout(done, SMOKE_TICK_WAIT_MS));
+        container.services.timer.pause();
+        const after = asRecord(await win.webContents.executeJavaScript(READ_TICKS_SCRIPT));
+        lines.push('SMOKE_BRIDGE_TICKS_AFTER_DISPOSE=' + text(after.ticks));
+        if (after.ticks !== delivered.ticks) {
+            return 'a disposed subscription still received ' +
+                String(Number(after.ticks) - Number(delivered.ticks)) + ' events';
+        }
+        container.services.timer.reset();
+    } catch (error) {
+        return 'bridge: ' + describeError(error);
+    }
     return null;
 }
+
+const asRecord = (value: unknown): Record<string, unknown> =>
+    typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+
+/** A value the page returned, as a line of the report. Nothing from a page is trusted to stringify itself. */
+const text = (value: unknown): string =>
+    typeof value === 'string' ? value
+        : typeof value === 'number' || typeof value === 'boolean' ? String(value)
+            : JSON.stringify(value) ?? 'undefined';
+
+// Written as strings because they run in the page, not here. Each returns a plain object, so it crosses as JSON.
+const SUBSCRIBE_SCRIPT = `(async () => {
+    const api = window.${API_BRIDGE_KEY};
+    if (typeof api !== 'object' || api === null) return { channels: -1 };
+    const list = await api['companies:list']();
+    const refused = await api['timer:setMode']({ mode: 'sideways' });
+    window.__smokeBridge = { ticks: [], last: null };
+    const dispose = api.on['timer:tick']((payload) => {
+        window.__smokeBridge.ticks.push(1);
+        window.__smokeBridge.last = payload;
+    });
+    window.__smokeBridge.dispose = dispose;
+    return {
+        channels: Object.keys(api).filter((key) => key !== 'on').length,
+        call: list && list.ok === true && Array.isArray(list.data) ? 'ok' : JSON.stringify(list),
+        refusal: refused && refused.ok === false ? refused.error.code : 'accepted',
+        disposer: typeof dispose
+    };
+})()`;
+
+const READ_TICKS_SCRIPT = `({
+    ticks: window.__smokeBridge.ticks.length,
+    keys: window.__smokeBridge.last === null ? '' : Object.keys(window.__smokeBridge.last).sort().join(',')
+})`;
+
+const DISPOSE_SCRIPT = 'window.__smokeBridge.dispose(); window.__smokeBridge.dispose(); true';
 
 /** Returns the failure reason, or null when every check passed. */
 function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: string[]): string | null {

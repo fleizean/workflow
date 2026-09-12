@@ -3,8 +3,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../src/main/config';
+import { IPC_CHANNELS } from '../src/shared/ipc/channels';
 import {
-    EXPECTED_EXIT_CODES, evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed
+    EXPECTED_EXIT_CODES, EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, evaluateRefusalCase, evaluateTimerCase,
+    evaluateWalFlushed
 } from '../tools/smoke-packaged.mjs';
 import type { SmokeCheck, SmokeReport } from '../tools/smoke-packaged.mjs';
 
@@ -100,5 +102,14 @@ describe('D-32: every normal smoke exit leaves no write-ahead log behind', () =>
 describe('T-04-50: the harness and the app cannot drift apart on exit codes', () => {
     it('EXPECTED_EXIT_CODES restates EXIT_CODES from src/main/config.ts exactly', () => {
         expect(EXPECTED_EXIT_CODES).toEqual({ ...EXIT_CODES });
+    });
+
+    it('EXPECTED_IPC_CHANNELS restates the contract channel count, so a new channel is smoked too', () => {
+        expect(EXPECTED_IPC_CHANNELS).toBe(IPC_CHANNELS.length);
+    });
+
+    // The same seven names tests/container.test.ts reads off the real container, so neither can move alone.
+    it('EXPECTED_SERVICES restates what the container composes', () => {
+        expect(EXPECTED_SERVICES).toBe('companies,goal,pomodoro,sessions,settings,stats,timer');
     });
 });

@@ -32,6 +32,10 @@ export const EXPECTED_LATEST = 2;
 export const LEGACY_TIMER_KEY = 'legacy.v121.timerState';
 export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 
+/** src/shared/ipc/channels.ts's IPC_CHANNELS and the container's services; tests/smoke-harness.test.ts holds them equal. */
+export const EXPECTED_IPC_CHANNELS = 30;
+export const EXPECTED_SERVICES = 'companies,goal,pomodoro,sessions,settings,stats,timer';
+
 /** src/main/config.ts's EXIT_CODES, restated for plain Node; tests/smoke-harness.test.ts holds the two equal (T-04-50). */
 export const EXPECTED_EXIT_CODES = Object.freeze({
     doorClosed: 3,
@@ -159,6 +163,9 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('the composition root built all five ports',
         f.SMOKE_CONTAINER_PORTS === 'bus,clock,notifier,scheduler,sound',
         'reported ' + JSON.stringify(f.SMOKE_CONTAINER_PORTS));
+    check('the composition root built all seven services',
+        f.SMOKE_CONTAINER_SERVICES === EXPECTED_SERVICES,
+        'reported ' + JSON.stringify(f.SMOKE_CONTAINER_SERVICES));
     check('a repository read through Drizzle in the packaged app',
         /^\d+$/.test(f.SMOKE_CONTAINER_COMPANIES ?? '') && Number(f.SMOKE_CONTAINER_TARGET) > 0,
         'companies=' + JSON.stringify(f.SMOKE_CONTAINER_COMPANIES) +
@@ -182,6 +189,24 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('a top-level navigation away from the renderer was refused',
         f.SMOKE_NAVIGATION_BLOCKED === 'true',
         'reported ' + JSON.stringify(f.SMOKE_NAVIGATION_BLOCKED));
+
+    // IPC-01/IPC-06 in the packaged app: the page calls the real handlers through the generated bridge.
+    check('the bridge exposed every contract channel',
+        f.SMOKE_BRIDGE_CHANNELS === String(EXPECTED_IPC_CHANNELS),
+        'reported ' + JSON.stringify(f.SMOKE_BRIDGE_CHANNELS) + ', expected ' + String(EXPECTED_IPC_CHANNELS));
+    check('a channel called from the page answered from the database',
+        f.SMOKE_BRIDGE_CALL === 'ok', 'reported ' + JSON.stringify(f.SMOKE_BRIDGE_CALL));
+    check('a malformed payload was refused in main before any service ran',
+        f.SMOKE_BRIDGE_REFUSAL === 'INVALID_INPUT', 'reported ' + JSON.stringify(f.SMOKE_BRIDGE_REFUSAL));
+    check('a subscription returned a disposer',
+        f.SMOKE_BRIDGE_DISPOSER === 'function', 'reported ' + JSON.stringify(f.SMOKE_BRIDGE_DISPOSER));
+    check('a main-process tick reached the page, carrying the snapshot and no event object',
+        Number(f.SMOKE_BRIDGE_TICKS) >= 1 &&
+        f.SMOKE_BRIDGE_TICK_KEYS === 'elapsedSeconds,mode,restoredFromPreviousLaunch,status',
+        'ticks=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS) + ' keys=' + JSON.stringify(f.SMOKE_BRIDGE_TICK_KEYS));
+    check('the disposer stopped the next one (criterion 10)',
+        f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE === f.SMOKE_BRIDGE_TICKS,
+        'before=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS) + ' after=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE));
 
     return checks;
 }

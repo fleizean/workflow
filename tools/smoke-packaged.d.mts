@@ -38,6 +38,8 @@ export interface DatabaseObservation {
 export declare const LEGACY_TIMER_KEY: string;
 export declare const SMOKE_SEED_TIMER_STATE_ENV: string;
 export declare const EXPECTED_EXIT_CODES: Readonly<Record<string, number>>;
+export declare const EXPECTED_IPC_CHANNELS: number;
+export declare const EXPECTED_SERVICES: string;
 
 export interface LaunchExit {
     readonly code: number | null;
