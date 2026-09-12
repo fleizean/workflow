@@ -663,6 +663,7 @@ describe('D-15 and D-14: import boundaries', () => {
  */
 describe('ARCH-01: lint proves the direction of the main process', () => {
     const SERVICE_FILE = 'src/main/services/stats.service.ts';
+    const HANDLER_FILE = 'src/main/ipc/handlers.ts';
     const ADAPTER_FILE = 'src/main/adapters/electron-notifier.adapter.ts';
     const CONTAINER_FILE = 'src/main/container.ts';
     const DB_FILE = 'src/lib/db/handle.ts';
@@ -693,6 +694,24 @@ describe('ARCH-01: lint proves the direction of the main process', () => {
         );
         expect(flagged, 'ARCH-01 puts Electron behind adapters; an adapter that cannot import it has nowhere to go')
             .toEqual([]);
+    }, 60_000);
+
+    it('refuses the database and the adapters in a handler, and lets electron and the services through', async () => {
+        const banned = [
+            "import { createSessionsRepository } from '../../lib/db';",
+            "import { readTimerState } from '@lib/db/app-state';",
+            "import Database from 'better-sqlite3';",
+            "import { createElectronPorts } from '../adapters';"
+        ];
+        // ipcMain is how a handler is reached at all, and the services are what a handler is for.
+        const allowed = [
+            "import { ipcMain } from 'electron';",
+            "import { createTimerService } from '../services/timer.service';",
+            "import { ipcContract } from '@shared/ipc/contract';"
+        ];
+        const { missed, flagged } = await probe(HANDLER_FILE, [], banned, allowed, byRule('no-restricted-imports'));
+        expect(missed, 'ARCH-01: a handler was allowed to reach past the services').toEqual([]);
+        expect(flagged, 'a handler was refused electron, a service or the contract').toEqual([]);
     }, 60_000);
 
     it('refuses a drizzle value import outside src/lib/db and allows a type import', async () => {

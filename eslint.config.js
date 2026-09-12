@@ -64,6 +64,19 @@ const SERVICE_LAYER_PATTERNS = [
     { regex: '(^|/)main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE }
 ];
 
+// ARCH-01: a handler validates, calls one service and shapes the answer. It may name electron - ipcMain is how a
+// handler is reached - but not the database, not a repository and not an adapter: a handler that reaches past the
+// services is a handler with logic in it, and the logic would sit where no unit test can see it.
+const IPC_LAYER_MESSAGE = 'src/main/ipc takes the shared contract and the services the container holds; the database, the repositories and the adapters sit below it (ARCH-01).';
+const IPC_LAYER_PATHS = [{ name: 'better-sqlite3', message: IPC_LAYER_MESSAGE }];
+const IPC_LAYER_PATTERNS = [
+    { regex: '^(\\.\\./)+lib(/|$)', message: IPC_LAYER_MESSAGE },
+    { regex: '^@lib(/|$)', message: IPC_LAYER_MESSAGE },
+    { regex: '(^|/)lib/db(/|$)', message: IPC_LAYER_MESSAGE },
+    { regex: '^(\\.\\./)+adapters(/|$)', message: IPC_LAYER_MESSAGE },
+    { regex: '^@main/adapters(/|$)', message: IPC_LAYER_MESSAGE }
+];
+
 // ARCH-01 / CORE-16: Drizzle is how src/lib/db writes SQL; a value import of it anywhere else is SQL somewhere else.
 // Types are allowed, so a caller may still name a row shape the schema derives.
 const DRIZZLE_VALUE_MESSAGE = 'Drizzle and the SQL it builds live only under src/lib/db; call a repository (ARCH-01, CORE-16).';
@@ -294,6 +307,17 @@ module.exports = [
             'no-restricted-imports': ['error', {
                 paths: [...SERVICE_LAYER_PATHS, ...DRIZZLE_TOOLING_PATHS],
                 patterns: [...SERVICE_LAYER_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }]
+        }
+    },
+    // ARCH-01, criterion 11: the other direction of the same rule - handlers may know the services, never the layer
+    // underneath them.
+    {
+        files: ['src/main/ipc/**'],
+        rules: {
+            'no-restricted-imports': ['error', {
+                paths: [...IPC_LAYER_PATHS, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...IPC_LAYER_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
             }]
         }
     },
