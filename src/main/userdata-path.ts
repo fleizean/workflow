@@ -90,13 +90,19 @@ export function isSameOrInside(parent: string, child: string): boolean {
 
 export interface DoorInput {
     readonly isPackaged: boolean;
-    readonly smoke: boolean;
     readonly doorOpen: boolean;
     readonly userDataDir: string;
     readonly productionDir: string;
 }
 
-/** D-36: a packaged, non-smoke launch must not open the production krono.db while the door is closed. */
+/**
+ * D-36: a packaged launch must not open the production krono.db while the door is closed.
+ *
+ * WR-10: smoke mode used to be exempt, which left runSmoke's own checks as the only thing between the packaged
+ * app and the real database - the same protection in two modules with no structural link, and an unguarded path
+ * for any future caller that passed smoke: true. The smoke satisfies this door the way a developer does, by
+ * pointing --user-data-dir somewhere else, which runSmoke requires of it anyway.
+ */
 export function productionDataDoorRefuses(input: DoorInput): boolean {
-    return input.isPackaged && !input.smoke && !input.doorOpen && isSameOrInside(input.productionDir, input.userDataDir);
+    return input.isPackaged && !input.doorOpen && isSameOrInside(input.productionDir, input.userDataDir);
 }

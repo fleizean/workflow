@@ -226,7 +226,6 @@ function harness(tag: string, options: HarnessOptions = {}): Harness {
             userDataDir,
             productionDir: path.join(root, 'production'),
             isPackaged: false,
-            smoke: false,
             doorOpen: false,
             now: NOW,
             ...options.env
@@ -322,7 +321,7 @@ describe('D-36: the production-data door closes before anything reads the databa
         const root = tempRoot('door');
         const production = path.join(root, 'production');
         fs.mkdirSync(production);
-        const h = harness('door-run', { env: { isPackaged: true, smoke: false, doorOpen: false } });
+        const h = harness('door-run', { env: { isPackaged: true, doorOpen: false } });
         const env: StartupEnvironment = { ...h.env, userDataDir: production, productionDir: production };
 
         const started = await startDatabase(h.layer, env, h.ports);

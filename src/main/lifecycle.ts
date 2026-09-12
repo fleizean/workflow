@@ -90,7 +90,6 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
             userDataDir: app.getPath('userData'),
             productionDir: join(appData, app.getName()),
             isPackaged: app.isPackaged,
-            smoke: mainConfig.smoke,
             doorOpen: PRODUCTION_DATA_DOOR_OPEN,
             now: new Date()
         },

@@ -384,25 +384,40 @@ describe('WR-04: one containment rule for every production-directory guard', () 
 
 describe('D-36: the production-data door', () => {
     const production = path.join(APP_DATA, STUB_NAME);
-    const ROWS = [false, true].flatMap((isPackaged) => [false, true].flatMap((smoke) => [false, true].flatMap((doorOpen) =>
-        [false, true].map((inside) => ({ isPackaged, smoke, doorOpen, inside })))));
-    const REFUSING = { isPackaged: true, smoke: false, doorOpen: false, inside: true };
+    // WR-10: eight rows, not sixteen. `smoke` left DoorInput: a --smoke launch used to walk straight past the
+    // door, leaving runSmoke's own checks as the only thing between the packaged app and the real krono.db.
+    const ROWS = [false, true].flatMap((isPackaged) => [false, true].flatMap((doorOpen) =>
+        [false, true].map((inside) => ({ isPackaged, doorOpen, inside }))));
+    const REFUSING = { isPackaged: true, doorOpen: false, inside: true };
     const input = (row: (typeof ROWS)[number], userDataDir?: string): DoorInput => ({
         isPackaged: row.isPackaged,
-        smoke: row.smoke,
         doorOpen: row.doorOpen,
         productionDir: production,
         userDataDir: userDataDir ?? (row.inside ? production : production + '-fixture')
     });
 
-    it('covers all 16 combinations and refuses exactly one', () => {
-        expect(new Set(ROWS.map((row) => JSON.stringify(row))).size).toBe(16);
+    it('covers all 8 combinations and refuses exactly one', () => {
+        expect(new Set(ROWS.map((row) => JSON.stringify(row))).size).toBe(8);
         expect(ROWS.filter((row) => productionDataDoorRefuses(input(row)))).toEqual([REFUSING]);
     });
 
-    it.each(ROWS)('isPackaged=$isPackaged smoke=$smoke doorOpen=$doorOpen inside=$inside', (row) => {
+    it.each(ROWS)('isPackaged=$isPackaged doorOpen=$doorOpen inside=$inside', (row) => {
         const expected = JSON.stringify(row) === JSON.stringify(REFUSING);
         expect(productionDataDoorRefuses(input(row)), 'D-36: wrong verdict for ' + JSON.stringify(row)).toBe(expected);
+    });
+
+    // WR-10: the exemption meant that under --smoke the only thing between the packaged app and the real
+    // krono.db was runSmoke's own isSameOrInside checks - the same protection in two modules with no
+    // structural link, and an open path for any future caller that passed smoke: true into startDatabase.
+    it('offers no launch-mode exemption: neither the door nor the startup environment carries one', () => {
+        const door = /export function productionDataDoorRefuses\([\s\S]*?\n}/.exec(moduleSource)?.[0] ?? '';
+        expect(door, 'productionDataDoorRefuses was not found in ' + MODULE).not.toBe('');
+        expect(door, 'WR-10: the door exempts a launch mode again').not.toContain('smoke');
+
+        const startup = fs.readFileSync(path.join(repoRoot, 'src/main/database-startup.ts'), 'utf8');
+        const environment = /export interface StartupEnvironment \{[\s\S]*?\n}/.exec(startup)?.[0] ?? '';
+        expect(environment, 'StartupEnvironment was not found').not.toBe('');
+        expect(environment, 'WR-10: startDatabase takes a smoke flag again').not.toContain('smoke');
     });
 
     it('refuses a child and another-case spelling of the production directory too', () => {
@@ -412,12 +427,12 @@ describe('D-36: the production-data door', () => {
         }
     });
 
-    it.runIf(process.platform === 'win32')('refuses a packaged non-smoke launch whose userData is a junction to the production directory', () => {
+    it.runIf(process.platform === 'win32')('refuses a packaged launch whose userData is a junction to the production directory', () => {
         withProductionFixture(({ root, target, addLink }) => {
             const link = path.join(root, 'link');
             junction(link, target);
             addLink(link);
-            const door = { isPackaged: true, smoke: false, doorOpen: false, productionDir: target };
+            const door = { isPackaged: true, doorOpen: false, productionDir: target };
             expect(productionDataDoorRefuses({ ...door, userDataDir: link }), 'D-36: the door opened for a junction').toBe(true);
             expect(productionDataDoorRefuses({ ...door, userDataDir: path.join(root, 'elsewhere') })).toBe(false);
         });

@@ -88,7 +88,6 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             userDataDir: userData,
             productionDir: productionUserData,
             isPackaged: app.isPackaged,
-            smoke: true,
             doorOpen: PRODUCTION_DATA_DOOR_OPEN,
             now: new Date()
         },

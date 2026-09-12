@@ -28,7 +28,6 @@ export interface StartupEnvironment {
     readonly userDataDir: string;
     readonly productionDir: string;
     readonly isPackaged: boolean;
-    readonly smoke: boolean;
     readonly doorOpen: boolean;
     readonly now: Date;
 }
@@ -177,7 +176,6 @@ export async function startDatabase(
     // D-36 first: nothing may open the production directory's krono.db while the door is closed.
     if (productionDataDoorRefuses({
         isPackaged: env.isPackaged,
-        smoke: env.smoke,
         doorOpen: env.doorOpen,
         userDataDir: env.userDataDir,
         productionDir: env.productionDir
