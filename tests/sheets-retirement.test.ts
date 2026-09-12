@@ -18,13 +18,23 @@ import { executeV121Init } from './helpers/v121-sql';
 import { declaredContract, liveContract } from './helpers/schema-contract';
 import { read, repoRoot, stripCommentsAndStrings } from './helpers/ts-imports';
 
-// The names the v2 app surface gave the export. None may appear at all, comments included: nothing in src/shared or
-// src/main has any reason to say them now.
+// The names the v2 app surface gave the export. None may appear at all, comments included: nothing in src/shared,
+// src/main or src/lib has any reason to say them now.
 const SURFACE_NAMES = ['scriptUrl', 'SheetsTarget', 'updateSheetsTarget', 'exportHalfHourPrecision'];
 
 // The v1.2.1 column and setting names. A comment may explain what the database keeps; code and SQL may not name it,
-// which is what "no service reads it" means while the repositories under src/lib/db still may.
+// which is what "nothing reads it" means now that the repositories exist (owner decision, 2026-09-12).
 const LEGACY_NAMES = ['excel_column', 'note_column', 'script_url', 'export_half_hour_precision'];
+
+// The three places under src/lib that may still name them, each by name rather than by a wildcard. All three exist to
+// KEEP the data: schema.ts declares the columns, and the other two replay v1.2.1's own DDL verbatim and are SHA-256
+// pinned. Everything else under src/lib - the repositories included - is scanned like src/shared and src/main.
+// Destructive cleanup is deferred to V2-SCHEMA-01: a user who downgraded to v1.2.1 would crash on every company
+// update if the columns were gone.
+const LIB_EXEMPT_FILES = ['src/lib/db/schema.ts', 'src/lib/db/baseline-v121.ts'];
+const LIB_EXEMPT_DIR = 'src/lib/db/migrations/';
+// The byte-pinned replay the directory exemption exists for; a .sql is not reached by the TypeScript scan on its own.
+const MIGRATION_BASELINE = 'src/lib/db/migrations/0000_v121_baseline.sql';
 
 // Frozen until Phase 7 (D-01/D-04) and expected to keep every reference.
 const LEGACY_FILES = ['main.js', 'database/db.js', 'src/pages/settings.html', 'src/pages/companies.html'];
@@ -47,14 +57,20 @@ afterAll(() => {
 });
 
 // Git-known, committed or not: a file added by the very commit this guard is meant to catch is still scanned.
-function appFiles(): string[] {
-    return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', 'src/shared', 'src/main'], {
+function trackedTs(...dirs: string[]): string[] {
+    return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...dirs], {
         cwd: repoRoot,
         encoding: 'utf8'
     })
         .split('\n')
         .map((line) => line.trim())
         .filter((file) => /\.tsx?$/.test(file) && fs.existsSync(path.join(repoRoot, file)));
+}
+
+const isExempt = (file: string): boolean => LIB_EXEMPT_FILES.includes(file) || file.startsWith(LIB_EXEMPT_DIR);
+
+function appFiles(): string[] {
+    return trackedTs('src/shared', 'src/main', 'src/lib').filter((file) => !isExempt(file));
 }
 
 const lineOf = (source: string, index: number): number => source.slice(0, index).split('\n').length;
@@ -129,8 +145,30 @@ describe('SC4: the Sheets vocabulary is gone from the app surface', () => {
     it('scans the files it guards', () => {
         expect(files, 'the scan cannot see the surface it guards').toEqual(expect.arrayContaining([
             'src/shared/schemas/index.ts', 'src/shared/ipc/contract.ts', 'src/shared/types/index.ts',
-            'src/shared/constants/settings.ts', 'src/main/index.ts'
+            'src/shared/constants/settings.ts', 'src/main/index.ts',
+            'src/lib/db/repositories/companies.repository.ts', 'src/lib/db/repositories/settings.repository.ts',
+            'src/lib/db/repositories/sessions.repository.ts', 'src/lib/db/repositories/pomodoro.repository.ts'
         ]));
+        expect(files.filter(isExempt), 'an exempt file must not also be scanned').toEqual([]);
+    });
+
+    // Each exemption is named, and each is shown to still carry what it is exempt for: an exemption over a file that
+    // no longer says anything is dead weight that would quietly widen as the file changed.
+    it.each(LIB_EXEMPT_FILES)('exempts %s, which still declares the columns the data lives in', (file) => {
+        expect(inCodeAndStrings(file, LEGACY_NAMES).length,
+            file + ' no longer names a retired column, so its exemption is stale').toBeGreaterThan(0);
+    });
+
+    it('exempts the migrations directory for a replay that still carries the v1.2.1 DDL', () => {
+        expect(read(MIGRATION_BASELINE), 'the byte-pinned baseline stopped creating the columns it is exempt for')
+            .toContain('excel_column');
+    });
+
+    it('exempts three places under src/lib and no more', () => {
+        expect([...LIB_EXEMPT_FILES, LIB_EXEMPT_DIR]).toHaveLength(3);
+        expect(trackedTs('src/lib').filter(isExempt).sort(),
+            'a new TypeScript file under src/lib/db/migrations would inherit the directory exemption; name it here')
+            .toEqual([...LIB_EXEMPT_FILES, 'src/lib/db/migrations/registry.ts'].sort());
     });
 
     it('finds a planted name (negative control)', () => {
@@ -149,7 +187,8 @@ describe('SC4: the Sheets vocabulary is gone from the app surface', () => {
 
     it('reads no excel_column, note_column, script_url or export_half_hour_precision', () => {
         expect(files.flatMap((file) => inCodeAndStrings(file, LEGACY_NAMES)),
-            'SC4: a service reads retired data; the columns stay in the database and nothing above src/lib/db touches them')
+            'SC4: something reads retired data. The columns stay in the database, no repository selects, maps or ' +
+            'exposes them, and only schema.ts and the pinned v1.2.1 replays may name them')
             .toEqual([]);
     });
 
