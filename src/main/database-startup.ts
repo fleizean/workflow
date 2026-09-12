@@ -74,14 +74,33 @@ export function doorMessage(productionDir: string): string {
 }
 
 /** What re-reading the file after the failure showed, never where in the code the throw happened (CR-02). */
-export type DatabaseChange = 'unchanged' | 'changed' | 'unknown';
+export type DatabaseChange = 'unchanged' | 'created' | 'changed' | 'gone' | 'unknown';
 
 const HEADS: Readonly<Record<DatabaseChange, string>> = Object.freeze({
     unchanged: 'Workflow stopped instead of changing your database, which is still there as it was.',
+    created: 'Workflow stopped while setting up a new database. The file it had started is on disk, unfinished, ' +
+        'and there was nothing here before it.',
     changed: 'Workflow stopped part-way through updating your database. The step that failed was rolled back, ' +
         'but the steps before it had already been saved.',
+    gone: 'Workflow stopped while updating your database, and the file is no longer where it was.',
     unknown: 'Workflow stopped while updating your database, and could not read the file afterwards to say how ' +
         'much of the update it kept.'
+});
+
+// WR-01: every one of these is a claim about the user's file, so each says only what the re-probe supports. The
+// "no database was created" line is missing from created and unknown on purpose: one created the file, the other
+// could not read it to say. Workflow renames and replaces nothing on any of these paths (D-31).
+const ADVICE: Readonly<Record<DatabaseChange, string>> = Object.freeze({
+    unchanged: 'No database was created, renamed or replaced. Install the latest version of Workflow and ' +
+        'start it again; if this repeats, copy that file somewhere safe before doing anything else.',
+    created: 'Nothing of yours was renamed or replaced - there was no database here until this start. Install the ' +
+        'latest version of Workflow and start it again, which begins that file again.',
+    changed: 'No database was created, renamed or replaced. Copy the file above, and the backup if there is one, ' +
+        'somewhere safe before starting Workflow again.',
+    gone: 'Workflow never deletes, renames or replaces a database, so something else moved this one. Copy the ' +
+        'backup, if there is one, somewhere safe before starting Workflow again.',
+    unknown: 'Workflow renamed and replaced nothing. Copy the file above, and the backup if there is one, ' +
+        'somewhere safe before starting Workflow again.'
 });
 
 // WR-03: the app has no restore action, so the backup is described as a file to keep, never as something
@@ -92,13 +111,8 @@ export function failureMessage(
     const backup = details.backupPath === null
         ? 'No backup was taken.'
         : 'A verified copy of it, taken before anything was attempted, is at:\n' + details.backupPath;
-    const advice = details.changed === 'unchanged'
-        ? 'No database was created, renamed or replaced. Install the latest version of Workflow and ' +
-            'start it again; if this repeats, copy that file somewhere safe before doing anything else.'
-        : 'No database was created, renamed or replaced. Copy the file above, and the backup if there is one, ' +
-            'somewhere safe before starting Workflow again.';
-    return HEADS[details.changed] + '\n\n' +
-        details.dbPath + '\n\n' + backup + '\n\nReason: ' + details.reason + '\n\n' + advice;
+    return HEADS[details.changed] + '\n\n' + details.dbPath + '\n\n' + backup +
+        '\n\nReason: ' + details.reason + '\n\n' + ADVICE[details.changed];
 }
 
 function summaryLine(report: MigrationReport): string {
@@ -143,10 +157,18 @@ function reportFailure(
 
 // CR-02: what the dialog tells the user about their file is read back off the file, not inferred from where the
 // throw came from. The connection is closed by now, so this read-only probe sees what the next launch would.
-function observeChange(layer: DatabaseLayer, dbPath: string, before: number): DatabaseChange {
+// WR-01: whether the file is there is part of what changed. A fresh install's file is created by openDatabase and
+// is at version 0 either way, so comparing versions alone told that user nothing was created next to a new krono.db.
+function observeChange(
+    layer: DatabaseLayer,
+    dbPath: string,
+    before: { readonly exists: boolean; readonly userVersion: number }
+): DatabaseChange {
     const probe = layer.probeDatabase(dbPath);
     if (!probe.ok) return 'unknown';
-    return probe.observed.userVersion === before ? 'unchanged' : 'changed';
+    const { exists, userVersion } = probe.observed;
+    if (exists !== before.exists) return exists ? 'created' : 'gone';
+    return userVersion === before.userVersion ? 'unchanged' : 'changed';
 }
 
 // D-33: best effort. A read that fails or times out is logged by reason and retried on the next launch, and the
@@ -239,7 +261,13 @@ export async function startDatabase(
     try {
         db = layer.openDatabase(dbPath, { deferJournalMode: dbClass !== 'fresh' });
     } catch (error) {
-        reportFailure(ports, { dbPath, backupPath: null, reason: describeError(error), changed: 'unchanged' });
+        // WR-01: the driver creates the file before the pragmas take, so even this path can leave one behind.
+        reportFailure(ports, {
+            dbPath,
+            backupPath: null,
+            reason: describeError(error),
+            changed: observeChange(layer, dbPath, probe.observed)
+        });
         return null;
     }
 
@@ -259,7 +287,7 @@ export async function startDatabase(
             dbPath,
             backupPath: error instanceof layer.MigrationFailedError ? error.backupPath : null,
             reason: describeError(error) + (closeProblem === null ? '' : ' (and ' + closeProblem + ')'),
-            changed: observeChange(layer, dbPath, probe.observed.userVersion)
+            changed: observeChange(layer, dbPath, probe.observed)
         });
         return null;
     }

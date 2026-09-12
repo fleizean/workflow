@@ -619,6 +619,72 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(h.recorder.logs.join('\n')).toContain('still in its previous journal mode');
     });
 
+    // WR-01: openDatabase creates the file and writes its WAL header, and a fresh install is at user_version 0
+    // before and after. Comparing versions alone called that "unchanged", so the one user whose database really
+    // had just been created was the one told none was.
+    it('does not deny creating the file when a fresh install\'s own migration fails', async () => {
+        const h = harness('fresh-failure', {
+            userDataSubdir: 'userdata',
+            layer: {
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    applyBaseline: () => { throw new Error('injected baseline failure'); }
+                })
+            }
+        });
+        expect(fs.existsSync(h.userDataDir), 'the fresh case must start with no directory').toBe(false);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(fs.existsSync(h.dbPath), 'no file was created, so this case proves nothing about denying one')
+            .toBe(true);
+        const body = h.recorder.reports[0]?.body ?? '';
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(body, 'the dialog denied creating the file it had just created')
+            .not.toContain('No database was created');
+        expect(body, 'the dialog claimed a file that did not exist an instant ago was untouched')
+            .not.toContain('still there as it was');
+        expect(body, 'the dialog never says the file is new and unfinished')
+            .toContain('The file it had started is on disk, unfinished');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+    });
+
+    // The converse of the same omission: a file that is gone reads as version 0, which for a legacy database at
+    // version 0 was "unchanged" - "still there as it was" about a file that is not there.
+    it('does not call a database that vanished under it unchanged', async () => {
+        let probes = 0;
+        const h = harness('file-vanished', {
+            layer: {
+                probeDatabase: (dbPath, probeOptions) => {
+                    probes += 1;
+                    const result = realLayer.probeDatabase(dbPath, probeOptions);
+                    // The re-probe after the failure, standing in for a file moved or removed under the app: it
+                    // cannot be done by deleting it here, because the connection holds it open on Windows.
+                    if (probes === 1 || !result.ok) return result;
+                    return { ok: true, observed: { ...result.observed, exists: false, userVersion: 0 } };
+                },
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    applyBaseline: () => { throw new Error('injected baseline failure'); }
+                })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(probes, 'nothing re-probed the file, so the dialog cannot have been derived from it')
+            .toBeGreaterThan(1);
+        const body = h.recorder.reports[0]?.body ?? '';
+        expect(body, 'the dialog said a file that is gone is still there as it was')
+            .not.toContain('still there as it was');
+        expect(body, 'the dialog never says the file is no longer where it was')
+            .toContain('no longer where it was');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+    });
+
     it('reports a backup that could not be taken, and leaves the version where it was', async () => {
         const h = harness('backup-failure');
         writeLegacyDatabase(h.dbPath);
