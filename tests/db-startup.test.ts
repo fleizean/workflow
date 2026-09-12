@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import ts from 'typescript';
 import { instantFromEpochMs } from '@shared/utils/date';
 import * as realLayer from '../src/lib/db';
 import { EXIT_CODES } from '../src/main/config';
@@ -14,7 +15,12 @@ import { startDatabase } from '../src/main/database-startup';
 import type {
     DatabaseLayer, ReportKind, StartedDatabase, StartupEnvironment, StartupPorts
 } from '../src/main/database-startup';
+import { closeDatabaseNow, registerDatabaseCloser, shouldQuitOnAllClosed } from '../src/main/lifecycle';
 import type { LegacyStorageRead, LegacyStorageSession } from '../src/main/legacy-storage';
+import { hasCreatedMainWindow, mainWindows } from '../src/main/window';
+import { findAll, read } from './helpers/ts-imports';
+
+const LIFECYCLE = 'src/main/lifecycle.ts';
 
 const NOW = instantFromEpochMs(Date.UTC(2026, 8, 12, 9, 0, 0));
 
@@ -110,6 +116,9 @@ interface Recorder {
     readonly reports: { kind: ReportKind; title: string; body: string }[];
     readonly exits: number[];
     readonly logs: string[];
+    // Every write connection startup opened, and whether any was still open when it reported (D-31).
+    readonly handles: Database.Database[];
+    readonly handleOpenAtReport: boolean[];
 }
 
 interface Harness {
@@ -134,7 +143,7 @@ interface HarnessOptions {
 function harness(tag: string, options: HarnessOptions = {}): Harness {
     const root = tempRoot(tag);
     const userDataDir = options.userDataSubdir === undefined ? root : path.join(root, options.userDataSubdir);
-    const recorder: Recorder = { calls: [], reports: [], exits: [], logs: [] };
+    const recorder: Recorder = { calls: [], reports: [], exits: [], logs: [], handles: [], handleOpenAtReport: [] };
     const session = { released: 0 };
 
     const layer: DatabaseLayer = {
@@ -145,7 +154,9 @@ function harness(tag: string, options: HarnessOptions = {}): Harness {
         },
         openDatabase: (dbPath, openOptions) => {
             recorder.calls.push('open');
-            return realLayer.openDatabase(dbPath, openOptions);
+            const db = realLayer.openDatabase(dbPath, openOptions);
+            recorder.handles.push(db);
+            return db;
         },
         migrateDatabase: async (db, migrateOptions) => {
             recorder.calls.push('migrate');
@@ -165,6 +176,7 @@ function harness(tag: string, options: HarnessOptions = {}): Harness {
         report: (kind, title, body) => {
             recorder.calls.push('report:' + kind);
             recorder.reports.push({ kind, title, body });
+            recorder.handleOpenAtReport.push(recorder.handles.some((db) => db.open));
         },
         exit: (code) => {
             recorder.calls.push('exit:' + String(code));
@@ -303,6 +315,152 @@ describe('D-36: the production-data door closes before anything reads the databa
         expect(h.recorder.exits).toEqual([EXIT_CODES.doorClosed]);
         expect(h.recorder.calls, 'the door let the probe run').not.toContain('probe');
         expect(fs.readdirSync(production), 'the door let something touch the directory').toEqual([]);
+    });
+});
+
+describe('D-31: a failure closes the connection, says where things are, and changes nothing', () => {
+    it('reports a file it cannot read without ever opening it read-write, and changes no byte', async () => {
+        const h = harness('unreadable');
+        fs.writeFileSync(h.dbPath, Buffer.from('not a database, just bytes that look like nothing'));
+        const before = sha256(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(h.recorder.reports).toHaveLength(1);
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(h.recorder.reports[0]?.body).toContain(h.dbPath);
+        expect(h.recorder.reports[0]?.body).toContain('No backup was taken.');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+        expect(h.recorder.calls, 'an unreadable file was opened read-write').not.toContain('open');
+        expect(h.recorder.calls).not.toContain('openMainWindow');
+        expect(sha256(h.dbPath), 'the unreadable file changed on disk').toBe(before);
+    });
+
+    it('closes the connection before reporting a failed migration, and names the verified backup', async () => {
+        const h = harness('migration-failure', {
+            layer: {
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    applyBaseline: () => { throw new Error('injected migration failure'); }
+                })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(h.recorder.handles, 'no connection was opened, so this proves nothing').toHaveLength(1);
+        expect(h.recorder.handleOpenAtReport, 'the connection was still open when the dialog was shown')
+            .toEqual([false]);
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+
+        const backups = backupsIn(h.backupDir);
+        expect(backups, 'a legacy database was migrated without a backup').toHaveLength(1);
+        expect(h.recorder.reports[0]?.body).toContain(h.dbPath);
+        expect(h.recorder.reports[0]?.body).toContain(path.join(h.backupDir, backups[0] ?? ''));
+        expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
+        expect(h.recorder.calls).not.toContain('openMainWindow');
+
+        const strays = fs.readdirSync(h.userDataDir)
+            .filter((name) => name !== 'backups' && !name.startsWith('krono.db'));
+        expect(strays, 'the failure created, renamed or replaced a file').toEqual([]);
+    });
+
+    it('reports a backup that could not be taken, and leaves the version where it was', async () => {
+        const h = harness('backup-failure');
+        writeLegacyDatabase(h.dbPath);
+        // The backups path is occupied by a regular file, so the directory cannot be created.
+        fs.writeFileSync(h.backupDir, 'not a directory');
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(h.recorder.reports[0]?.body).toContain(h.dbPath);
+        expect(h.recorder.reports[0]?.body).toContain('No backup was taken.');
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+        expect(h.recorder.handleOpenAtReport).toEqual([false]);
+        expect(userVersionOf(h.dbPath), 'a failed backup still let a migration run').toBe(0);
+    });
+});
+
+describe('D-32: quit flushes the WAL into the database and closes it', () => {
+    it('is a no-op before any database was opened, and safe to call twice', () => {
+        expect(() => { closeDatabaseNow(); closeDatabaseNow(); }).not.toThrow();
+    });
+
+    it('checkpoints the -wal and closes the connection, and a second call does nothing', async () => {
+        const h = harness('quit');
+        const started = await startDatabase(h.layer, h.env, h.ports);
+        if (started === null) {
+            throw new Error('startup returned no connection for a fresh database');
+        }
+        registerDatabaseCloser(started.close);
+
+        // A second connection keeps the -wal on disk, so its size proves the checkpoint and not the close.
+        const reader = new Database(h.dbPath, { readonly: true, fileMustExist: true });
+        try {
+            const wal = h.dbPath + '-wal';
+            expect(fs.existsSync(wal) && fs.statSync(wal).size > 0, 'there is no -wal to flush, so this proves nothing')
+                .toBe(true);
+
+            closeDatabaseNow();
+
+            expect(started.db.open, 'the quit handler left the database open').toBe(false);
+            expect(!fs.existsSync(wal) || fs.statSync(wal).size === 0, 'the -wal was not checkpointed at quit')
+                .toBe(true);
+            expect(() => { closeDatabaseNow(); }).not.toThrow();
+        } finally {
+            reader.close();
+        }
+    });
+});
+
+// The call names inside the handler app.on('<event>', ...) registers, read from the source rather than run.
+function handlerCalls(event: string): string[] {
+    const source = ts.createSourceFile(LIFECYCLE, read(LIFECYCLE), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const registrations = findAll(source, (node): node is ts.CallExpression => {
+        if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)) return false;
+        const [first] = node.arguments;
+        return node.expression.name.text === 'on' && first !== undefined && ts.isStringLiteral(first) &&
+            first.text === event;
+    });
+    const [registration] = registrations;
+    if (registration === undefined) {
+        throw new Error(LIFECYCLE + ' no longer registers a handler for ' + event);
+    }
+    const handler = registration.arguments[1];
+    if (handler === undefined) {
+        throw new Error(LIFECYCLE + ': the ' + event + ' registration has no handler');
+    }
+    return findAll(handler, (node): node is ts.CallExpression => ts.isCallExpression(node))
+        .map((call) => ts.isIdentifier(call.expression) ? call.expression.text
+            : ts.isPropertyAccessExpression(call.expression) ? call.expression.name.text : '(computed)');
+}
+
+describe('Pitfall 4: a hidden window can neither quit the app nor be surfaced', () => {
+    it('quits on window-all-closed only once a main window has existed, and never on macOS', () => {
+        expect(hasCreatedMainWindow(), 'no main window was created in this process').toBe(false);
+        expect(mainWindows()).toEqual([]);
+        expect(shouldQuitOnAllClosed(false, 'win32'), 'the extractor window could quit the app during startup')
+            .toBe(false);
+        expect(shouldQuitOnAllClosed(true, 'win32')).toBe(true);
+        expect(shouldQuitOnAllClosed(true, 'darwin'), 'macOS keeps the app running with no window').toBe(false);
+        expect(shouldQuitOnAllClosed(false, 'darwin')).toBe(false);
+    });
+
+    it('wires the lifecycle handlers to those guards and to the database closer', () => {
+        expect(handlerCalls('window-all-closed'))
+            .toEqual(expect.arrayContaining(['shouldQuitOnAllClosed', 'hasCreatedMainWindow']));
+        expect(handlerCalls('will-quit'), 'will-quit no longer closes the database (D-32)')
+            .toContain('closeDatabaseNow');
+        const secondInstance = handlerCalls('second-instance');
+        expect(secondInstance, 'second-instance no longer surfaces a window createMainWindow made')
+            .toContain('mainWindows');
+        expect(secondInstance, 'second-instance may surface only a main window, never any window')
+            .not.toContain('getAllWindows');
     });
 });
 
