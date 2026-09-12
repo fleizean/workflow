@@ -85,7 +85,7 @@ function spyingServices(): Spy {
             setMode: answer('timer.setMode', TIMER),
             suspend: answer('timer.suspend', undefined),
             resume: answer('timer.resume', undefined),
-            persistNow: answer('timer.persistNow', undefined),
+            persistNow: answer('timer.persistNow', true),
             dispose: answer('timer.dispose', undefined)
         },
         pomodoro: {

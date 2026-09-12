@@ -314,9 +314,14 @@ export function createContainer(input: ContainerInput): AppContainer {
             goal
         },
         transaction,
+        // The timer first, and whatever it does the pomodoro is stopped anyway: this is the last flush of counted
+        // seconds before the connection closes, and it must not sit behind an unrelated teardown that can throw.
         dispose: () => {
-            pomodoro.dispose();
-            timer.dispose();
+            try {
+                timer.dispose();
+            } finally {
+                pomodoro.dispose();
+            }
         }
     };
 }

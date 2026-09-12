@@ -60,6 +60,7 @@ export interface TimerServiceInput {
      */
     readonly onSnapshot?: (snapshot: TimerSnapshot, counted: CountedDay) => void;
     /** A persistence failure is reported, never thrown: a full disk must not stop the clock the user is watching. */
+    // The one exception is the last flush at dispose, which has no later chance to try again (WR-02).
     readonly log: (line: string) => void;
 }
 
@@ -74,7 +75,9 @@ export interface TimerService {
     /** powerMonitor suspend, handed over by the lifecycle module: nothing is credited until resume (CORE-06). */
     suspend(): void;
     resume(): void;
-    persistNow(): void;
+    /** Whether everything counted is on disk. False is logged rather than thrown, so the clock keeps running. */
+    persistNow(): boolean;
+    /** The last flush before the connection closes. Throws when it did not land: quitting must not lie (WR-02). */
     dispose(): void;
 }
 
@@ -125,17 +128,19 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         }
     };
 
-    function persistNow(): void {
+    function persistNow(): boolean {
         const seconds = elapsedSeconds();
         if (seconds === writtenSeconds && mode === writtenMode) {
-            return;
+            return true;
         }
         try {
             store.write({ accumulatedSeconds: seconds, mode });
             writtenSeconds = seconds;
             writtenMode = mode;
+            return true;
         } catch (error) {
             log('timer: the elapsed time could not be saved - ' + (error instanceof Error ? error.message : 'unknown'));
+            return false;
         }
     }
 
@@ -267,8 +272,15 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             if (status === 'running' && !gated) {
                 credit(clock.monotonicNow());
             }
-            stopRepeat();
-            persistNow();
+            try {
+                // Flushed before the repeat is stopped, and retried once: the connection closes next, so a failure
+                // here cannot be made good later. Said out loud rather than reported as a clean quit (WR-02).
+                if (!persistNow() && !persistNow()) {
+                    throw new Error('the elapsed time could not be saved');
+                }
+            } finally {
+                stopRepeat();
+            }
         }
     };
 }

@@ -500,6 +500,80 @@ describe('the services the container composes', () => {
         expect(GOAL_EVALUATION_INTERVAL_SECONDS).toBeLessThanOrEqual(10);
     });
 
+    /*
+     * WR-01. timer.dispose() is the last flush of counted seconds before closeDatabaseNow closes the connection. It
+     * used to sit after an unrelated teardown with no isolation, so a throw from the pomodoro's own stop lost up to
+     * PERSIST_INTERVAL_MS of work that was already counted - and the database closed immediately afterwards.
+     */
+    it('flushes the timer even when the pomodoro teardown throws', async () => {
+        const driver = drivenPorts();
+        const connection = await migratedConnection(makeCleanFixture());
+        let breakTheNextCancel = false;
+        const ports: AppPorts = {
+            ...driver.ports,
+            scheduler: {
+                every: (intervalMs, run) => {
+                    const repeat = driver.ports.scheduler.every(intervalMs, run);
+                    const brittle = breakTheNextCancel;
+                    return {
+                        cancel: () => {
+                            repeat.cancel();
+                            if (brittle) throw new Error('the notification area went away');
+                        }
+                    };
+                }
+            }
+        };
+        const container = createContainer({
+            layer: guardedLayer(), connection, log: () => undefined, ports
+        });
+
+        container.services.timer.start();
+        breakTheNextCancel = true;
+        container.services.pomodoro.start();
+        // Under PERSIST_INTERVAL_MS, so these three seconds are counted and not yet written.
+        driver.tick(3);
+        expect(realLayer.readTimerState(connection).accumulatedSeconds, 'the seconds were already on disk').toBe(0);
+
+        setActiveContainer(container);
+        expect(disposeActiveContainer(), 'the pomodoro teardown was expected to throw')
+            .toBe('the notification area went away');
+        clearActiveContainer();
+        expect(realLayer.readTimerState(connection).accumulatedSeconds, 'three counted seconds were lost at quit')
+            .toBe(3);
+    });
+
+    /*
+     * WR-02. persistNow swallowed a write failure, so timer.dispose() could not throw for one, disposeActiveContainer
+     * returned null and the quit path reported clean on the one occasion where losing the write is unrecoverable.
+     */
+    it('reports a final flush that did not land, rather than reporting a clean quit', async () => {
+        const driver = drivenPorts();
+        const connection = await migratedConnection(makeCleanFixture());
+        const attempts: number[] = [];
+        const layer: DatabaseLayer = {
+            ...guardedLayer(),
+            writeTimerState: (_db, state) => {
+                attempts.push(state.accumulatedSeconds);
+                throw new Error('database or disk is full');
+            }
+        };
+        const lines: string[] = [];
+        const container = createContainer({
+            layer, connection, log: (line) => lines.push(line), ports: driver.ports
+        });
+
+        container.services.timer.start();
+        driver.tick(3);
+        setActiveContainer(container);
+
+        expect(disposeActiveContainer(), 'a write that never landed was reported as a clean quit')
+            .toBe('the elapsed time could not be saved');
+        expect(attempts, 'the last flush is worth one retry, and only one').toEqual([3, 3]);
+        expect(lines.join('\n')).toContain('timer: the elapsed time could not be saved');
+        clearActiveContainer();
+    });
+
     it('stops both the timer and the pomodoro when the container is disposed', async () => {
         const { container, driver } = await driven(makeCleanFixture());
         container.services.settings.update({ pomodoroWorkSeconds: 60 });
