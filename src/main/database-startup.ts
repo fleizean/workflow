@@ -96,21 +96,24 @@ function summaryLine(report: MigrationReport): string {
 }
 
 // D-32: the -wal is folded back into the database, so the next launch - or a v1.2.1 downgrade - finds one file.
-// CR-01: a checkpoint that throws (SQLITE_BUSY, a full disk) is returned rather than raised, so the connection
-// still closes and the caller still reports the failure this close was part of.
+// CR-01: neither half may escape. The same full disk or held handle that failed the migration fails the checkpoint
+// and the close, and a throw from either would replace the user's dialog with nothing.
 function closeHandle(layer: DatabaseLayer, db: DatabaseHandle): string | null {
     if (!db.open) {
         return null;
     }
-    let checkpointError: string | null = null;
+    const problems: string[] = [];
     try {
         db.pragma('wal_checkpoint(TRUNCATE)');
     } catch (error) {
-        checkpointError = describeError(error);
-    } finally {
-        layer.closeDatabase(db);
+        problems.push('the -wal could not be flushed: ' + describeError(error));
     }
-    return checkpointError;
+    try {
+        layer.closeDatabase(db);
+    } catch (error) {
+        problems.push('the connection would not close: ' + describeError(error));
+    }
+    return problems.length === 0 ? null : problems.join('; ');
 }
 
 // D-31: report, then exit. app.exit skips will-quit, so the caller closes any connection before this runs.
@@ -228,12 +231,11 @@ export async function startDatabase(
         layer.setJournalModeWal(db, dbPath);
     } catch (error) {
         // The rollback already left the file as it was: nothing here renames, replaces or restores it (D-31).
-        const checkpointError = closeHandle(layer, db);
+        const closeProblem = closeHandle(layer, db);
         reportFailure(ports, {
             dbPath,
             backupPath: error instanceof layer.MigrationFailedError ? error.backupPath : null,
-            reason: describeError(error) +
-                (checkpointError === null ? '' : ' (and the -wal could not be flushed: ' + checkpointError + ')')
+            reason: describeError(error) + (closeProblem === null ? '' : ' (and ' + closeProblem + ')')
         });
         return null;
     }

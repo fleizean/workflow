@@ -438,6 +438,40 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
     });
 
+    // CR-01, second half: the checkpoint was guarded but the close was not, so the throw simply moved. A close
+    // that fails - SQLITE_BUSY on a live statement, a full disk during the final journal cleanup - must cost the
+    // user neither the dialog nor the exit code.
+    it('still reports and exits with its own code when closing the connection throws', async () => {
+        const closed: Database.Database[] = [];
+        const h = harness('close-throws', {
+            layer: {
+                closeDatabase: (db) => {
+                    closed.push(db);
+                    realLayer.closeDatabase(db);
+                    throw new Error('injected SQLITE_BUSY at close');
+                },
+                migrateDatabase: (db, options) => realLayer.migrateDatabase(db, {
+                    ...options,
+                    applyBaseline: () => { throw new Error('injected migration failure'); }
+                })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started).toBeNull();
+        expect(closed, 'the close was never attempted, so this proves nothing').toHaveLength(1);
+        expect(h.recorder.reports, 'a throwing close swallowed the failure dialog').toHaveLength(1);
+        expect(h.recorder.reports[0]?.kind).toBe('failed');
+        expect(h.recorder.reports[0]?.body).toContain('injected migration failure');
+        expect(h.recorder.reports[0]?.body, 'the dialog hid the close that failed with it')
+            .toContain('the connection would not close');
+        expect(h.recorder.exits, 'a throwing close cost the database-failed exit code')
+            .toEqual([EXIT_CODES.databaseFailed]);
+        expect(userVersionOf(h.dbPath), 'the file moved past its pre-migration version').toBe(0);
+    });
+
     it('reports a backup that could not be taken, and leaves the version where it was', async () => {
         const h = harness('backup-failure');
         writeLegacyDatabase(h.dbPath);
