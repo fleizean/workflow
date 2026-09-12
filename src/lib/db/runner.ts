@@ -78,10 +78,16 @@ export class MigrationFailedError extends Error {
     readonly backupPath: string | null;
     override readonly cause: unknown;
 
-    constructor(version: number, backupPath: string | null, cause: unknown) {
+    // CR-01: the message says what this run did - which step was rolled back, and which steps were already
+    // committed when it was - and never what version the file is left at. That is read back off the file by the
+    // caller, and the two must not be able to disagree inside one dialog. The backup is the caller's to name too.
+    constructor(version: number, backupPath: string | null, cause: unknown, appliedBefore: readonly number[] = []) {
         super(
-            'Migration to version ' + String(version) + ' did not complete; the database stays at its previous ' +
-            'version. ' + (backupPath === null ? 'No backup was taken.' : 'Verified backup: ' + backupPath + '.') +
+            'Migration to version ' + String(version) + ' did not complete; that step was rolled back' +
+            (appliedBefore.length === 0
+                ? ' and no earlier step had been applied.'
+                : ' after version' + (appliedBefore.length === 1 ? ' ' : 's ') + appliedBefore.join(', ') +
+                    ' had been applied.') +
             ' Cause: ' + describeCause(cause)
         );
         this.name = 'MigrationFailedError';
@@ -302,7 +308,7 @@ export async function migrateDatabase(db: DatabaseType.Database, options: Migrat
             // CR-02: a migration that fails on every launch takes a fresh backup on every launch. Pruning here
             // too is what keeps that loop bounded at the retained count instead of filling the disk.
             pruneBestEffort(options.backupDir, backupPath);
-            throw new MigrationFailedError(step.version, backupPath, error);
+            throw new MigrationFailedError(step.version, backupPath, error, [...applied]);
         }
         applied.push(step.version);
         hooks?.afterCommit?.(step.version);

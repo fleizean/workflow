@@ -589,6 +589,13 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(body, 'the dialog hid the backup the user was told did not exist').toContain(path.join(h.backupDir, backups[0] ?? ''));
         expect(body).not.toContain('No backup was taken.');
         expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+
+        // CR-01: the head and the Reason line describe the same file, so they may not contradict each other. The
+        // absence check above passed while the Reason line asserted the opposite two paragraphs below it.
+        expect(body, 'the Reason line contradicts the head it is printed under')
+            .not.toContain('stays at its previous');
+        expect(body, 'the Reason line does not say which step was rolled back over which committed ones')
+            .toContain('version 2 did not complete; that step was rolled back after version 1 had been applied');
     });
 
     // CR-02: setJournalModeWal runs after every step has committed. It used to sit inside the migration try, so a
