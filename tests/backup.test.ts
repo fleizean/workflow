@@ -873,6 +873,44 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
         expect(fs.existsSync(target + '.replaced'), 'a failed restore left the target displaced').toBe(false);
     });
 
+    /*
+     * WR-04: removePendingBackup of the displaced copy ran inside the outer try, after the rename that ends the
+     * restore. The displaced file is the user's old database and its -wal - exactly what a scanner holds open on
+     * Windows - so an undeletable one turned a restore that had already succeeded into a thrown failure, with
+     * <target>.replaced left on disk and a caller told to try the procedure again against the restored file.
+     */
+    it('reports a restore that already succeeded as a success, even if the displaced copy will not delete', async () => {
+        const fx = await makeWalFixture();
+        const live = copyFixture(fx);
+        const before = truth(live);
+        expect(before.count, 'the fixture lost its uncheckpointed rows, so this proves nothing')
+            .toBe(CHECKPOINTED_ROWS + WAL_ONLY_ROWS);
+
+        const { backupPath } = await backupDatabase(live, backupDirFor(live));
+        fs.writeFileSync(live, Buffer.alloc(4096, 0x41));
+        expect(() => truth(live), 'the target is still readable, so the restore proves nothing').toThrow(/not a database/);
+
+        const displaced = live + '.replaced';
+        const realRm = fs.rmSync.bind(fs);
+        const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target: fs.PathLike, options?: fs.RmOptions) => {
+            if (String(target) === displaced) {
+                throw Object.assign(new Error('EPERM: operation not permitted, unlink'), { code: 'EPERM' });
+            }
+            realRm(target, options);
+        });
+        let recovered: BackupVerification;
+        try {
+            recovered = restoreDatabase(backupPath, live);
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(recovered.integrity).toBe('ok');
+        expect(truth(live), 'the restore that was reported did not put the rows back').toEqual(before);
+        expect(fs.existsSync(displaced), 'the displaced copy was deletable after all, so this proves nothing')
+            .toBe(true);
+    });
+
     it('damages a working database, restores it, and recovers the exact pre-damage figures', async () => {
         const fx = await makeWalFixture();
         const live = copyFixture(fx);

@@ -230,6 +230,15 @@ function removePendingBackup(pendingPath: string): void {
     }
 }
 
+// The same, where deleting a leftover is housekeeping rather than part of the outcome.
+function removeQuietly(pendingPath: string): void {
+    try {
+        removePendingBackup(pendingPath);
+    } catch {
+        // Held open or read-only: it outlives this call, and the next restore tries again.
+    }
+}
+
 // Staging files a killed copy left behind. They are unverified by construction, so none is ever kept (CR-02).
 // WR-04: housekeeping, and it runs before the source is even opened, so it must not be able to fail the backup it
 // precedes. force: true suppresses ENOENT only - a held, read-only or directory-shaped leftover still throws, and
@@ -330,7 +339,9 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
         // restored file is in place. Deleting the -wal first cost every uncheckpointed row whenever the rename
         // then failed, which on Windows is an ordinary EPERM/EBUSY from a scanner or a stale handle.
         const displacedPath = targetPath + DISPLACED_SUFFIX;
-        removePendingBackup(displacedPath);
+        // WR-04: a leftover nobody can delete is not a reason to refuse a restore. If it really blocks the way,
+        // the move below fails on it and putBack undoes everything; if it does not, it was only in the way of itself.
+        removeQuietly(displacedPath);
         const moved: { from: string; to: string }[] = [];
         try {
             // Sidecars first: one that will not move costs nothing while the database is still where it was.
@@ -344,10 +355,14 @@ export function restoreDatabase(backupPath: string, targetPath: string): BackupV
             putBack(moved);
             throw error;
         }
-        removePendingBackup(displacedPath);
+        // WR-04: past this point the restore is done - the target is the verified database. Housekeeping after
+        // the point of success may not report it as a failure, or the user retries a recovery that worked, this
+        // time against the file it already restored.
+        removeQuietly(displacedPath);
         return restored;
     } catch (error) {
-        removePendingBackup(incomingPath);
+        // Quietly, so a staging file that will not delete cannot replace the reason the restore was refused.
+        removeQuietly(incomingPath);
         throw error;
     }
 }
