@@ -4,7 +4,7 @@
 import { epochMsFromSqlTimestamp, isLocalDate } from '@shared/utils/date';
 import type { LocalDate } from '@shared/utils/date';
 
-export interface SkippedRow {
+export interface SkippedRowReport {
     readonly table: string;
     readonly column: string;
     readonly rowId: number | null;
@@ -18,7 +18,7 @@ export interface RepositoryOptions {
      * that dropped them silently would hide it. The default drops and says nothing; the composition root supplies
      * the reporter.
      */
-    readonly onSkippedRow?: (skipped: SkippedRow) => void;
+    readonly onSkippedRow?: (skipped: SkippedRowReport) => void;
 }
 
 export class RowMappingError extends Error {

@@ -13,4 +13,4 @@ export { createPomodoroRepository } from './pomodoro.repository';
 export type { PomodoroRepository } from './pomodoro.repository';
 
 export { RowMappingError } from './rows';
-export type { RepositoryOptions, SkippedRow } from './rows';
+export type { RepositoryOptions, SkippedRowReport } from './rows';

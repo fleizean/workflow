@@ -4,6 +4,7 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { companies } from '../schema';
 import { mapRow, mapRows, requireEpochMs, requireId, requireText, storedFlag } from './rows';
+import type { CompanyRow } from '../schema';
 import type { DbHandle } from '../handle';
 import type { RepositoryOptions } from './rows';
 import type { Company } from '@shared/types';
@@ -31,12 +32,8 @@ const DOMAIN_COLUMNS = {
     created_at: companies.created_at
 };
 
-interface CompanyColumns {
-    readonly id: number;
-    readonly name: string;
-    readonly note_required: number | null;
-    readonly created_at: string;
-}
+// Derived from the schema, never restated: a renamed column is a compile error here too (D-11, CORE-16).
+type CompanyColumns = Pick<CompanyRow, 'id' | 'name' | 'note_required' | 'created_at'>;
 
 function toCompany(row: CompanyColumns): Company {
     return {

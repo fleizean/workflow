@@ -33,5 +33,5 @@ export {
 } from './repositories';
 export type {
     CompaniesRepository, CompanyInput, PomodoroRepository, RepositoryOptions, SessionInput, SessionsRepository,
-    SettingsRepository, SkippedRow
+    SettingsRepository, SkippedRowReport
 } from './repositories';

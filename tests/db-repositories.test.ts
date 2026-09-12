@@ -16,7 +16,7 @@ import {
     SETTINGS_KEY_MAP, createCompaniesRepository, createPomodoroRepository, createSessionsRepository,
     createSettingsRepository
 } from '../src/lib/db/repositories';
-import type { SkippedRow } from '../src/lib/db/repositories';
+import type { SkippedRowReport } from '../src/lib/db/repositories';
 import { DEFAULT_SETTINGS } from '../src/shared/constants/settings';
 import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
 import { cleanupFixtures, makeCleanFixture, makeEmptyFixture } from './fixtures/seed';
@@ -27,7 +27,7 @@ const ld = (text: string): LocalDate => text as LocalDate;
 interface Opened {
     readonly connection: DatabaseType.Database;
     readonly handle: ReturnType<typeof createDbHandle>;
-    readonly skipped: SkippedRow[];
+    readonly skipped: SkippedRowReport[];
     readonly dbPath: string;
 }
 
@@ -155,7 +155,7 @@ describe('DATA-05: an empty database totals to nothing rather than null', () => 
 
 describe('D-15: a row the domain cannot use is reported, never guessed at and never fatal', () => {
     let ctx: Opened;
-    const skipped: SkippedRow[] = [];
+    const skipped: SkippedRowReport[] = [];
 
     beforeAll(async () => {
         ctx = await open(buildLegacyFixture('C', 'anomalies'));

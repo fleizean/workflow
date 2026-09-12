@@ -4,6 +4,7 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { pomodoroSessions } from '../schema';
 import { mapRows, optionalId, requireCount, requireId, requireLocalDate } from './rows';
+import type { PomodoroSessionRow } from '../schema';
 import type { DbHandle } from '../handle';
 import type { RepositoryOptions } from './rows';
 import type { LocalDate, PomodoroSession } from '@shared/types';
@@ -24,12 +25,8 @@ const DOMAIN_COLUMNS = {
     pomodoros_completed: pomodoroSessions.pomodoros_completed
 };
 
-interface PomodoroColumns {
-    readonly id: number;
-    readonly date: string;
-    readonly company_id: number | null;
-    readonly pomodoros_completed: number | null;
-}
+// Derived from the schema, never restated: a renamed column is a compile error here too (D-11, CORE-16).
+type PomodoroColumns = Pick<PomodoroSessionRow, 'id' | 'date' | 'company_id' | 'pomodoros_completed'>;
 
 function toPomodoroSession(row: PomodoroColumns): PomodoroSession {
     return {
