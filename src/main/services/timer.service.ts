@@ -61,7 +61,8 @@ export interface TimerService {
     dispose(): void;
 }
 
-const creditableMs = (delta: number): number =>
+/** The clamp, exported so the pomodoro cycle shares it: two clamps would be two answers to the same question. */
+export const creditableMs = (delta: number): number =>
     Number.isFinite(delta) ? Math.min(Math.max(delta, 0), MAX_CREDIT_MS) : 0;
 
 export function createTimerService(input: TimerServiceInput): TimerService {
