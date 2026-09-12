@@ -533,6 +533,15 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         expect(body).toContain('key');
         expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
         expect(backupsIn(h.backupDir), 'the refusal left the user no backup').toHaveLength(1);
+
+        // WR-03: this refusal repeats on every launch, so the dialog has to name what ends it. Without these the
+        // user is told to restart into the same stop, with nothing that says renaming the table is the way out.
+        expect(body, 'the dialog never says Workflow will not touch the table itself')
+            .toContain('will not rename or delete a table it did not create');
+        expect(body, 'the dialog never names the one thing that ends the refusal')
+            .toContain('"app_state" is renamed or removed');
+        expect(body, 'the dialog still implies a plain restart could get the user in')
+            .toContain('starting Workflow again on its own changes nothing');
     });
 
     // The other side of the same rule: WR-04 made the step re-runnable on purpose, so an app_state that already
