@@ -23,3 +23,15 @@ export type { LegacyTimerRecord } from './legacy-timer';
 
 export { pruneBackups, readDatabaseStats } from './backup';
 export type { BackupVerification, PruneOutcome } from './backup';
+
+export { createDbHandle, transact } from './handle';
+export type { DbHandle } from './handle';
+
+export {
+    RowMappingError, SETTINGS_KEY_MAP, createCompaniesRepository, createPomodoroRepository, createSessionsRepository,
+    createSettingsRepository
+} from './repositories';
+export type {
+    CompaniesRepository, CompanyInput, PomodoroRepository, RepositoryOptions, SessionInput, SessionsRepository,
+    SettingsRepository, SkippedRow
+} from './repositories';
