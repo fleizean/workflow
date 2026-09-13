@@ -252,3 +252,52 @@ describe('V2-SCHEMA-02: a crash mid-adoption leaves exactly one openable databas
             .toHaveLength(2);
     });
 });
+
+/*
+ * DATA CR-01. The "target wins outright" rule was one fs.existsSync at the top of the function, ~190 ms of
+ * checkpoint, open/close and integrity_check before the move it guards. fs.renameSync replaces an existing target
+ * silently on NTFS and on POSIX alike, so a workflow.db restored from a backup, materialised by a roaming profile
+ * or dropped in by a sync client inside that window was destroyed and the adoption reported success.
+ *
+ * The window is reached here through the beforeRename kill point, which is the same instant a real file would
+ * appear in - the hook is the last thing that runs before the irreversible step.
+ */
+describe('V2-SCHEMA-02: a database that appears at the new name during the move still wins', () => {
+    const plant = (target: string) => (): void => {
+        const planted = new Database(target);
+        planted.exec('CREATE TABLE planted (id INTEGER PRIMARY KEY); INSERT INTO planted VALUES (1)');
+        planted.close();
+    };
+
+    it('refuses rather than replacing a workflow.db that appeared inside the move', async () => {
+        const { legacy, target } = walCase(await makeWalFixture());
+        const before = readContent(legacy);
+
+        expect(() => adoptLegacyDatabase(legacy, target, { beforeRename: plant(target) }))
+            .toThrow(/appeared|already/i);
+
+        const planted = new Database(target, { readonly: true, fileMustExist: true });
+        try {
+            expect(
+                planted.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM planted').get()?.n,
+                'the database that was at the new name was destroyed by the adoption'
+            ).toBe(1);
+        } finally {
+            planted.close();
+        }
+
+        expect(fs.existsSync(legacy), 'the legacy database was moved onto a target it had no right to').toBe(true);
+        const left = readContent(legacy);
+        expect(left.sessions, 'the refusal cost the legacy database rows').toBe(ALL_ROWS);
+        expect(left.digest, 'the refusal altered the legacy database').toBe(before.digest);
+    });
+
+    it('takes the move with an operation that fails on an existing target, not a check that precedes one', () => {
+        const source = fs.readFileSync(path.join(process.cwd(), 'src/lib/db/adopt.ts'), 'utf8');
+        expect(
+            source,
+            'the move must be attempted with fs.linkSync, which fails EEXIST rather than replacing - a second ' +
+            'existsSync narrows the window but cannot close it'
+        ).toMatch(/fs\.linkSync\(/);
+    });
+});

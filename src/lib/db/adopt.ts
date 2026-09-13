@@ -92,6 +92,51 @@ function requireQuiescent(dbPath: string, stage: string): void {
     }
 }
 
+/*
+ * The move, taken with an operation that REFUSES an existing target rather than one that has to be asked about it
+ * first (CR-01). fs.renameSync replaces a target silently on NTFS and on POSIX alike, and the existsSync at the top
+ * of adoptLegacyDatabase is ~190 ms of checkpoint, open/close and integrity_check away from it - long enough for a
+ * backup restore, a roaming profile or a sync client to put a database there and have it destroyed.
+ *
+ * fs.linkSync throws EEXIST instead, so the check and the move are one operation. A hard link is not a copy: there
+ * is one inode throughout and the unlink that follows only drops the old name, so CUSTODY-03 holds. A crash between
+ * the two leaves both names on the same inode, which the next launch reads as target-present and opens intact.
+ *
+ * Not every filesystem has hard links (exFAT, some network shares), so an EEXIST is the refusal and anything else
+ * falls back to the rename with its check moved as late as it can go - narrower than it was, and still the best
+ * available where linking is impossible.
+ */
+function moveOnto(legacyPath: string, targetPath: string): void {
+    try {
+        fs.linkSync(legacyPath, targetPath);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST' || fs.existsSync(targetPath)) {
+            throw targetAppeared(legacyPath, targetPath);
+        }
+        // eslint-disable-next-line no-restricted-syntax -- moving a quiesced database intact, never copying it (CUSTODY-03)
+        fs.renameSync(legacyPath, targetPath);
+        return;
+    }
+    try {
+        fs.unlinkSync(legacyPath);
+    } catch (error) {
+        throw new Error(
+            'Adopted ' + legacyPath + ' as ' + targetPath + ', but the old name could not be removed: ' +
+            describeUnlinkFailure(error) + '. Both names are the same database and nothing has been lost; the ' +
+            'next launch opens ' + targetPath + '.'
+        );
+    }
+}
+
+const targetAppeared = (legacyPath: string, targetPath: string): Error =>
+    new Error(
+        'Refusing to adopt ' + legacyPath + ': ' + targetPath + ' appeared while this move was being prepared. ' +
+        'The target wins outright, and the database has been left exactly where it was.'
+    );
+
+const describeUnlinkFailure = (error: unknown): string =>
+    error instanceof Error && error.message !== '' ? error.message : String(error);
+
 /**
  * Moves `legacyPath` to `targetPath` once its -wal is folded in and its contents verify on both sides.
  * Returns without touching anything when the target already exists or the source does not.
@@ -118,9 +163,7 @@ export function adoptLegacyDatabase(
     requireQuiescent(legacyPath, 'after reading it back');
 
     hooks.beforeRename?.();
-    // The irreversible step, and the only one. Within a directory this is atomic on NTFS and on POSIX alike.
-    // eslint-disable-next-line no-restricted-syntax -- moving a quiesced database intact, never copying it (CUSTODY-03)
-    fs.renameSync(legacyPath, targetPath);
+    moveOnto(legacyPath, targetPath);
     hooks.afterRename?.();
 
     const verification = readDatabaseStats(targetPath);
