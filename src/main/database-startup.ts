@@ -76,16 +76,38 @@ function adoptRenamedDatabase(
                 ' (' + String(outcome.walBytesFolded) + ' bytes folded in from the -wal, integrity ' +
                 outcome.verification.integrity + ')'
             );
+            return true;
+        }
+        /*
+         * WR-02: a skip used to produce no line of any kind. target-present is the outcome that strands data -
+         * a stray workflow.db from a half-completed attempt, a restored file or a sync artefact means the user
+         * opens an empty app with their history one directory listing away and nothing anywhere saying so.
+         */
+        if (outcome.reason === 'target-present' && fs.existsSync(legacyPath)) {
+            ports.log(
+                'database: ' + RENAMED_DATABASE_FILE + ' was already there, so ' + LEGACY_DATABASE_FILE +
+                ' beside it was left alone and is NOT being read - if the app looks empty, that file is why'
+            );
+        } else {
+            ports.log('database: nothing to adopt (' + outcome.reason + ')');
         }
         return true;
     } catch (error) {
-        // The adoption never leaves a half-written file: the database is still openable under one of the two
-        // names, and observeChange reads back which (WR-01).
+        /*
+         * WR-01: the path shown to the user was the legacy name while the sentence and the advice were chosen by
+         * probing the target, so a user whose whole history had just been moved was told "there was nothing here
+         * before it" and "nothing of yours was renamed or replaced", under a path that no longer existed.
+         *
+         * The move landed only when the new name is there AND the old one is gone. Both present is either this
+         * module refusing a target that appeared, or a hard link whose old name would not unlink - and in both of
+         * those the legacy file is exactly where it was, which is what 'unchanged' says.
+         */
+        const moved = fs.existsSync(dbPath) && !fs.existsSync(legacyPath);
         reportFailure(ports, {
-            dbPath: legacyPath,
+            dbPath: moved ? dbPath : legacyPath,
             backupPath: null,
             reason: describeError(error),
-            changed: fs.existsSync(dbPath) ? 'created' : 'unchanged'
+            changed: moved ? 'renamed' : 'unchanged'
         });
         return false;
     }
@@ -117,12 +139,16 @@ export function doorMessage(productionDir: string): string {
 }
 
 /** What re-reading the file after the failure showed, never where in the code the throw happened (CR-02). */
-export type DatabaseChange = 'unchanged' | 'created' | 'changed' | 'gone' | 'unknown';
+export type DatabaseChange = 'unchanged' | 'created' | 'changed' | 'renamed' | 'gone' | 'unknown';
 
 const HEADS: Readonly<Record<DatabaseChange, string>> = Object.freeze({
     unchanged: 'Workflow stopped instead of changing your database, which is still there as it was.',
     created: 'Workflow stopped while setting up a new database. The file it had started is on disk, unfinished, ' +
         'and there was nothing here before it.',
+    // WR-01: the adoption has its own outcome and must not borrow the migration path's vocabulary. The move
+    // landed; only a check after it did not. Nothing was created, and nothing was lost.
+    renamed: 'Workflow moved your database to its new name, and then could not finish checking it. Your database ' +
+        'is on disk under the new name, with everything in it.',
     changed: 'Workflow stopped part-way through updating your database. The step that failed was rolled back, ' +
         'but the steps before it had already been saved.',
     gone: 'Workflow stopped while updating your database, and the file is no longer where it was.',
@@ -138,6 +164,8 @@ const ADVICE: Readonly<Record<DatabaseChange, string>> = Object.freeze({
         'start it again; if this repeats, copy that file somewhere safe before doing anything else.',
     created: 'Nothing of yours was renamed or replaced - there was no database here until this start. Install the ' +
         'latest version of Workflow and start it again, which begins that file again.',
+    renamed: 'Nothing of yours was deleted or replaced - the same database is now under the name above. Start ' +
+        'Workflow again; it opens that file and finishes the check it did not get to.',
     changed: 'No database was created, renamed or replaced. Copy the file above, and the backup if there is one, ' +
         'somewhere safe before starting Workflow again.',
     gone: 'Workflow never deletes, renames or replaces a database, so something else moved this one. Copy the ' +

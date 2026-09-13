@@ -1153,6 +1153,84 @@ describe('V2-SCHEMA-02: krono.db becomes workflow.db, behind a switch the releas
         expect(sha256(h.dbPath), 'krono.db was touched while workflow.db was already there').toBe(legacyBefore);
     });
 
+    /*
+     * WR-01: the dialog named the legacy path while choosing its sentence by probing the TARGET, so a failure
+     * after the move landed told a user whose whole history had just been renamed that there was nothing here
+     * before it, that nothing of theirs was renamed or replaced, and pointed at a path that no longer existed.
+     * A user who believes there was never a database here is a user who restores an old backup over it.
+     */
+    it('tells a user whose database was just moved that it was moved, and where it is', async () => {
+        const h = harness('rename-after-move', {
+            env: { renameReleased: true },
+            layer: {
+                adoptLegacyDatabase: (legacyPath, targetPath) =>
+                    realLayer.adoptLegacyDatabase(legacyPath, targetPath, {
+                        afterRename: () => { throw new Error('EBUSY: ' + RENAMED_DATABASE_FILE); }
+                    })
+            }
+        });
+        writeLegacyDatabase(h.dbPath);
+        const targetPath = path.join(h.userDataDir, RENAMED_DATABASE_FILE);
+
+        const started = await run(h);
+
+        expect(started, 'startup carried on past a failed adoption').toBeNull();
+        expect(fs.existsSync(targetPath), 'the move did not land, so this test is about the wrong failure')
+            .toBe(true);
+        expect(fs.existsSync(h.dbPath), 'the old name survived a move that landed').toBe(false);
+
+        const body = h.recorder.reports[0]?.body ?? '';
+        expect(body, 'the dialog names a path that no longer exists').toContain(targetPath);
+        expect(body, 'the dialog told the user their database had just been moved and then denied it')
+            .not.toContain('there was nothing here before it');
+        expect(body).not.toContain('nothing of yours was renamed or replaced');
+        expect(body).not.toContain('there was no database here until this start');
+        expect(body, 'the dialog does not say the move happened').toContain('moved your database to its new name');
+    });
+
+    // WR-02: target-present produced no log, no report and no diagnostic - the one skip that strands the data.
+    it('says out loud that a krono.db beside an existing workflow.db is not being read', async () => {
+        const h = harness('rename-both-loud', { env: { renameReleased: true } });
+        writeLegacyDatabase(path.join(h.userDataDir, RENAMED_DATABASE_FILE));
+        writeLegacyDatabase(h.dbPath);
+
+        await run(h);
+
+        const logs = h.recorder.logs.join('\n');
+        expect(logs, 'the skip that strands the user data said nothing at all').toContain(LEGACY_DATABASE_FILE);
+        expect(logs).toContain('is NOT being read');
+    });
+
+    /*
+     * WR-06: the post-move sidecar sweep ran after the adoption had fully succeeded, and fs.rmSync without force
+     * throws on an EPERM/EBUSY - an anti-virus or search indexer holding the new file, which is ordinary on
+     * Windows right after a rename. A completed, verified adoption became a startup failure and WR-01's dialog.
+     */
+    it('does not turn a verified adoption into a failure because a sidecar would not delete', async () => {
+        const h = harness('rename-sidecar', { env: { renameReleased: true } });
+        writeLegacyDatabase(h.dbPath);
+        const targetPath = path.join(h.userDataDir, RENAMED_DATABASE_FILE);
+
+        const realRm = fs.rmSync.bind(fs);
+        const spy = vi.spyOn(fs, 'rmSync').mockImplementation((target: fs.PathLike, options?: fs.RmOptions) => {
+            if (String(target) === targetPath + '-shm' || String(target) === targetPath + '-wal') {
+                throw Object.assign(new Error('EPERM: operation not permitted, unlink'), { code: 'EPERM' });
+            }
+            realRm(target, options);
+        });
+        let started: StartedDatabase | null;
+        try {
+            started = await run(h);
+        } finally {
+            spy.mockRestore();
+        }
+
+        expect(h.recorder.reports, 'a fully successful adoption raised a dialog').toEqual([]);
+        expect(started, 'a sidecar that would not delete stopped a startup that had already succeeded')
+            .not.toBeNull();
+        expect(h.recorder.logs.join('\n')).toContain('adopted ' + LEGACY_DATABASE_FILE);
+    });
+
     it('stops and reports rather than starting a fresh database when the adoption fails', async () => {
         const h = harness('rename-failed', { env: { renameReleased: true } });
         fs.writeFileSync(h.dbPath, 'this is not a SQLite database, and must not become workflow.db');

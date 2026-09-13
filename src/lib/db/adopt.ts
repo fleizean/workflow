@@ -177,7 +177,17 @@ export function adoptLegacyDatabase(
             '. The database has been moved back to the name it had.'
         );
     }
-    requireQuiescent(targetPath, 'after reading it back');
+    /*
+     * WR-06: the move has landed and the contents have verified, so the adoption has succeeded. A -shm that will
+     * not delete - an anti-virus or a search indexer that opened the new file, which is common on Windows right
+     * after a rename - is cosmetic, and turning it into a startup failure showed a very alarming dialog about an
+     * adoption that had fully worked. The same reasoning sweepPendingBackups already applies.
+     */
+    try {
+        requireQuiescent(targetPath, 'after reading it back');
+    } catch {
+        /* an empty sidecar beside the new name belongs to nothing; the next launch removes it */
+    }
 
     return { adopted: true, from: legacyPath, walBytesFolded, verification };
 }
