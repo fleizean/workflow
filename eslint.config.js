@@ -99,6 +99,24 @@ const IPC_LAYER_PATTERNS = [
     { regex: '^@main/adapters(/|$)', message: IPC_LAYER_MESSAGE }
 ];
 
+/*
+ * ARCH-01's fourth clause, as lint rather than as a habit: outside the bootstrap, the window, the lifecycle, the
+ * tray, ipc/ and the adapters that exist to wrap it, an Electron API reaches src/main through a port. The rule is an
+ * allowlist because the phase-5 verifier found the clause true only by construction - nothing failed the day a new
+ * main module reached for electron instead of writing a port.
+ */
+const MAIN_ELECTRON_MESSAGE = 'Electron reaches src/main through a port in src/main/ports with an adapter in src/main/adapters; only the bootstrap, window, lifecycle, tray, ipc/ and the adapters themselves import it directly (ARCH-01).';
+const MAIN_ELECTRON_PATHS = [{ name: 'electron', message: MAIN_ELECTRON_MESSAGE }];
+const MAIN_ELECTRON_PATTERNS = [{ group: ['electron/*'], message: MAIN_ELECTRON_MESSAGE }];
+// The shell itself, plus three that predate the ports and are named rather than left to be discovered:
+// userdata-path and legacy-storage are Phase 2/4 bootstrap that runs before any container exists, and smoke.ts is
+// BUILD-06's packaged prover, which drives the real app rather than being part of it.
+const MAIN_ELECTRON_ALLOWED = [
+    'src/main/index.ts', 'src/main/window.ts', 'src/main/lifecycle.ts', 'src/main/tray.ts',
+    'src/main/ipc/**', 'src/main/adapters/**',
+    'src/main/userdata-path.ts', 'src/main/legacy-storage.ts', 'src/main/smoke.ts'
+];
+
 // ARCH-01 / CORE-16: Drizzle is how src/lib/db writes SQL; a value import of it anywhere else is SQL somewhere else.
 // Types are allowed, so a caller may still name a row shape the schema derives.
 const DRIZZLE_VALUE_MESSAGE = 'Drizzle and the SQL it builds live only under src/lib/db; call a repository (ARCH-01, CORE-16).';
@@ -329,6 +347,20 @@ module.exports = [
             'no-restricted-imports': ['error', {
                 paths: [...SERVICE_LAYER_PATHS, ...DRIZZLE_TOOLING_PATHS],
                 patterns: [...SERVICE_LAYER_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
+            }]
+        }
+    },
+    // ARCH-01's fourth clause: an allowlist, so a new main module that reaches for electron fails instead of
+    // quietly becoming a tenth place that knows what Electron is.
+    {
+        files: ['src/main/**'],
+        // services/ is excluded because its own block above bans more than this one does; without this, the weaker
+        // rule would be the last match and would replace it.
+        ignores: [...MAIN_ELECTRON_ALLOWED, 'src/main/services/**'],
+        rules: {
+            'no-restricted-imports': ['error', {
+                paths: [...MAIN_ELECTRON_PATHS, ...DRIZZLE_TOOLING_PATHS],
+                patterns: [...MAIN_ELECTRON_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS]
             }]
         }
     },

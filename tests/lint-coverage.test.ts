@@ -458,13 +458,31 @@ describe('the rules the rewrite must not lose', () => {
         expect(JSON.stringify(entry), 'no-restricted-imports does not name electron for ' + file).toContain('"name":"electron"');
     });
 
-    it('does not ban electron in src/main, which legitimately imports it', async () => {
-        expect(
-            JSON.stringify(await ruleEntry('src/main/index.ts', 'no-restricted-imports') ?? null),
-            'no-restricted-imports names electron for src/main. D-08 added a src/** import-restriction block for the ' +
-            'drizzle tooling bans only; the electron ban belongs to src/lib and src/shared, and the main process is ' +
-            'where electron is supposed to be imported.'
-        ).not.toContain('"name":"electron"');
+    /*
+     * ARCH-01's fourth clause. This used to assert the opposite - that src/main was free to import electron - which
+     * was true of the shell but left the clause enforced by nobody: the phase-5 verifier found three modules outside
+     * the named list importing electron and nothing that would fail when a fourth did. The rule is an allowlist now.
+     */
+    it.each([
+        'src/main/index.ts', 'src/main/window.ts', 'src/main/lifecycle.ts', 'src/main/tray.ts',
+        'src/main/ipc/register.ts', 'src/main/adapters/electron-notifier.adapter.ts'
+    ])('leaves electron legal in %s, where the shell is supposed to name it', async (file) => {
+        const entry = JSON.stringify(await ruleEntry(file, 'no-restricted-imports') ?? null);
+        expect(entry, 'no-restricted-imports names electron for ' + file).not.toContain('"name":"electron"');
+    });
+
+    it.each(['src/main/container.ts', 'src/main/notifications.ts', 'src/main/database-startup.ts'])(
+        'bans electron in %s, which must take a port instead', async (file) => {
+            const entry = await ruleEntry(file, 'no-restricted-imports');
+            expect(severityOf(entry), 'no-restricted-imports is not at error for ' + file).toBe(ERROR);
+            expect(JSON.stringify(entry), 'no-restricted-imports does not name electron for ' + file)
+                .toContain('"name":"electron"');
+        });
+
+    // The weaker src/main allowlist must not become the last match for services, whose own block bans more.
+    it('keeps the service block stricter than the src/main allowlist', async () => {
+        const entry = JSON.stringify(await ruleEntry('src/main/services/stats.service.ts', 'no-restricted-imports'));
+        expect(entry, 'the src/main electron allowlist replaced the service layer rule').toContain('"name":"better-sqlite3"');
     });
 
     it('keeps node builtins and the driver legal in src/lib and bans them in src/shared', async () => {

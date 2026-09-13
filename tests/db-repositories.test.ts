@@ -507,7 +507,7 @@ describe('SC4: no repository asks the database for a retired column', () => {
             'negative control: the trace does see the column names a repository legitimately uses').toBe(true);
 
         const named = issued.filter((statement) => RETIRED.some((column) => statement.includes(column)));
-        const reads = named.filter((statement) => /^s*(select|update|delete)/i.test(statement));
+        const reads = named.filter((statement) => /^\s*(select|update|delete)/i.test(statement));
         expect(reads, 'SC4: a repository read or wrote a column the app no longer has any use for').toEqual([]);
 
         // What is left is drizzle's INSERT, which enumerates every column schema.ts declares and passes the default.
