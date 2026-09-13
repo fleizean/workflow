@@ -1,10 +1,11 @@
 // D-17: what crosses the wire when a call fails - a code from the closed list and a sentence, never a stack, a path
 // or a driver message. A refusal a service made on purpose keeps its own words; anything else is INTERNAL.
 
+import { INTERNAL_ERROR_MESSAGE } from '@shared/constants/ipc-errors';
 import { ServiceError } from '../services/service-errors';
 import type { IpcError } from '@shared/types';
 
-export const INTERNAL_MESSAGE = 'Something went wrong and the action was not completed.';
+export const INTERNAL_MESSAGE = INTERNAL_ERROR_MESSAGE;
 
 /** Long enough to name the field that was refused, short enough that no payload can ride out inside it. */
 export const MAX_ERROR_MESSAGE_LENGTH = 200;

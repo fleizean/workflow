@@ -3,6 +3,7 @@
 
 import { ipcMain } from 'electron';
 import { ipcChannels } from '@shared/ipc/contract';
+import { mainConfig } from '../config';
 import { createDispatch } from './dispatch';
 import { createHandlers } from './handlers';
 import type { HandlerContext } from './handlers';
@@ -24,7 +25,9 @@ export function registerIpcHandlers(input: RegisterIpcInput): () => void {
 
     const dispatch = createDispatch({
         handlers: () => createHandlers(input.context()),
-        log: input.log
+        log: input.log,
+        // ELECTRON_RENDERER_URL is set by electron-vite dev and by nothing else, so this is off in a packaged app.
+        checkOutput: mainConfig.rendererDevUrl !== undefined
     });
 
     for (const channel of ipcChannels) {

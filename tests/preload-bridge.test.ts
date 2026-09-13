@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { createIpcBridge } from '../src/preload/bridge';
 import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '../src/shared/ipc/channels';
 import { ipcContract, ipcEvents } from '../src/shared/ipc/contract';
+import { INTERNAL_ERROR_MESSAGE } from '../src/shared/constants/ipc-errors';
 import type { EventForwarder, RendererIpc } from '../src/preload/bridge';
 
 interface FakeIpc extends RendererIpc {
@@ -149,5 +150,34 @@ describe('criterion 10: every subscription returns a disposer and forwards no ev
         ipc.deliver('pomodoro:tick', { interval: 'work' });
         expect(ticks).toEqual([]);
         expect(ipc.listeners('pomodoro:tick')).toEqual([]);
+    });
+});
+
+/*
+ * WR-05 and WR-08: two ways a bridge can lie about what it guarantees. ApiOf says every call resolves to an
+ * IpcResult and never rejects; IPC-06 says a subscription is one subscriber's, not a channel's.
+ */
+describe('the bridge keeps the promises its types make', () => {
+    it('turns an invoke that rejects into the failure the renderer can render', async () => {
+        const ipc = fakeIpc();
+        const bridge = createIpcBridge({
+            ...ipc,
+            invoke: () => Promise.reject(new Error('An object could not be cloned.'))
+        }) as unknown as Record<string, (input?: unknown) => Promise<unknown>>;
+
+        const answer = await bridge['sessions:list']?.();
+        expect(answer, 'a rejected invoke reached a call site whose type says it cannot')
+            .toEqual({ ok: false, error: { code: 'INTERNAL', message: INTERNAL_ERROR_MESSAGE } });
+    });
+
+    it('does the same for an argument structured clone cannot carry, which throws before it leaves', async () => {
+        const ipc = fakeIpc();
+        const bridge = createIpcBridge({
+            ...ipc,
+            invoke: () => { throw new Error('An object could not be cloned.'); }
+        }) as unknown as Record<string, (input?: unknown) => Promise<unknown>>;
+
+        await expect(bridge['sessions:create']?.({ name: () => undefined })).resolves
+            .toEqual({ ok: false, error: { code: 'INTERNAL', message: INTERNAL_ERROR_MESSAGE } });
     });
 });

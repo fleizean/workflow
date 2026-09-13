@@ -14,7 +14,7 @@ import { SettingsValidationError } from '../src/main/services/settings.service';
 import { DEFAULT_SETTINGS } from '../src/shared/constants/settings';
 import { findAll, read } from './helpers/ts-imports';
 import type { HandlerContext } from '../src/main/ipc/handlers';
-import type { IpcChannel, LocalDate } from '../src/shared/types';
+import type { IpcChannel, IpcHandlers, LocalDate, Settings } from '../src/shared/types';
 
 // Criterion 3: this suite must pass with electron refusing to load.
 vi.mock('electron', () => {
@@ -337,5 +337,32 @@ describe('criterion 7: no handler body branches', () => {
 
         const calls = findAll(body, (node): node is ts.CallExpression => ts.isCallExpression(node));
         expect(calls.length, channel + ' makes ' + String(calls.length) + ' calls, not one').toBe(1);
+    });
+});
+
+/*
+ * WR-05: the contract declares an output schema for all 30 channels and main parsed none of them, so a service that
+ * answered something the contract does not describe crossed to the renderer unchallenged. In development it is
+ * parsed, and a failure is shaped like any other failure in main rather than becoming the renderer's problem.
+ */
+describe('WR-05: an answer the contract does not describe', () => {
+    const wrong = (): IpcHandlers => ({
+        ...createHandlers(spyingServices().context),
+        'settings:get': () => ({ dailyTargetSeconds: 'eight hours' }) as unknown as Settings
+    });
+
+    it('is refused in development, as INTERNAL, with the reason left in main', async () => {
+        const lines: string[] = [];
+        const dispatch = createDispatch({ handlers: wrong, log: (line) => lines.push(line), checkOutput: true });
+
+        expect(await dispatch('settings:get', undefined))
+            .toEqual({ ok: false, error: { code: 'INTERNAL', message: INTERNAL_MESSAGE } });
+        expect(lines.join('\n'), 'the reason was not written down anywhere')
+            .toContain('answered something the contract does not describe');
+    });
+
+    it('is not parsed when the check is off, which is what a packaged app runs', async () => {
+        const dispatch = createDispatch({ handlers: wrong, log: () => undefined });
+        expect((await dispatch('settings:get', undefined)).ok).toBe(true);
     });
 });

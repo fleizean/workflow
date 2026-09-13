@@ -2,6 +2,7 @@
 // without this file changing. Electron-free on purpose - index.ts hands it ipcRenderer, and a test hands it a fake.
 
 import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '@shared/ipc/channels';
+import { INTERNAL_ERROR_MESSAGE } from '@shared/constants/ipc-errors';
 import type { IpcBridge } from '@shared/types';
 
 export type EventForwarder = (event: unknown, payload: unknown) => void;
@@ -13,11 +14,29 @@ export interface RendererIpc {
     off(channel: string, listener: EventForwarder): void;
 }
 
+/*
+ * WR-05: the renderer's typed surface says every call resolves to an IpcResult and never rejects, so a call site
+ * written against the type is an unhandled rejection waiting for a value structured clone cannot carry - a Date, a
+ * class instance, a Proxy. invoke throws synchronously for an argument it cannot clone and rejects for an answer it
+ * cannot, and both now arrive as the failure the renderer already knows how to render.
+ */
+const INTERNAL_FAILURE = Object.freeze({
+    ok: false,
+    error: Object.freeze({ code: 'INTERNAL', message: INTERNAL_ERROR_MESSAGE })
+});
+
 export function createIpcBridge(ipc: RendererIpc): IpcBridge {
     const bridge: Record<string, unknown> = {};
     for (const channel of IPC_CHANNELS) {
         // A void channel is called with no argument; sending undefined is what the contract's z.void() expects.
-        bridge[channel] = (input?: unknown): Promise<unknown> => ipc.invoke(channel, input);
+        bridge[channel] = async (input?: unknown): Promise<unknown> => {
+            try {
+                return await ipc.invoke(channel, input);
+            } catch {
+                // The reason stays in the renderer's console, where Electron already put it; the wire carries a code.
+                return INTERNAL_FAILURE;
+            }
+        };
     }
 
     const subscriptions: Record<string, unknown> = {};
