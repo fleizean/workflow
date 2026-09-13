@@ -12,6 +12,13 @@ export const RENDERER_MARKER_TEXT = 'Home';
 // SPA-01: the second route the smoke visits, and the heading it must find there. Reaching it changes no document.
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
+/*
+ * Criterion 1 / S2: the route that lists companies, and the name one of them is given. The payload is the brief's
+ * own, verbatim - v1.2.1 built the row with innerHTML and hung an onclick= off the name, escaping the apostrophe
+ * and nothing else, so this exact string ran. Escaped, it is text on a screen and there is no <img> at all.
+ */
+export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
+export const SMOKE_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
 export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.

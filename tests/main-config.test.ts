@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
-    RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_COMPANIES_ROUTE_HASH, RENDERER_MARKER_TEXT,
+    RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG, SMOKE_XSS_COMPANY_NAME,
     SMOKE_SEED_TIMER_STATE_ENV, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
@@ -123,7 +123,8 @@ function processReads(file: string, source: string = read(file)): string[] {
 // Plain Node loads the harness, not vite: .gitattributes checks it out CRLF, and vite's SSR transform (hashbang regex
 // /^#!.*\n/, whose `.` cannot match \r) then emits code above the #! line - a SyntaxError at import.
 const SHARED_CONSTANTS = [
-    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_HASH', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV'
+    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_HASH', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV',
+    'RENDERER_COMPANIES_ROUTE_HASH', 'EXPECTED_XSS_COMPANY_NAME'
 ] as const;
 type SharedConstant = (typeof SHARED_CONSTANTS)[number];
 
@@ -205,6 +206,19 @@ describe('D-24: the values the smoke harness depends on equal its own', () => {
             .toBe(harness.RENDERER_SECOND_ROUTE_HASH);
         expect(RENDERER_SECOND_ROUTE_TEXT, 'D-24: the smoke would wait for text the harness never asserts')
             .toBe(harness.RENDERER_SECOND_ROUTE_TEXT);
+    });
+
+    it('shares the Companies route and the XSS payload with ' + HARNESS + ', so S2 is watched on one string', () => {
+        const harness = harnessConstants();
+        expect(
+            RENDERER_COMPANIES_ROUTE_HASH,
+            'D-24: the escaping would be watched on a screen the harness does not name'
+        ).toBe(harness.RENDERER_COMPANIES_ROUTE_HASH);
+        expect(
+            SMOKE_XSS_COMPANY_NAME,
+            'D-24: the app would name a company one thing and the harness would pass the run for another. A payload ' +
+            'the two ends disagree on proves nothing about S2.'
+        ).toBe(harness.EXPECTED_XSS_COMPANY_NAME);
     });
 
     it('uses as SMOKE_FLAG the first argument the harness spawns the packaged binary with', () => {

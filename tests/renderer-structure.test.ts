@@ -226,6 +226,34 @@ describe('ARCH-03: one direction of flow, asserted on the source', () => {
     });
 });
 
+/*
+ * Criterion 1's security half (S2), read off the tree. eslint.config.js refuses each of these in any renderer file
+ * that could be written; this is the claim about the files that ARE written, and it is separate on purpose - a lint
+ * rule proves what would be refused, not that nothing already present slipped in before the rule existed.
+ *
+ * What neither can prove is that the escaping actually happens, because there is no jsdom here and no component is
+ * rendered by any test. tools/smoke-packaged.mjs does that against the packaged app: it writes a company called
+ * <img src=x onerror=...>, routes to #/companies, and reads back both the text and the element count.
+ */
+describe('criterion 1 / S2: the renderer never turns text into markup', () => {
+    const HTML_SINKS = /\bdangerouslySetInnerHTML\b|\b(?:inner|outer)HTML\b|\binsertAdjacentHTML\b|\bdocument\s*\.\s*write(?:ln)?\s*\(/;
+
+    it('reaches no HTML sink from any renderer source', () => {
+        const offenders = rendererSources().filter((file) => HTML_SINKS.test(codeOf(file)));
+        expect(
+            offenders,
+            'v1.2.1 built every row and every dialog with innerHTML and escaped one character of the values it ' +
+            'interpolated. React escapes a child by construction; these are the doors around it.'
+        ).toEqual([]);
+    });
+
+    it('would see one, so the scan above is not vacuous', () => {
+        expect(HTML_SINKS.test('el.innerHTML = name;')).toBe(true);
+        expect(HTML_SINKS.test('<div dangerouslySetInnerHTML={{ __html: x }} />')).toBe(true);
+        expect(rendererSources().length, 'no renderer source was read at all').toBeGreaterThan(5);
+    });
+});
+
 describe('SPA-01: one document, and screens change inside it', () => {
     it('has exactly one HTML entry under ' + RENDERER, () => {
         // public/legacy-storage.html is the hidden extractor's page, not a screen.

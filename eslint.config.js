@@ -252,6 +252,37 @@ const STYLE_INJECTION_BANS = [
 ].map((selector) => ({ selector, message: ARCH_05_MESSAGE }));
 
 /*
+ * S2, criterion 1. React escapes a JSX child, so the v2 renderer is safe by construction rather than by care - and
+ * "by construction" is worth exactly as much as the number of doors left open around it.
+ *
+ * v1.2.1 had four: legacy/pages/companies.html:141 and :145 built
+ * onclick="editCompany(${company.id}, '${company.name.replace(/'/g, "\\'")}')" - one character escaped out of the
+ * six that matter; legacy/renderer/shared.js:122 interpolated a toast message into innerHTML; :179-182 did the same
+ * with a title, a description and a whole block of caller-supplied HTML; and every page's own showToast copied the
+ * first of those. A company name, a session name and a note all come out of the database and one of them is
+ * whatever the user typed, so each is untrusted text on a screen.
+ *
+ * dangerouslySetInnerHTML is the one that would come back: it is the sanctioned React spelling of the same thing,
+ * and nothing in this app has a reason to render markup it did not write itself.
+ */
+const HTML_INJECTION_MESSAGE = 'Untrusted text is a JSX child, never HTML. A company name, a session name and a note all come from the database, and one of them is <img src=x onerror=alert(1)> (S2).';
+const HTML_INJECTION_BANS = [
+    "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+    // Spread, or built somewhere else and handed in as props: the attribute form is not the only spelling.
+    "Property[key.name='dangerouslySetInnerHTML']",
+    "Property[key.value='dangerouslySetInnerHTML']",
+    "Property[key.name='__html']",
+    "Property[key.value='__html']",
+    // The imperative doors, which is how the v1.2.1 renderer actually wrote its markup.
+    'MemberExpression[property.name=/^(innerHTML|outerHTML)$/]',
+    'MemberExpression[computed=true][property.value=/^(innerHTML|outerHTML)$/]',
+    "CallExpression[callee.property.name='insertAdjacentHTML']",
+    "CallExpression[callee.object.name='document'][callee.property.name=/^(write|writeln)$/]",
+    // An event handler written as a string is the onclick="fn('${name}')" shape, in JSX clothing.
+    "JSXAttribute[name.name=/^on[A-Z]/][value.type='Literal']"
+].map((selector) => ({ selector, message: HTML_INJECTION_MESSAGE }));
+
+/*
  * ARCH-03, criterion 7: the renderer's direction of flow, as lint rather than as a convention.
  *
  * Phase 7 slice A asserted these directions against the source tree, which catches them only where a test thought
@@ -356,7 +387,7 @@ const rendererDynamicImports = (lift) => {
 const rendererSyntax = (...lifted) => [
     'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS,
     ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS, ...BRIDGE_ACCESS_BANS, ...WEB_STORAGE_BANS,
-    ...STYLE_INJECTION_BANS, ...rendererDynamicImports(new Set(lifted))
+    ...STYLE_INJECTION_BANS, ...HTML_INJECTION_BANS, ...rendererDynamicImports(new Set(lifted))
 ];
 
 /**

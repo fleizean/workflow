@@ -8,6 +8,8 @@ export declare const SMOKE_DB_NAME: string;
 export declare const RENDERER_MARKER_TEXT: string;
 export declare const RENDERER_SECOND_ROUTE_HASH: string;
 export declare const RENDERER_SECOND_ROUTE_TEXT: string;
+export declare const RENDERER_COMPANIES_ROUTE_HASH: string;
+export declare const EXPECTED_XSS_COMPANY_NAME: string;
 export declare const EXPECTED_ICON_MAX_WIDTH_PX: number;
 export declare const EXPECTED_ICON_TEXT_MIN_WIDTH_PX: number;
 export declare const EXPECTED_BUNDLED_FONTS: readonly string[];

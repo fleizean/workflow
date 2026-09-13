@@ -26,6 +26,9 @@ export const RENDERER_MARKER_TEXT = 'Home';
 /** SPA-01: the second route the smoke visits, and the heading it must find there. Must match src/main/config.ts. */
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
+/** Criterion 1 / S2: the route the escaping is watched on, and the name watched there. Must match src/main/config.ts. */
+export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
+export const EXPECTED_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
 
 /** src/main/config.ts's icon probe and font list; tests/smoke-harness.test.ts holds the two equal (SPA-08/SPA-09). */
 export const EXPECTED_ICON_MAX_WIDTH_PX = 32;
@@ -210,6 +213,16 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_ROUTE_DOCUMENT_LOADS === '0' && Number(f.SMOKE_ROUTE_IN_PAGE) >= 1,
         'documentLoads=' + JSON.stringify(f.SMOKE_ROUTE_DOCUMENT_LOADS) +
         ' inPage=' + JSON.stringify(f.SMOKE_ROUTE_IN_PAGE));
+
+    // Criterion 1 / S2: a company called <img src=x onerror=alert(1)> is text on the screen, not an element on it.
+    check('a company name that is an image tag rendered as text',
+        f.SMOKE_XSS_NAME === EXPECTED_XSS_COMPANY_NAME && f.SMOKE_XSS_AS_TEXT === 'true' &&
+        f.SMOKE_XSS_ESCAPED === 'true',
+        'name=' + JSON.stringify(f.SMOKE_XSS_NAME) + ' asText=' + JSON.stringify(f.SMOKE_XSS_AS_TEXT) +
+        ' escaped=' + JSON.stringify(f.SMOKE_XSS_ESCAPED));
+    check('that name put no element of its own on the page',
+        f.SMOKE_XSS_ELEMENTS === '0',
+        'injected=' + JSON.stringify(f.SMOKE_XSS_ELEMENTS));
 
     // SPA-08/SPA-09/SPA-10, all of it with networking emulated off for the whole launch.
     check('the app attempted no remote request with networking off',

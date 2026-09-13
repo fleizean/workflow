@@ -9,11 +9,12 @@ import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
-    DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
+    DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_COMPANIES_ROUTE_HASH,
+    RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
     RENDERER_SECOND_ROUTE_TEXT, SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
     SMOKE_ICON_FONT_SIZE_PX, SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
     SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
-    mainConfig
+    SMOKE_XSS_COMPANY_NAME, mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -197,6 +198,10 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         const soundFailure = await checkSound(win, container, lines);
         if (soundFailure !== null) {
             return fail(soundFailure);
+        }
+        const escapingFailure = await checkEscaping(win, container, lines);
+        if (escapingFailure !== null) {
+            return fail(escapingFailure);
         }
         lines.push('SMOKE_OFFLINE_REQUESTS=' + String(remoteRequests()));
         // Last, because it ends by telling the app it is quitting - which is the state being proved.
@@ -661,6 +666,71 @@ async function checkSound(win: BrowserWindow, container: AppContainer, lines: st
     }
     return null;
 }
+
+/**
+ * The text serialisation of a value, as a browser writes it into a text node: `&`, `<` and `>` and nothing else.
+ * Quotes are left alone there, which is why this is not an attribute escape.
+ */
+const asTextNode = (value: string): string =>
+    value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/*
+ * Criterion 1 / S2, in the packaged app: a company whose NAME is an image tag with an onerror on it, shown on the
+ * screen that shows companies.
+ *
+ * This is the only place in the repository that can watch the escaping happen. There is no jsdom here and no test
+ * renders a component, so every other assertion about S2 is about the source: that no renderer file reaches a
+ * markup sink, and that lint would refuse one. Neither says what the browser did with the string.
+ *
+ * Three answers, because each alone can be true for the wrong reason. The name reads back as TEXT (so it was
+ * rendered at all). No element with that src or that onerror exists inside #root (so it was not parsed as markup -
+ * the app's own logo is an <img>, which is why the filter is on the attributes rather than on the tag). And the
+ * markup carries the ESCAPED form (so the first two are not both true because the row is missing).
+ */
+async function checkEscaping(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
+    try {
+        container.services.companies.create({ name: SMOKE_XSS_COMPANY_NAME, noteRequired: false });
+        await win.webContents.executeJavaScript(
+            'window.location.hash = ' + JSON.stringify(RENDERER_COMPANIES_ROUTE_HASH) + '; true'
+        );
+        const rendered = await waitForRendererText(win, SMOKE_XSS_COMPANY_NAME);
+        const asText = rendered.includes(SMOKE_XSS_COMPANY_NAME);
+        const probe = asRecord(await win.webContents.executeJavaScript(
+            escapingProbeScript(asTextNode(SMOKE_XSS_COMPANY_NAME))
+        ));
+
+        // The name itself, so the harness checks the payload it thinks it is checking (D-24).
+        lines.push('SMOKE_XSS_NAME=' + SMOKE_XSS_COMPANY_NAME);
+        lines.push('SMOKE_XSS_AS_TEXT=' + String(asText));
+        lines.push('SMOKE_XSS_ELEMENTS=' + text(probe.elements));
+        lines.push('SMOKE_XSS_ESCAPED=' + text(probe.escaped));
+
+        if (!asText) {
+            return 'the company name never reached the screen as text, so nothing about escaping was observed';
+        }
+        if (probe.elements !== 0) {
+            return 'the company name was parsed as markup: ' + text(probe.elements) + ' injected element(s) (S2)';
+        }
+        if (probe.escaped !== true) {
+            return 'the page does not carry the escaped name, so the two answers above are about something else';
+        }
+
+        // Home again, so the rest of the launch finds the marker where it expects it.
+        await win.webContents.executeJavaScript('window.location.hash = "#/"; true');
+        await waitForRendererText(win, RENDERER_MARKER_TEXT);
+    } catch (error) {
+        return 'escaping: ' + describeError(error);
+    }
+    return null;
+}
+
+const escapingProbeScript = (escaped: string): string => `(() => {
+    const root = document.getElementById('root');
+    if (root === null) return { elements: -1, escaped: false };
+    const suspects = [...root.querySelectorAll('img, script, object, iframe')]
+        .filter((el) => el.getAttribute('src') === 'x' || el.hasAttribute('onerror'));
+    return { elements: suspects.length, escaped: root.innerHTML.includes(${JSON.stringify(escaped)}) };
+})()`;
 
 /*
  * SPA-01 in the packaged app: the second route is reached, and no document is loaded to reach it.

@@ -845,6 +845,7 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
     const RENDERER_PROBE_FILE = 'src/renderer/src/components/ui/AlertDialog.tsx';
     const CLASS_BUILD_TAG = '(SPA-11, C3).';
     const CLASS_QUERY_TAG = '(SPA-13, Y2).';
+    const HTML_INJECTION_TAG = '(S2).';
 
     const header = [
         'declare const tone: string;',
@@ -974,7 +975,46 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
         expect(flagged, 'reading a computed style, or picking a whole class string, was refused').toEqual([]);
     }, 60_000);
 
-    it('applies both rules to every renderer source file, not just the one probed', async () => {
+    /*
+     * S2, criterion 1. React escapes a JSX child, and the value of "by construction" is the number of doors left
+     * open around the construction. v1.2.1 had four - two onclick= attributes built out of a company name with one
+     * character escaped, and two innerHTML interpolations in shared.js that every page copied.
+     */
+    it('refuses every door back to rendering untrusted text as markup', async () => {
+        const banned = [
+            'export const d1 = <div dangerouslySetInnerHTML={{ __html: name }} />;',
+            'export const d2 = <div {...{ dangerouslySetInnerHTML: { __html: name } }} />;',
+            'const props = { dangerouslySetInnerHTML: { __html: name } };',
+            'const html = { __html: name };',
+            'el.innerHTML = \'<p>\' + name + \'</p>\';',
+            'void el.innerHTML;',
+            'el[\'innerHTML\'] = name;',
+            'el.outerHTML = name;',
+            'el.insertAdjacentHTML(\'beforeend\', name);',
+            'document.write(name);',
+            'document.writeln(name);',
+            // legacy/pages/companies.html:141, in JSX clothing.
+            'export const d3 = <button onClick="editCompany(1)" />;'
+        ];
+        // The sanctioned shapes: the name as a child, as an attribute value, and read back as text.
+        const allowed = [
+            'export const ok1 = <p>{name}</p>;',
+            'export const ok2 = <button aria-label={\'Delete \' + name} onClick={() => undefined} />;',
+            'export const ok3 = <input value={name} readOnly />;',
+            'void el.textContent;',
+            'el.textContent = name;'
+        ];
+        const isHtmlInjection = (m: Linter.LintMessage): boolean =>
+            m.ruleId === 'no-restricted-syntax' && m.message.endsWith(HTML_INJECTION_TAG);
+
+        const { missed, flagged } = await probe(
+            RENDERER_PROBE_FILE, [...header, 'declare const name: string;'], banned, allowed, isHtmlInjection
+        );
+        expect(missed, 'lint let untrusted text be rendered as markup').toEqual([]);
+        expect(flagged, 'lint refused text handed to React as a child or an attribute value').toEqual([]);
+    }, 60_000);
+
+    it('applies all three rules to every renderer source file, not just the one probed', async () => {
         const renderer = repositoryFiles()
             .filter((file) => isUnder(file, 'src/renderer/src') && SOURCE_EXTENSIONS.includes(extensionOf(file)));
         expect(renderer.length, 'no renderer source files, so this scan proves nothing').toBeGreaterThan(5);
@@ -982,7 +1022,7 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
         const offenders: string[] = [];
         for (const file of renderer) {
             const entry = JSON.stringify(await ruleEntry(file, 'no-restricted-syntax'));
-            for (const tag of [CLASS_BUILD_TAG, CLASS_QUERY_TAG]) {
+            for (const tag of [CLASS_BUILD_TAG, CLASS_QUERY_TAG, HTML_INJECTION_TAG]) {
                 if (!entry.includes(tag)) offenders.push(file + ' is missing ' + tag);
             }
         }
