@@ -19,3 +19,14 @@ export const useTimerStore = create<TimerState>((set) => ({
     snapshot: null,
     setSnapshot: (snapshot) => { set({ snapshot }); }
 }));
+
+/*
+ * What leaves the feature (WR-07). The store itself stays in here: a caller holding it depends on a lifetime this
+ * feature does not promise, which is how the shell came to read a snapshot that only Home kept current.
+ */
+export const setTimerSnapshot = (snapshot: TimerSnapshot): void => {
+    useTimerStore.getState().setSnapshot(snapshot);
+};
+
+/** Read once, at the moment of asking - never subscribed to, so the titlebar does not re-render on every tick. */
+export const readTimerSnapshot = (): TimerSnapshot | null => useTimerStore.getState().snapshot;

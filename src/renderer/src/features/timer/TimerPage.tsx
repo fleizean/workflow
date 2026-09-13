@@ -9,12 +9,12 @@
 import type { ReactElement } from 'react';
 import { formatElapsed } from '@renderer/lib/duration';
 import { useTimerSnapshot } from './api/useTimerSnapshot';
-import { useTimerTicks } from './api/useTimerTicks';
 import { useTimerStore } from './state/timer.store';
 
 export default function TimerPage(): ReactElement {
+    // The ticks and the opening read are mounted by app/providers, for the whole app (CR-01). The query is named
+    // again here only so this screen can show the error state of the call it depends on.
     const query = useTimerSnapshot();
-    useTimerTicks();
     const snapshot = useTimerStore((state) => state.snapshot);
 
     return (

@@ -13,6 +13,8 @@ const RENDERER = 'src/renderer';
 const SRC = 'src/renderer/src';
 const ROUTER = 'src/renderer/src/app/router.tsx';
 const GLOBALS = 'src/renderer/src/styles/globals.css';
+const TICKS = 'src/renderer/src/app/providers/timer-feed.ts';
+const TICK_PROVIDER = 'src/renderer/src/app/providers/TimerProvider.tsx';
 const ENTRY = 'src/renderer/index.html';
 
 // The Phase 2 folder criterion 6 requires to be gone: one route table, and it lives in app/.
@@ -268,6 +270,14 @@ describe('criterion 4: the executed data path is the mounted one', () => {
     const APP = path.posix.join(SRC, 'app/App.tsx');
     const SYNC = path.posix.join(SRC, 'app/providers/DataSyncProvider.tsx');
     const CHANGED_EVENT = 'data:changed';
+    /*
+     * RENDERER CR-01. Every main-to-renderer event main pushes on its own schedule, not just the one this block
+     * was written for. timer:tick was subscribed from TimerPage, so it was torn down on every navigation away from
+     * / and the quit confirm then read a frozen snapshot - which meant that a persistFailing that flipped while the
+     * user was on another screen left the confirm promising "Quitting keeps it". Naming the events in a list is
+     * what stops the next one being mounted in a screen too.
+     */
+    const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick'];
 
     const apiFiles = (): string[] => rendererSources().filter((file) => /^features\/[^/]+\/api$/.test(areaOf(file)));
 
@@ -293,30 +303,58 @@ describe('criterion 4: the executed data path is the mounted one', () => {
         expect(offenders, 'the object handed to useQuery is not exported').toEqual([]);
     });
 
-    it('subscribes to ' + CHANGED_EVENT + ' exactly once, and from app/providers', () => {
-        const subscribers = rendererSources()
-            .filter((file) => literalsOf(file).includes(CHANGED_EVENT));
+    it.each(PUSHED_EVENTS)('subscribes to %s exactly once, and from app/providers', (event) => {
+        const subscribers = rendererSources().filter((file) => literalsOf(file).includes(event));
+        expect(subscribers.length, 'nothing subscribes to ' + event + ', so this scan proves nothing')
+            .toBeGreaterThan(0);
+        const misplaced = subscribers.filter((file) => !areaOf(file).startsWith('app/providers'));
         expect(
-            subscribers,
-            'a second subscriber invalidates twice per event; a subscriber inside a screen stops when that screen ' +
+            misplaced,
+            'a second subscriber acts twice per event; a subscriber inside a screen stops when that screen ' +
             'unmounts, which is every route change (SPA-07)'
-        ).toEqual([SYNC]);
-        expect(codeOf(SYNC), 'the provider does not invalidate anything').toContain('invalidateDomains');
+        ).toEqual([]);
+        expect(subscribers.length, event + ' is subscribed from more than one place').toBe(1);
     });
 
-    it('mounts that provider inside the client it invalidates', () => {
+    it('invalidates from the ' + CHANGED_EVENT + ' provider, and feeds the store from the tick one', () => {
+        expect(literalsOf(SYNC), CHANGED_EVENT + ' moved out of ' + SYNC).toContain(CHANGED_EVENT);
+        expect(codeOf(SYNC), 'the provider does not invalidate anything').toContain('invalidateDomains');
+        expect(literalsOf(TICKS), 'timer:tick moved out of ' + TICKS).toContain('timer:tick');
+        expect(
+            codeOf(TICK_PROVIDER),
+            TICK_PROVIDER + ' no longer mounts the subscription tests/shell-tick-lifetime.test.ts runs'
+        ).toContain('subscribeTimerTicks(setTimerSnapshot)');
+    });
+
+    /*
+     * The shell's quit confirm reads the timer snapshot at the click. It may not do so through the timer feature's
+     * own store: a store whose freshness one screen owns is a store every other screen reads stale (WR-07).
+     */
+    it('publishes the timer answer rather than the timer store', () => {
+        const surface = codeOf(path.posix.join(SRC, 'features/timer/index.ts'));
+        expect(surface, 'features/timer/index.ts exports its Zustand instance, so the boundary is decorative')
+            .not.toMatch(/\buseTimerStore\b/);
+        const reachers = rendererSources()
+            .filter((file) => !file.startsWith(SRC + '/features/timer/'))
+            .filter((file) => /\buseTimerStore\b/.test(codeOf(file)));
+        expect(reachers, 'these read the timer feature internal store directly').toEqual([]);
+    });
+
+    it('mounts both providers inside the client they read, and outside the route table', () => {
         const app = codeOf(APP);
         const query = app.indexOf('<QueryProvider>');
-        const sync = app.indexOf('<DataSyncProvider>');
+        const router = app.indexOf('<HashRouter>');
         expect(query, 'App.tsx no longer mounts QueryProvider').toBeGreaterThan(-1);
-        expect(
-            sync,
-            'App.tsx does not mount DataSyncProvider, so nothing listens for a change made in main'
-        ).toBeGreaterThan(-1);
-        expect(
-            sync > query,
-            'DataSyncProvider is outside QueryProvider, so useQueryClient would throw on the first render'
-        ).toBe(true);
+        expect(router, 'App.tsx no longer mounts the router').toBeGreaterThan(-1);
+        for (const provider of ['<DataSyncProvider>', '<TimerProvider>']) {
+            const at = app.indexOf(provider);
+            expect(at, 'App.tsx does not mount ' + provider).toBeGreaterThan(-1);
+            expect(at > query, provider + ' is outside QueryProvider, so useQueryClient would throw').toBe(true);
+            expect(
+                at < router,
+                provider + ' is inside the router, so its subscription would be torn down by a route change'
+            ).toBe(true);
+        }
     });
 });
 

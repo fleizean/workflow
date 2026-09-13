@@ -3,7 +3,7 @@
 // decision (IPC-05); the renderer only asks.
 
 import { useCallback } from 'react';
-import { useTimerStore } from '@renderer/features/timer';
+import { readTimerSnapshot } from '@renderer/features/timer';
 import { invoke } from '@renderer/lib/ipc';
 import { useUiStore } from '@renderer/store/ui.store';
 import { HIDE_NOTICE, quitDialogFor } from '../quit-dialog';
@@ -34,7 +34,7 @@ export function useShellControls(): ShellControls {
     const quit = useCallback(() => {
         void (async () => {
             // Read at the click rather than subscribed to: the titlebar must not re-render on every tick.
-            const asked = quitDialogFor(useTimerStore.getState().snapshot);
+            const asked = quitDialogFor(readTimerSnapshot());
             if (await useUiStore.getState().openDialog(asked)) {
                 await invoke('app:quit');
             }
