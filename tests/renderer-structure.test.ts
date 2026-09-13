@@ -182,6 +182,63 @@ describe('SPA-01: one document, and screens change inside it', () => {
     });
 });
 
+/*
+ * Criterion 1's other half, and SPA-15.
+ *
+ * The v1.2.1 renderer is MOVED, not deleted - Phase 8 ticks the parity checklist against it and SPA-14 deletes it
+ * then. The four page fragments are the exception: nothing in the repository has ever referenced them (the Phase 1
+ * inventory found exactly one mention, in RESTRUCTURE-BRIEF.md, flagging them as dead), so they are deleted here
+ * rather than carried. "Moved" and "deleted" are different claims, so they are asserted separately.
+ *
+ * The unused-preload-API half of SPA-15 is not here. The four v1.2.1 APIs that were exposed and never called are
+ * dispositioned one by one in tests/ipc-parity.test.ts, and tests/preload-bridge.test.ts holds the v2 bridge's
+ * surface equal to the contract's channel list - so an unused API cannot exist in the v2 preload without a contract
+ * channel to match it. Deleting the five entries from the frozen preload.js would destroy the reference those two
+ * files are measured against.
+ */
+describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragments did not come with it', () => {
+    const LEGACY_PAGES = 'legacy/pages';
+    const LIVE_PAGES = ['companies.html', 'index.html', 'settings.html', 'work-history.html'];
+
+    it('has no v1.2.1 renderer left under src/', () => {
+        const survivors = ['src/pages', 'src/styles'].filter((dir) => exists(dir));
+        expect(survivors, 'these belong under legacy/ now (criterion 1)').toEqual([]);
+
+        const flatScripts = tracked(RENDERER).filter((file) => /^src\/renderer\/[^/]+\.js$/.test(file));
+        expect(flatScripts, 'the v1.2.1 flat renderer scripts are back inside the v2 renderer root').toEqual([]);
+    });
+
+    it('kept exactly the four pages Phase 8 ticks its parity checklist against', () => {
+        expect(fs.readdirSync(path.join(repoRoot, LEGACY_PAGES)).sort()).toEqual(LIVE_PAGES);
+    });
+
+    it('deleted the four unreferenced page fragments rather than moving them', () => {
+        const surviving = [
+            'src/pages/fragments', 'legacy/pages/fragments', 'legacy/fragments'
+        ].filter((dir) => exists(dir));
+        expect(
+            surviving,
+            'SPA-15 removes the dead fragments. Moving them would keep 226 lines of markup that nothing has ever ' +
+            'loaded, in the one directory a later reader would mistake for a source of truth.'
+        ).toEqual([]);
+    });
+
+    /*
+     * The deletion had to leave the CUSTODY-09 inventory untouched, and it did: the fragments held no
+     * addEventListener and no window.api call, so 106/21/67 are unchanged. tests/inventory.test.ts recomputes all
+     * three from legacy/ and compares them element-wise with the committed artifacts, which is the real guard -
+     * this is the pointer to it, so a reader of criterion 1 is not left wondering whether the counts moved.
+     */
+    it('kept the behaviour inventory measurable, by moving what the inventory counts', () => {
+        for (const artifact of ['baselines/v1.2.1/handlers.tsv', 'baselines/v1.2.1/api-calls.tsv']) {
+            const rows = read(artifact).split('\n').filter((row) => row.trim() !== '');
+            expect(rows.length, artifact + ' is empty, so the inventory cannot be recomputed').toBeGreaterThan(0);
+            const stale = rows.filter((row) => !row.startsWith(LEGACY_PAGES + '/') && !row.startsWith('legacy/renderer/'));
+            expect(stale.slice(0, 3), artifact + ' still cites files at their pre-cutover paths').toEqual([]);
+        }
+    });
+});
+
 describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
     it('has exactly one .css file, and it is ' + GLOBALS, () => {
         const stylesheets = tracked(RENDERER).filter((file) => file.endsWith('.css'));
