@@ -1044,6 +1044,55 @@ describe('backup retention', () => {
         expect(fs.existsSync(made[3] ?? ''), 'retention deleted the newest backup').toBe(true);
     });
 
+    /*
+     * WR-03: the sort was on the whole filename, which reads as the stamp only while every backup in the directory
+     * shares one basename. Flipping DATABASE_RENAME_RELEASED is the first thing that puts krono.db.*.bak and
+     * workflow.db.*.bak side by side - and with both there, retention deleted the newest backup by time and kept
+     * three that were eight months older. The header claimed "ordered by filename stamp" and "the newest
+     * database-shaped backup always survives"; neither held.
+     */
+    it('ranks by the stamp, not by the basename in front of it', () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+
+        // Three January backups under the new name, and one September backup under the old one: the state the
+        // first launch after the rename is in.
+        const old: string[] = [];
+        for (const day of [1, 2, 3]) {
+            const name = 'workflow.db.2026-01-0' + String(day) + 'T00-00-00-000Z.bak';
+            old.push(path.join(dir, name));
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, name), fs.readFileSync(fx));
+        }
+        const newest = path.join(dir, 'krono.db.2026-09-30T00-00-00-000Z.bak');
+        fs.writeFileSync(newest, fs.readFileSync(fx));
+
+        const swept = pruneBackups(dir, 3);
+
+        expect(fs.existsSync(newest), 'retention deleted the newest backup and kept three older ones').toBe(true);
+        expect(swept.deleted, 'the oldest backup was not the one deleted')
+            .toEqual([old[0] ?? '']);
+        expect(fs.readdirSync(dir).sort()).toEqual(
+            [path.basename(newest), path.basename(old[1] ?? ''), path.basename(old[2] ?? '')].sort()
+        );
+    });
+
+    // WR-03: MigrationFailedError names backupPath, so a sweep on the same run must not delete the file it names.
+    it('never sweeps the backup this run was told to protect', async () => {
+        const fx = makeCleanFixture();
+        const dir = backupDirFor(fx);
+        const made: string[] = [];
+        for (const second of [0, 1, 2]) {
+            made.push((await backupDatabase(fx, dir, { now: at(10, 0, second) })).backupPath);
+        }
+        const oldest = made[0] ?? '';
+
+        const swept = pruneBackups(dir, 1, path.basename(oldest));
+
+        expect(fs.existsSync(oldest), 'the protected backup was swept by the run that took it').toBe(true);
+        expect(swept.deleted, 'only the unprotected doomed backup should have gone').toEqual([made[1] ?? '']);
+    });
+
     it('ignores files that are not backups it wrote', async () => {
         const fx = makeCleanFixture();
         const dir = backupDirFor(fx);

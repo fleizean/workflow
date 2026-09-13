@@ -2,6 +2,7 @@
 // Steps, baseline, backup directory and clock are injected (D-10); the runner never renames, replaces or restores a file.
 
 import fs from 'node:fs';
+import path from 'node:path';
 import type DatabaseType from 'better-sqlite3';
 import { isLocalDate } from '@shared/utils/date';
 import {
@@ -190,7 +191,8 @@ const hasContent = (dbPath: string): boolean => sizeOf(dbPath) > 0 || sizeOf(dbP
 function pruneBestEffort(backupDir: string, backupPath: string | null): PruneOutcome {
     if (backupPath === null) return { deleted: [], skipped: [] };
     try {
-        return pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS);
+        // WR-03: the backup this run took is named by MigrationFailedError, so it may not be swept by the same run.
+        return pruneBackups(backupDir, DEFAULT_RETAINED_BACKUPS, path.basename(backupPath));
     } catch {
         // A sweep that could not even be attempted is still something the caller has to be able to say.
         return { deleted: [], skipped: [backupDir] };

@@ -394,6 +394,9 @@ export interface PruneOutcome {
     readonly skipped: string[];
 }
 
+/** The timestamp a backup name carries. Two basenames coexist after the rename, so the name cannot be the key. */
+const stampOf = (name: string): string => BACKUP_NAME.exec(name)?.[1] ?? '';
+
 // Deletes all but the `keep` newest backups, ordered by filename stamp rather than mtime, and returns what it
 // deleted. WR-02 (iteration 2): a file that does not read as a database ranks below every one that does, whatever
 // its stamp, so retention can never spend a slot on a corrupt copy while deleting a good one. The newest
@@ -401,14 +404,22 @@ export interface PruneOutcome {
 // WR-02 (iteration 3): one entry it cannot delete - held open by a scanner, left read-only by a restore tool -
 // used to end the whole sweep, so every backup older than it was never deleted again. The sweep is total, and what
 // it could not do is returned rather than lost.
-export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_BACKUPS): PruneOutcome {
+// WR-03 (iteration 4): the sort was on the WHOLE filename, which reads as the stamp only while every backup in the
+// directory shares one basename. V2-SCHEMA's rename is the first thing that puts krono.db.*.bak and
+// workflow.db.*.bak side by side, and with both present the newest backup was deleted and older ones kept.
+// `protect` is the backup this run just took: retention must never spend its sweep on the file the failure report
+// is about to name.
+export function pruneBackups(
+    backupDir: string,
+    keep: number = DEFAULT_RETAINED_BACKUPS,
+    protect: string | null = null
+): PruneOutcome {
     if (!fs.existsSync(backupDir)) return { deleted: [], skipped: [] };
 
     const newestFirst = fs
         .readdirSync(backupDir)
         .filter((name) => BACKUP_NAME.test(name))
-        .sort()
-        .reverse();
+        .sort((a, b) => stampOf(b).localeCompare(stampOf(a)));
 
     const readable = new Map(newestFirst.map((name) => [name, looksLikeADatabase(path.join(backupDir, name))]));
     const ranked = [
@@ -417,7 +428,7 @@ export function pruneBackups(backupDir: string, keep: number = DEFAULT_RETAINED_
     ];
 
     const retained = Math.max(1, Math.trunc(keep));
-    const doomed = ranked.slice(retained);
+    const doomed = ranked.slice(retained).filter((name) => name !== protect);
 
     const deleted: string[] = [];
     const skipped: string[] = [];
