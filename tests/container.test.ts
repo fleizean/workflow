@@ -572,6 +572,65 @@ describe('the services the container composes', () => {
         expect(driver.sounds).toHaveLength(1);
     });
 
+    /*
+     * WR-08: this phase put database work inside the per-second tick callback, and MAX_CREDIT_MS means any stall
+     * over two seconds permanently destroys the excess - so the cost of the tick is a correctness question, not a
+     * performance one. The day's total is now read only while an answer could still change today.
+     */
+    it('stops reading the day once nothing a read could say would change the answer', async () => {
+        const dbPath = makeCleanFixture();
+        const driver = drivenPorts();
+        const connection = await migratedConnection(dbPath);
+        let dayReads = 0;
+        const layer: DatabaseLayer = {
+            ...guardedLayer(),
+            createSessionsRepository: (handle, options) => {
+                const real = realLayer.createSessionsRepository(handle, options);
+                return { ...real, dayTotalFor: (date) => { dayReads += 1; return real.dayTotalFor(date); } };
+            }
+        };
+        const container = createContainer({ layer, connection, log: () => undefined, ports: driver.ports });
+        container.services.settings.update({
+            dailyTargetSeconds: container.services.stats.today().totalSeconds + 60,
+            goalNotification: true
+        });
+
+        container.services.timer.start();
+        driver.tick(59);
+        const beforeTarget = dayReads;
+        expect(beforeTarget, 'the day was never measured, so the sampler proves nothing').toBeGreaterThan(0);
+
+        driver.tick(1);
+        expect(driver.notifications).toEqual([GOAL_NOTIFICATION]);
+        const atTarget = dayReads;
+
+        // An hour of ticks after the announcement. The answer cannot change today, so nothing is read for it.
+        driver.tick(3600);
+        expect(dayReads - atTarget, 'the tick went on aggregating a day it had already announced').toBe(0);
+    });
+
+    it('reads no day at all while the notification is off', async () => {
+        const dbPath = makeCleanFixture();
+        const driver = drivenPorts();
+        const connection = await migratedConnection(dbPath);
+        let dayReads = 0;
+        const layer: DatabaseLayer = {
+            ...guardedLayer(),
+            createSessionsRepository: (handle, options) => {
+                const real = realLayer.createSessionsRepository(handle, options);
+                return { ...real, dayTotalFor: (date) => { dayReads += 1; return real.dayTotalFor(date); } };
+            }
+        };
+        const container = createContainer({ layer, connection, log: () => undefined, ports: driver.ports });
+        container.services.settings.update({ goalNotification: false });
+
+        container.services.timer.start();
+        const before = dayReads;
+        driver.tick(600);
+
+        expect(dayReads - before, 'a day was aggregated for a notification that cannot fire').toBe(0);
+    });
+
     it('does not raise it at all when the setting is off, and asks only every few seconds', async () => {
         const dbPath = makeCleanFixture();
         const { container, driver } = await driven(dbPath);

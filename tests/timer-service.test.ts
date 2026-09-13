@@ -519,6 +519,35 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
         expect(h.service.snapshot().elapsedSeconds, 'the clock was stopped for good').toBe(7);
     });
 
+    /*
+     * WR-08. Node coalesces missed setInterval callbacks into one, so a five-second synchronous stall in main is a
+     * single tick with a 5 000 ms delta, of which 2 000 is credited and 3 000 is destroyed. The clamp is still the
+     * right defence, but the claim that a stall this long does not happen in main was an argument. Now it is
+     * counted, so the assumption can be checked against what a real run produces.
+     */
+    it('counts and reports what a tick later than the clamp cost', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(1);
+        h.advance(5000);
+        h.fire();
+
+        expect(h.elapsed(), 'the clamp did not hold').toBe(1 + MAX_CREDIT_MS / TICK_MS);
+        expect(h.logs.at(-1)).toContain('5000 ms after the last one, so 3000 ms of it was not credited');
+
+        h.advance(4000);
+        h.fire();
+        expect(h.logs.at(-1), 'the run total was not accumulated').toContain('(5 s this run)');
+    });
+
+    it('says nothing about a tick inside the clamp', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(30, MAX_CREDIT_MS);
+        expect(h.elapsed(), 'a late-but-creditable cadence lost time').toBe(60);
+        expect(h.logs, 'a tick the clamp credited in full was reported as a loss').toEqual([]);
+    });
+
     it('reports a failed write and keeps counting, because the value is still in memory', () => {
         const h = harness({
             store: {

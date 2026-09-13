@@ -111,6 +111,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     // WR-04: whether the last write landed. Logging alone left a user counting to 17:00 against a full disk with
     // nothing on screen to say that a reboot would take the whole day with it.
     let persistFailing = false;
+    // WR-08: how much a late tick has cost this run, so the clamp's safety is measured rather than assumed.
+    let clampedLossMs = 0;
 
     // Which local day the seconds below were counted on. A launch restores the accumulation but not the day it was
     // worked on, so a carry-over starts as counted on no day and no day is credited with it (CR-01).
@@ -162,6 +164,19 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         lastTickAt = now;
         if (status === 'running' && !gated) {
             const earned = creditableMs(delta);
+            /*
+             * WR-08: every millisecond past the clamp is time the user may really have worked, and it is gone. The
+             * clamp is still right - it is the only defence against a sleep that powerMonitor did not announce -
+             * but "a stall this long does not happen in main" was an argument, and this makes it an observation.
+             * Most of what lands here will be exactly that unannounced sleep; a run that accumulates seconds of it
+             * while the machine was plainly awake is the case worth finding.
+             */
+            if (Number.isFinite(delta) && delta > MAX_CREDIT_MS) {
+                const lost = Math.round(delta - MAX_CREDIT_MS);
+                clampedLossMs += lost;
+                log('timer: a tick arrived ' + Math.round(delta) + ' ms after the last one, so ' + String(lost) +
+                    ' ms of it was not credited (' + String(Math.round(clampedLossMs / TICK_MS)) + ' s this run)');
+            }
             accumulatedMs += earned;
             // A run that crosses midnight starts the new day at zero: the evening's seconds stay on the evening's
             // day, where the user can still save them, and the new day is reached only on its own (CR-01).

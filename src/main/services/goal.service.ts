@@ -66,6 +66,12 @@ export interface GoalEvaluation {
 export interface GoalService {
     /** Decides for the clock's local day, recording that day before answering yes. Safe to call every tick. */
     evaluate(input: GoalEvaluation): GoalNotificationDecision;
+    /**
+     * Whether any day total could still change the answer today. False means the caller has nothing to measure, so
+     * the read it would have done can be skipped entirely (WR-08) - which is the whole cost of asking on the tick
+     * once the target has been announced, or while the notification is off.
+     */
+    pending(settings: GoalSettings): boolean;
 }
 
 export interface GoalServiceInput {
@@ -95,6 +101,18 @@ export function createGoalService(input: GoalServiceInput): GoalService {
     }
 
     return {
+        pending(settings) {
+            return decideGoalNotification({
+                date: localDayOf(clock),
+                // The largest total there could be. If even that would not notify, no real total can either - which
+                // reuses the one decider rather than restating the order of its guards in a second place.
+                totalSecondsToday: Number.MAX_SAFE_INTEGER,
+                dailyTargetSeconds: settings.dailyTargetSeconds,
+                goalNotification: settings.goalNotification,
+                lastNotifiedDate: lastNotified()
+            }).notify;
+        },
+
         evaluate(evaluation) {
             const decision = decideGoalNotification({
                 date: localDayOf(clock),

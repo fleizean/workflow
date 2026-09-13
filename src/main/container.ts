@@ -5,6 +5,7 @@
 
 import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
+import { localDayOf } from './ports';
 import { describeError } from './errors';
 import {
     GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, TIMER_NOT_SAVED_NOTIFICATION,
@@ -252,15 +253,25 @@ export function createContainer(input: ContainerInput): AppContainer {
      */
     function announceGoalIfReached(counted: CountedDay | null): void {
         try {
-            const today = stats.today();
+            /*
+             * WR-08: what this costs matters, because the tick is one of its callers and every millisecond a tick
+             * runs late beyond MAX_CREDIT_MS is work the user did that is deleted. One bounded settings read is all
+             * that is unconditional; the day's own total is read only when an answer could still change today -
+             * which is never, once the target has been announced or while the notification is off.
+             */
             const current = settings.get();
-            const running = counted !== null && counted.day === today.date ? counted.seconds : 0;
+            const goalSettings = {
+                dailyTargetSeconds: current.dailyTargetSeconds,
+                goalNotification: current.goalNotification
+            };
+            if (!goal.pending(goalSettings)) {
+                return;
+            }
+            const today = localDayOf(ports.clock);
+            const running = counted !== null && counted.day === today ? counted.seconds : 0;
             const decision = goal.evaluate({
-                totalSecondsToday: today.totalSeconds + running,
-                settings: {
-                    dailyTargetSeconds: current.dailyTargetSeconds,
-                    goalNotification: current.goalNotification
-                }
+                totalSecondsToday: repositories.sessions.dayTotalFor(today) + running,
+                settings: goalSettings
             });
             if (decision.notify) {
                 // Both, and from main: v1.2.1 raised the notification from a renderer that is not running while the
