@@ -33,7 +33,7 @@ export const LEGACY_TIMER_KEY = 'legacy.v121.timerState';
 export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 
 /** src/shared/ipc/channels.ts's IPC_CHANNELS and the container's services; tests/smoke-harness.test.ts holds them equal. */
-export const EXPECTED_IPC_CHANNELS = 30;
+export const EXPECTED_IPC_CHANNELS = 31;
 export const EXPECTED_SERVICES = 'companies,goal,pomodoro,sessions,settings,stats,timer';
 
 /** src/main/config.ts's EXIT_CODES, restated for plain Node; tests/smoke-harness.test.ts holds the two equal (T-04-50). */
@@ -202,7 +202,7 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_BRIDGE_DISPOSER === 'function', 'reported ' + JSON.stringify(f.SMOKE_BRIDGE_DISPOSER));
     check('a main-process tick reached the page, carrying the snapshot and no event object',
         Number(f.SMOKE_BRIDGE_TICKS) >= 1 &&
-        f.SMOKE_BRIDGE_TICK_KEYS === 'elapsedSeconds,mode,restoredFromPreviousLaunch,status',
+        f.SMOKE_BRIDGE_TICK_KEYS === 'elapsedSeconds,mode,persistFailing,restoredFromPreviousLaunch,status',
         'ticks=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS) + ' keys=' + JSON.stringify(f.SMOKE_BRIDGE_TICK_KEYS));
     check('the disposer stopped the next one (criterion 10)',
         f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE === f.SMOKE_BRIDGE_TICKS,

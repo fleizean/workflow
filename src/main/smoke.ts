@@ -255,7 +255,7 @@ async function checkBridge(win: BrowserWindow, container: AppContainer, lines: s
         if (typeof delivered.ticks !== 'number' || delivered.ticks < 1) {
             return 'no timer:tick reached the page in ' + String(SMOKE_TICK_WAIT_MS) + ' ms';
         }
-        if (delivered.keys !== 'elapsedSeconds,mode,restoredFromPreviousLaunch,status') {
+        if (delivered.keys !== 'elapsedSeconds,mode,persistFailing,restoredFromPreviousLaunch,status') {
             return 'a tick arrived shaped as ' + text(delivered.keys);
         }
 
