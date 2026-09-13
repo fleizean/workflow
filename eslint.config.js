@@ -152,16 +152,49 @@ const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts', 'src/main/smoke.ts
  */
 const CLASS_BUILD_MESSAGE = 'Write class names out in full and select between them with a typed lookup map; a name assembled at run time gets no CSS from a build-time Tailwind (SPA-11, C3).';
 const CLASS_ATTRIBUTES = 'JSXAttribute[name.name=/^(className|class)$/] ';
+const CLASS_LIST = [
+    "CallExpression[callee.object.property.name='classList']",
+    "CallExpression[callee.object.name='classList']"
+];
+
+/*
+ * CR-02: a literal that is a Tailwind utility waiting for its next piece - 'bg-', 'text-', 'rounded-full bg-',
+ * 'hover:'. Anchoring only on the className attribute left the most natural refactor of a banned line wide open:
+ * hoist the concatenation to a local and pass the variable. This matches the literal wherever it is concatenated,
+ * so the hoist, the spread-props object and setAttribute are one rule rather than three.
+ *
+ * The roots are an allowlist rather than a shape, because a shape catches ids too: AlertDialog builds
+ * 'dialog-title-' + id, and reaching an element by its id is the sanctioned way.
+ */
+const CLASS_ROOT = '(?:bg|text|border|ring|from|via|to|fill|stroke|shadow|outline|decoration|accent|caret|divide' +
+    '|placeholder|w|h|min-w|max-w|min-h|max-h|p[xytblr]?|m[xytblr]?|gap|space-[xy]|top|left|right|bottom|inset|z' +
+    '|opacity|rounded|grid-cols|grid-rows|col-span|row-span|order|basis|translate-[xy]|scale|rotate|duration' +
+    '|delay|animate|font|tracking|leading|hover|focus|active|disabled|dark|group-hover|sm|md|lg|xl|2xl)';
+const CLASS_PREFIX = '/^(?:[-a-z0-9:]+ )*' + CLASS_ROOT + '[-:]$/';
+
 const CLASS_BUILD_BANS = [
     CLASS_ATTRIBUTES + 'TemplateLiteral[expressions.length>0]',
     CLASS_ATTRIBUTES + "BinaryExpression[operator='+']",
+    // A class list joined or concatenated is a class list the scanner never saw.
+    CLASS_ATTRIBUTES + 'CallExpression[callee.property.name=/^(join|concat)$/]',
+    // The utility prefix itself, wherever it is being appended to. This is what reaches the hoisted local.
+    "BinaryExpression[operator='+'] > Literal[value=" + CLASS_PREFIX + ']',
+    'TemplateLiteral[expressions.length>0] > TemplateElement[value.raw=' + CLASS_PREFIX + ']',
+    'MemberExpression[property.name=/^(join|concat)$/] > ArrayExpression > Literal[value=' + CLASS_PREFIX + ']',
+    "MemberExpression[property.name='concat'] > Literal[value=" + CLASS_PREFIX + ']',
     // The imperative spellings, which is how the v1.2.1 renderer wrote them.
     "AssignmentExpression[left.property.name='className'][right.type='TemplateLiteral'][right.expressions.length>0]",
     "AssignmentExpression[left.property.name='className'][right.type='BinaryExpression'][right.operator='+']",
-    "CallExpression[callee.object.property.name='classList'] > TemplateLiteral[expressions.length>0]",
-    "CallExpression[callee.object.property.name='classList'] > BinaryExpression[operator='+']",
-    "CallExpression[callee.object.name='classList'] > TemplateLiteral[expressions.length>0]",
-    "CallExpression[callee.object.name='classList'] > BinaryExpression[operator='+']"
+    "AssignmentExpression[left.property.name='className'] > CallExpression[callee.property.name=/^(join|concat)$/]",
+    ...CLASS_LIST.flatMap((call) => [
+        call + ' > TemplateLiteral[expressions.length>0]',
+        call + " > BinaryExpression[operator='+']",
+        call + ' > CallExpression[callee.property.name=/^(join|concat)$/]',
+        // Spread into classList: nothing can tell what it will contain, so it is refused outright.
+        call + ' > SpreadElement'
+    ]),
+    // setAttribute('class', ...) is className under another name, and nothing in this renderer needs it.
+    "CallExpression[callee.property.name='setAttribute'][arguments.0.value='class']"
 ].map((selector) => ({ selector, message: CLASS_BUILD_MESSAGE }));
 
 /*
@@ -178,6 +211,17 @@ const CLASS_QUERY_BANS = [
     'CallExpression' + CLASS_QUERY_METHODS + '[arguments.0.value=/\\./]',
     'CallExpression' + CLASS_QUERY_METHODS + ' > TemplateLiteral[expressions.length>0]',
     'CallExpression[callee.name=/^(querySelector|querySelectorAll)$/][arguments.0.value=/\\./]',
+    /*
+     * WR-01: the comment above says a dynamic selector is banned outright because nothing can tell what it will
+     * contain, and that was true only of template literals. A selector hoisted to a constant - which is what a
+     * reviewer asks for when the string is long - and a selector built with + were both accepted, and the hoisted
+     * one is legacy/pages/settings.html:659 verbatim.
+     */
+    'CallExpression' + CLASS_QUERY_METHODS + ' > Identifier',
+    'CallExpression' + CLASS_QUERY_METHODS + " > BinaryExpression[operator='+']",
+    // The class attribute reached as an attribute selector, which carries no dot.
+    'CallExpression' + CLASS_QUERY_METHODS + '[arguments.0.value=/\\[\\s*class\\s*[~^$*|]?=/]',
+    'CallExpression[callee.name=/^(querySelector|querySelectorAll)$/][arguments.0.value=/\\[\\s*class\\s*[~^$*|]?=/]',
     // No selector at all: the argument is the class list itself.
     "CallExpression[callee.property.name='getElementsByClassName']"
 ].map((selector) => ({ selector, message: CLASS_QUERY_MESSAGE }));

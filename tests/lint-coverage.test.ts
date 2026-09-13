@@ -853,7 +853,9 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
         'declare const CIRCLE: Record<string, string>;',
         'declare const A: string;',
         'declare const B: string;',
-        'declare const chosen: string;'
+        'declare const chosen: string;',
+        'declare const id: number;',
+        'declare const parts: string[];'
     ];
 
     const endsWith = (tag: string) => (m: Linter.LintMessage): boolean =>
@@ -869,14 +871,36 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
             'el.className = \'bg-\' + tone;',
             'el.className = `bg-${tone}`;',
             'el.classList.add(`bg-${tone}-100`);',
-            'el.classList.toggle(\'bg-\' + tone);'
+            'el.classList.toggle(\'bg-\' + tone);',
+            /*
+             * CR-02: the five spellings the reviewer got past the rule, plus their siblings. The last pair is the
+             * one that matters - hoisting the concatenation to a local and passing the variable is the single most
+             * natural refactor of a banned line, and it was not merely unbanned, it was what the rule taught.
+             */
+            'export const a1 = <div className={[\'bg-\', tone, \'-100\'].join(\'\')} />;',
+            'export const a2 = <div className={\'bg-\'.concat(tone)} />;',
+            'export const a3 = <div className={parts.join(\' \')} />;',
+            'el.setAttribute(\'class\', \'bg-\' + tone);',
+            'el.setAttribute(\'class\', chosen);',
+            'el.className = [\'a\', tone].join(\' \');',
+            'el.classList.add(...[\'bg-\' + tone]);',
+            'el.classList.add(...parts);',
+            'const cls1 = \'bg-\' + tone;',
+            'const cls2 = `text-${tone}-500`;',
+            'const cls3 = [\'rounded-full bg-\', tone].join(\'\');',
+            'export const a4 = <div {...{ className: \'bg-\' + tone }} />;',
+            'export const a5 = <div className={\'hover:\' + tone} />;'
         ];
         // The sanctioned shapes: a literal, a typed lookup, and a choice between two whole class strings.
         const allowed = [
             'export const q1 = <div className="bg-blue-100" />;',
             'export const q2 = <div className={CIRCLE[tone]} />;',
             'export const q3 = <div className={on ? A : B} />;',
-            'el.classList.add(\'bg-blue-100\');'
+            'el.classList.add(\'bg-blue-100\');',
+            // An id built from a value is how AlertDialog labels its own dialog, and how an element is reached.
+            'const titleId = \'dialog-title-\' + String(id);',
+            'const label = \'Workflow has counted \' + String(id) + \' seconds\';',
+            'el.setAttribute(\'aria-label\', \'Close \' + String(id));'
         ];
         const { missed, flagged } = await probe(
             RENDERER_PROBE_FILE, header, banned, allowed, endsWith(CLASS_BUILD_TAG)
@@ -893,12 +917,22 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
             'el.matches(\'.active\');',
             // Unknowable at lint time, so refused outright.
             'document.querySelector(`.${chosen}`);',
-            'document.getElementsByClassName(\'flex\');'
+            'document.getElementsByClassName(\'flex\');',
+            /*
+             * WR-01: the same selector hoisted to a constant, which is what a reviewer asks for when the string is
+             * long - and line one below is legacy/pages/settings.html:659, the delete-all-data button.
+             */
+            'document.querySelector(chosen);',
+            'el.closest(chosen);',
+            'el.querySelector(\'.mt-8\' + \' button\');',
+            'document.querySelectorAll(\'[class~="mt-8"]\');',
+            'el.matches(\'[class*="flex"]\');'
         ];
         const allowed = [
             'document.querySelector(\'#root\');',
             'document.querySelector(\'[data-testid="save"]\');',
-            'el.closest(\'button\');'
+            'el.closest(\'button\');',
+            'document.getElementById(\'root\');'
         ];
         const { missed, flagged } = await probe(
             RENDERER_PROBE_FILE, header, banned, allowed, endsWith(CLASS_QUERY_TAG)
