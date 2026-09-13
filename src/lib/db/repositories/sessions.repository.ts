@@ -1,6 +1,7 @@
 // work_sessions. The only module that knows this table's column names; callers see WorkSession and DayTotal.
 
 import { and, asc, between, desc, eq, sql } from 'drizzle-orm';
+import { isLocalDate } from '@shared/utils/date';
 import { workSessions } from '../schema';
 import {
     mapRow, mapRows, optionalId, optionalText, requireEpochMs, requireId, requireLocalDate, requireText,
@@ -51,6 +52,41 @@ function toSession(row: WorkSessionRow): WorkSession {
 
 // created_at is deliberately absent from every insert and update: SQLite's own CURRENT_TIMESTAMP default fills it,
 // exactly as v1.2.1 did, so the stored text keeps one format.
+/*
+ * WR-10: the predicate the aggregates share with toSession. dayTotals() filtered `duration` alone while its comment
+ * claimed "the same rows list() returns", so a row list() drops - a BLOB in note, a text company_id, a name that is
+ * not text - was still counted in the day's total. Work History then showed eight sessions totalling seven hours
+ * while the progress card, the streak and the week totals all said eight, with no visible session to explain the
+ * difference and no way to edit or delete the one that caused it.
+ *
+ * created_at is the one predicate this cannot share: toSession also requires it to parse as a SQL timestamp, and
+ * that parse lives in date.ts. The type check below catches a created_at that is not text at all; a text value that
+ * does not parse is still counted here and still dropped by list(). That remainder is stated rather than claimed
+ * away, and the liberal SQL_TIMESTAMP regex makes it narrow.
+ */
+const LISTABLE = sql`typeof(${workSessions.duration}) = 'integer' AND ${workSessions.duration} >= 0
+    AND typeof(${workSessions.name}) = 'text'
+    AND typeof(${workSessions.created_at}) = 'text'
+    AND (${workSessions.company_id} IS NULL
+        OR (typeof(${workSessions.company_id}) = 'integer' AND ${workSessions.company_id} > 0))
+    AND (${workSessions.note} IS NULL OR typeof(${workSessions.note}) = 'text')`;
+
+const COUNTED_SECONDS = sql<number>`coalesce(sum(CASE WHEN ${LISTABLE} THEN ${workSessions.duration} END), 0)`;
+const COUNTED_ROWS = sql<number>`coalesce(sum(CASE WHEN ${LISTABLE} THEN 1 ELSE 0 END), 0)`;
+const UNCOUNTED_ROWS = sql<number>`coalesce(sum(CASE WHEN ${LISTABLE} THEN 0 ELSE 1 END), 0)`;
+
+/** By count and by day, never by value: a session name or a note is user data (the mapper's rule). */
+function reportUncounted(date: unknown, uncounted: unknown, options: RepositoryOptions): void {
+    if (typeof uncounted !== 'number' || uncounted <= 0) return;
+    options.onSkippedRow?.({
+        table: TABLE,
+        column: 'duration',
+        rowId: null,
+        reason: String(uncounted) + ' row(s) on ' + (isLocalDate(date) ? date : 'an unreadable day') +
+            ' are left out of the sessions list, so the day total leaves them out too'
+    });
+}
+
 const columnsOf = (input: SessionInput) => ({
     name: input.name,
     duration: input.durationSeconds,
@@ -110,15 +146,10 @@ export function createSessionsRepository(handle: DbHandle, options: RepositoryOp
         // aggregating a user's whole history to read one day grows with their history - on the clock's own thread,
         // where a slow read is a late tick.
         dayTotalFor(date) {
-            const row = handle.select({
-                totalSeconds: sql<number>`coalesce(sum(${workSessions.duration}), 0)`
-            }).from(workSessions)
-                .where(and(
-                    eq(workSessions.date, date),
-                    // The same rows list() and dayTotals() count, so the three can never disagree.
-                    sql`typeof(${workSessions.duration}) = 'integer' AND ${workSessions.duration} >= 0`
-                )).get();
+            const row = handle.select({ totalSeconds: COUNTED_SECONDS, uncounted: UNCOUNTED_ROWS })
+                .from(workSessions).where(eq(workSessions.date, date)).get();
 
+            reportUncounted(date, row?.uncounted, options);
             const total = mapRow(TABLE, row, (found) => requireWholeSeconds('duration', found.totalSeconds), options);
             return total ?? 0;
         },
@@ -129,14 +160,18 @@ export function createSessionsRepository(handle: DbHandle, options: RepositoryOp
             // renamed column is a compile error here too.
             const totals = handle.select({
                 date: workSessions.date,
-                totalSeconds: sql<number>`coalesce(sum(${workSessions.duration}), 0)`
+                totalSeconds: COUNTED_SECONDS,
+                counted: COUNTED_ROWS,
+                uncounted: UNCOUNTED_ROWS
             }).from(workSessions)
-                // The same rows list() returns: a duration SQLite did not store as a non-negative integer is not a
-                // length of time, and a total that counted it would disagree with the sessions on screen.
-                .where(sql`typeof(${workSessions.duration}) = 'integer' AND ${workSessions.duration} >= 0`)
                 .groupBy(workSessions.date).orderBy(desc(workSessions.date)).all();
 
-            return mapRows(TABLE, totals, (row): DayTotal => ({
+            for (const row of totals) reportUncounted(row.date, row.uncounted, options);
+            // A day whose every row is unlistable shows no sessions, so it has no total either - which is the day
+            // set the WHERE this replaced produced, now under the whole predicate rather than duration alone.
+            const days = totals.filter((row) => typeof row.counted === 'number' && row.counted > 0);
+
+            return mapRows(TABLE, days, (row): DayTotal => ({
                 date: requireLocalDate('date', row.date),
                 totalSeconds: requireWholeSeconds('duration', row.totalSeconds)
             }), options);

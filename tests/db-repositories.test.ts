@@ -333,6 +333,83 @@ describe('CORE-01: the settings repository', () => {
     });
 });
 
+/*
+ * WR-10. dayTotals() filtered duration alone while its comment claimed "the same rows list() returns", so a row the
+ * mapper drops - a BLOB note, a text company_id - was counted in the day's total and shown nowhere. Work History
+ * said seven hours, the progress card, the streak and the week totals said eight, and the missing hour had no
+ * session the user could see, edit or delete.
+ */
+describe('WR-10: a day total counts the rows the list returns', () => {
+    const day = ld('2026-03-04');
+
+    async function withAnomaly(column: string, value: unknown): Promise<Opened> {
+        const ctx = await open(makeCleanFixture());
+        const sessions = createSessionsRepository(ctx.handle);
+        sessions.create({ name: 'Visible', durationSeconds: 3600, date: day, companyId: null, note: null });
+        sessions.create({ name: 'Anomalous', durationSeconds: 3600, date: day, companyId: null, note: null });
+        // Foreign keys off for the write, because that is the state a third-party SQLite tool leaves a row in;
+        // the repositories run with them on, which is why the row can be read back but not written this way.
+        ctx.connection.pragma('foreign_keys = OFF');
+        ctx.connection.prepare('UPDATE work_sessions SET ' + column + ' = ? WHERE name = ?').run(value, 'Anomalous');
+        ctx.connection.pragma('foreign_keys = ON');
+        return ctx;
+    }
+
+    it.each([
+        { label: 'a BLOB note', column: 'note', value: Buffer.from([1, 2, 3]) },
+        { label: 'a text company_id', column: 'company_id', value: 'one' }
+    ])('leaves out of the total the row it leaves out of the list: $label', async ({ column, value }) => {
+        const ctx = await withAnomaly(column, value);
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        const listed = repo.listByDateRange(day, day);
+        expect(listed, 'the anomalous row must be dropped from the list, or this proves nothing').toHaveLength(1);
+
+        expect(repo.dayTotalFor(day), 'the day total counted a session nothing on screen explains').toBe(3600);
+        expect(repo.dayTotals().find((total) => total.date === day)?.totalSeconds).toBe(3600);
+        expect(skipped.some((report) => report.reason.includes('left out of the sessions list')),
+            'the aggregate dropped a row and said nothing').toBe(true);
+    });
+
+    it('reports a day whose every row is unreadable rather than inventing a zero for it', async () => {
+        const ctx = await withAnomaly('note', Buffer.from([9]));
+        ctx.connection.prepare('UPDATE work_sessions SET note = ? WHERE name = ?').run(Buffer.from([9]), 'Visible');
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.listByDateRange(day, day)).toEqual([]);
+        // A day with no listable sessions is a day with no total, which is what the filter it replaced produced.
+        expect(repo.dayTotals().some((total) => total.date === day)).toBe(false);
+        expect(skipped.some((report) => report.reason.includes('2 row(s) on ' + day))).toBe(true);
+    });
+
+    /*
+     * The remainder, pinned rather than claimed away. toSession also requires created_at to parse as a SQL
+     * timestamp, and that parse lives in date.ts - SQL can check that the column is text and no more. TEXT affinity
+     * turns a number written into it back into text, so this is the shape that still slips through. The liberal
+     * SQL_TIMESTAMP regex added this phase is what keeps it narrow; if this test ever starts failing, the
+     * predicate has grown and the comment on LISTABLE should lose its last paragraph.
+     */
+    it('still counts a created_at that is text and does not parse, which is the one predicate SQL cannot share', async () => {
+        const ctx = await withAnomaly('created_at', 'not a timestamp');
+        const repo = createSessionsRepository(ctx.handle);
+
+        expect(repo.listByDateRange(day, day)).toHaveLength(1);
+        expect(repo.dayTotalFor(day), 'the known gap closed; narrow the comment on LISTABLE').toBe(7200);
+    });
+
+    it('still counts a day whose sessions are all readable, and says nothing about it', async () => {
+        const ctx = await open(makeCleanFixture());
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+        repo.create({ name: 'Clean', durationSeconds: 60, date: day, companyId: null, note: 'a note' });
+
+        expect(repo.dayTotalFor(day)).toBe(60);
+        expect(skipped, 'a clean day was reported as holding anomalies').toEqual([]);
+    });
+});
+
 describe('CORE-01: the pomodoro repository', () => {
     it('counts a local day from its rows and records a completion', async () => {
         const ctx = await open(buildLegacyFixture('C', 'representative'));
