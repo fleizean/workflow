@@ -275,6 +275,34 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         expect(noisy, 'a read that announces a change invalidates the query that made it').toEqual([]);
     });
 
+    /*
+     * WR-04. `satisfies` proves a channel has an answer; nothing proved the answer was complete, and
+     * settings:update was missing 'pomodoro'. Every field PomodoroSnapshot carries - targetSeconds,
+     * remainingSeconds, sessionsUntilLongBreak - is computed from settings, because container.ts feeds the
+     * pomodoro service durations: () => settings.get(). So a settings write changes what pomodoro:getSnapshot
+     * would answer, and announcing nothing leaves that screen stale. The cost is zero until Phase 8 adds the
+     * query, which is exactly why it would have been missed.
+     */
+    it('announces every domain whose read channel would answer differently after the call', () => {
+        // channel -> the domains a read of them could answer differently afterwards, argued one by one.
+        const consequences: Record<string, readonly string[]> = {
+            // A session row changes the lists and every total computed over them.
+            'sessions:create': ['sessions', 'stats'],
+            'sessions:delete': ['sessions', 'stats'],
+            // Deleting a company takes its sessions with it (COMP-05).
+            'companies:delete': ['companies', 'sessions', 'stats'],
+            // The daily target drives dayProgress; the four pomodoro durations drive PomodoroSnapshot.
+            'settings:update': ['settings', 'stats', 'pomodoro'],
+            // Stopping the timer writes a session and clears the accumulator.
+            'timer:stopAndSave': ['timer', 'sessions', 'stats']
+        };
+        for (const [channel, expected] of Object.entries(consequences)) {
+            const declared = [...ipcWrites[channel as keyof typeof ipcWrites]].sort();
+            expect(declared, channel + ' does not announce everything a read of it would now answer differently')
+                .toEqual([...expected].sort());
+        }
+    });
+
     it('carries the timer snapshot with no start timestamp on it (CORE-07)', () => {
         const tick = ipcEvents['timer:tick'];
         const snapshot = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false, persistFailing: false };

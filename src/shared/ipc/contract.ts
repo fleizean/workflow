@@ -174,8 +174,10 @@ export const ipcWrites = {
     // COMP-05: deleting a company takes its sessions with it, which is why the call reports how many.
     'companies:delete': ['companies', 'sessions', 'stats'],
     'settings:get': [],
-    // The daily target is a setting, and it is what dayProgress measures against.
-    'settings:update': ['settings', 'stats'],
+    // The daily target is a setting, and it is what dayProgress measures against. WR-04: so are all four values
+    // PomodoroSnapshot carries - container.ts feeds the pomodoro service durations: () => settings.get() - so a
+    // settings write changes what pomodoro:getSnapshot would answer.
+    'settings:update': ['settings', 'stats', 'pomodoro'],
     'timer:getSnapshot': [],
     'timer:start': ['timer'],
     'timer:pause': ['timer'],
