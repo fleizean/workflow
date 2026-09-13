@@ -174,11 +174,26 @@ describe('C3: the same scanner misses a class name that is built rather than wri
         }
     });
 
-    it('would style that name if it were written out, so the miss is about scanning and not about the colour', () => {
-        expect(compiled.css.includes(selectorFor('bg-fuchsia-100'))).toBe(false);
-        const written = new Scanner({ sources: [] });
-        expect(written.scan()).toEqual([]);
-    });
+    /*
+     * WR-03: this used to restate the previous test and then assert that a scanner with no sources finds nothing,
+     * which is a tautology. Neither line compiled bg-fuchsia-100, so the claim 07-C-SUMMARY.md made for it - that
+     * the same name written out literally WOULD have been styled - was not made anywhere. It compiles it now, so
+     * the day Tailwind drops a colour from its palette this control fails instead of passing while meaning
+     * nothing.
+     */
+    it('would style that name if it were written out, so the miss is about scanning and not about the colour', async () => {
+        expect(compiled.css.includes(selectorFor('bg-fuchsia-100')),
+            'the scanned build already carries the name, so the control below proves nothing').toBe(false);
+
+        const compiler = await compile(read(GLOBALS), {
+            base: path.join(repoRoot, STYLES_DIR),
+            onDependency: () => undefined
+        });
+        const written = compiler.build(['bg-fuchsia-100']);
+
+        expect(written, 'the colour is not in the palette at all, so the miss above was never about scanning')
+            .toContain(selectorFor('bg-fuchsia-100'));
+    }, 60_000);
 });
 
 describe('SPA-12: the v4 compatibility layer restores what v3 rendered', () => {

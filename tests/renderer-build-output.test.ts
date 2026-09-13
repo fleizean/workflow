@@ -276,6 +276,28 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
         ).toBe(true);
     });
 
+    /*
+     * WR-06. 07-E-SUMMARY.md says twice that these were checked in the emitted CSS - the width token because
+     * AppShell and BottomNav are supposed to read one width, the keyframes because "@keyframes inside a @theme
+     * static block is the kind of thing that is easy to assume and easy to be wrong about". Nothing asserted
+     * either. A @theme namespace typo - --width-app instead of --container-app, --animation-* instead of
+     * --animate-* - emits no rule at all, breaks the layout and the motion, and passes the whole suite. That is
+     * the C3 failure mode reappearing on the tokens slice E introduced.
+     */
+    it('the one width token and the three motion tokens produced rules', () => {
+        const css = emittedWith('.css').map(read).join('\n');
+        expect(css.length, 'no CSS was emitted, so this scan would pass vacuously').toBeGreaterThan(1000);
+
+        for (const utility of ['max-w-app', 'md:max-w-app', 'animate-toast-in', 'animate-toast-out', 'animate-modal-in']) {
+            expect(css, utility + ' emitted no rule - the token it reads is misspelt or missing')
+                .toContain('.' + utility.replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c));
+        }
+        for (const frames of ['toast-in', 'toast-out', 'modal-in']) {
+            expect(css, '@keyframes ' + frames + ' is not in the emitted CSS, so the animation names nothing')
+                .toContain('@keyframes ' + frames);
+        }
+    });
+
     it('the fonts are bundled: woff2 assets are emitted', () => {
         expect(emittedWith('.woff2').length, 'no .woff2 under ' + BUILT_DIR + ' - the fonts are not in the bundle').toBeGreaterThan(0);
     });
