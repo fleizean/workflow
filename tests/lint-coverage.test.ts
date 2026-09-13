@@ -1083,10 +1083,21 @@ describe('ARCH-03: lint proves the direction of the renderer', () => {
         const banned = [
             'void window.api;', 'void globalThis[\'api\'];', 'void self.api;',
             // CR-03(c): Reflect.get is a member expression no member-expression selector can see.
-            'void Reflect.get(globalThis, \'api\');'
+            'void Reflect.get(globalThis, \'api\');',
+            /*
+             * The Phase 7 verifier's evasion: a cast puts a TSAsExpression between the member expression and the
+             * identifier, so object.name is undefined and every selector written against it sees nothing.
+             */
+            'void (globalThis as unknown as { api: unknown }).api;',
+            'void (globalThis as { api: unknown }).api;',
+            'void (globalThis as unknown as Record<string, unknown>)[\'api\'];',
+            'void globalThis!.api;'
         ];
-        const { missed } = await probe(COMPONENT_FILE, [], banned, [], says(BRIDGE_TAG));
+        const allowed = ['void (globalThis as unknown as { other: number }).other;'];
+        const { missed, flagged } = await probe(COMPONENT_FILE, [], banned, allowed, says(BRIDGE_TAG));
         expect(missed, 'a file reached window.api directly instead of through the facade').toEqual([]);
+        expect(flagged, 'the cast ban is so wide it refuses a cast that has nothing to do with the bridge')
+            .toEqual([]);
     }, 60_000);
 
     /*

@@ -243,7 +243,8 @@ const STYLE_INJECTION_BANS = [
     'CallExpression[callee.property.name=/^(insertRule|addRule)$/]',
     "MemberExpression[property.name='adoptedStyleSheets']",
     "NewExpression[callee.name='CSSStyleSheet']",
-    // The per-element style, which the JSX attribute ban already covers in its declarative spelling.
+    // The per-element style set imperatively. The JSX `style` attribute is refused by tailwind-compat.test.ts,
+    // not here - no lint rule covers it, and this comment used to claim one did.
     "AssignmentExpression[left.object.property.name='style']",
     "CallExpression[callee.object.property.name='style'][callee.property.name=/^(setProperty|cssText)$/]",
     "AssignmentExpression[left.property.name='cssText']",
@@ -295,6 +296,15 @@ const BRIDGE_ACCESS_MESSAGE = 'Reach the preload bridge through invoke() or subs
 const BRIDGE_ACCESS_BANS = [
     'MemberExpression[object.name=/^(window|globalThis|self)$/][property.name=\'api\']',
     'MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value=\'api\']',
+    /*
+     * The Phase 7 verifier's evasion: (globalThis as unknown as { api: unknown }).api. A cast puts a TSAsExpression
+     * between the member expression and the identifier, so object.name is undefined and the two bans above see
+     * nothing. Matched on the cast itself rather than on what it wraps, because a double cast nests.
+     */
+    "MemberExpression[property.name='api'] > TSAsExpression",
+    "MemberExpression[computed=true][property.value='api'] > TSAsExpression",
+    "MemberExpression[property.name='api'] > TSTypeAssertion",
+    "MemberExpression[property.name='api'] > TSNonNullExpression",
     // CR-03(c): Reflect.get is a member expression the parser cannot see as one.
     "CallExpression[callee.object.name='Reflect'][arguments.1.value='api']"
 ].map((selector) => ({ selector, message: BRIDGE_ACCESS_MESSAGE }));
