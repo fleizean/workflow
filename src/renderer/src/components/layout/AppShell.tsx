@@ -2,6 +2,9 @@
  * The chrome every route renders inside: titlebar, the scrolling content area, the bottom navigation and the toast
  * stack. v1.2.1 rebuilt all of it on every page load; here it mounts once and the route changes underneath it.
  *
+ * AlertDialog is mounted here, once: it draws whatever useUiStore.openDialog was last asked for, so a screen
+ * asks a question by calling the store rather than by building an overlay of its own (criterion 5).
+ *
  * The colour and font classes are the ones v1.2.1 put on <body>. src/renderer/index.html's body is left bare, so
  * the shell is where the dark background and the light text live.
  *
@@ -15,6 +18,7 @@
 
 import type { ReactElement } from 'react';
 import { Outlet } from 'react-router-dom';
+import AlertDialog from '@renderer/components/ui/AlertDialog';
 import ToastStack from '@renderer/components/ui/ToastStack';
 import { TitleBar } from '@renderer/features/shell';
 import BottomNav from './BottomNav';
@@ -34,6 +38,7 @@ export default function AppShell(): ReactElement {
             </main>
             <BottomNav />
             <ToastStack />
+            <AlertDialog />
         </div>
     );
 }

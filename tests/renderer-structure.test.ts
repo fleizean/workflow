@@ -255,3 +255,45 @@ describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
         expect(importers, 'a CSS module import with no file is still a CSS module (ARCH-05)').toEqual([]);
     });
 });
+
+/*
+ * Criterion 5. v1.2.1 defined showAlert twice (legacy/pages/index.html:514, settings.html:387), hand-built an
+ * overlay at six sites across three pages. These are the claims that replaces, each read off the tree rather
+ * than off a reviewer's memory. The one shared width is the other half of the criterion; it lands next.
+ */
+describe('criterion 5: one Modal, one Toast, one alert', () => {
+    const UI = 'components/ui';
+    const MODAL = path.posix.join(SRC, UI, 'Modal.tsx');
+
+    /** Component declarations only - an uppercase name, which is what React calls a component. */
+    const componentsNamed = (file: string, word: RegExp): string[] =>
+        [...codeOf(file).matchAll(/\b(?:function|const|class)\s+([A-Z][A-Za-z0-9_]*)/g)]
+            .map((match) => match[1] ?? '')
+            .filter((name) => word.test(name));
+
+    it('declares every modal, dialog, alert and toast component in ' + UI, () => {
+        const word = /Modal|Dialog|Alert|Toast/;
+        const offenders = rendererSources()
+            .filter((file) => areaOf(file) !== UI && componentsNamed(file, word).length > 0)
+            .map((file) => file + ' -> ' + componentsNamed(file, word).join(', '));
+        expect(offenders, 'a screen with its own dialog is how v1.2.1 ended up with two showAlerts').toEqual([]);
+    });
+
+    it('draws exactly one overlay, and it is ' + MODAL, () => {
+        const overlays = rendererSources()
+            .filter((file) => literalsOf(file).some((value) => value.includes('fixed inset-0')));
+        expect(overlays, 'a second full-screen overlay is a second modal, whatever it is called').toEqual([MODAL]);
+    });
+
+    it('asks nothing through the browser\'s own alert or confirm', () => {
+        const offenders = rendererSources()
+            .filter((file) => /\b(?:window\s*\.\s*)?(?:alert|confirm)\s*\(/.test(codeOf(file)));
+        expect(offenders, 'a native dialog blocks the renderer and looks nothing like the app').toEqual([]);
+    });
+
+    it('has the one alert implementation the two scans above are about', () => {
+        expect(exists(MODAL), MODAL + ' does not exist, so this whole block proves nothing').toBe(true);
+        expect(exists(path.posix.join(SRC, UI, 'AlertDialog.tsx'))).toBe(true);
+        expect(exists(path.posix.join(SRC, UI, 'ToastStack.tsx'))).toBe(true);
+    });
+});
