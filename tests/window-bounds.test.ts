@@ -114,6 +114,23 @@ describe('criterion 9: a saved position is restored only onto a display that exi
             .toEqual(MINIMUM);
     });
 
+    /*
+     * IN-02. Selection was by raw overlap area, so a 2000x30 strip and a 150x400 landing scored the same and the
+     * first display listed won. If the thin one was first the result failed the minimum-visible test and the window
+     * opened at the default, even though a position the user could reach existed on the other screen.
+     */
+    it('prefers a landing the user could reach over a wider one they could not', () => {
+        // A wide, short strip of the first display and a narrow, tall piece of the second: 2000x30 against 150x400.
+        const strip = display(0, 0, 4000, 30);
+        const reachable = display(0, 100, 150, 900);
+        const saved = { x: 0, y: 0, width: 2000, height: 500 };
+
+        expect(visibleArea(saved, [strip, reachable]))
+            .toEqual({ width: 150, height: 400 });
+        expect(chooseWindowBounds(saved, [strip, reachable], DEFAULT_SIZE, MINIMUM).origin,
+            'the window opened at the default with a usable position going spare').toBe('restored');
+    });
+
     it('does not add two half-overlaps into one usable window', () => {
         // A gap between two monitors: the window straddles it and is mostly in the void.
         const left = display(0, 0, 1000, 1000);

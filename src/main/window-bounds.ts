@@ -44,6 +44,15 @@ interface Landing {
     readonly size: WindowSize;
 }
 
+/*
+ * IN-02: ranked by how much of the overlap is usable rather than by its raw area. A 2000x30 sliver and a 150x400
+ * landing have the same area, so on the wrong display order the sliver won and the window fell back to the default
+ * even though a usable position existed. Capping each side at the minimum makes any usable landing outrank any
+ * unusable one; the size reported is still the real overlap.
+ */
+const usableArea = (width: number, height: number): number =>
+    Math.min(width, MIN_VISIBLE_WIDTH) * Math.min(height, MIN_VISIBLE_HEIGHT);
+
 /** The one display the window shares the most with. Two half-overlaps do not add up to a usable window. */
 function largestOverlap(bounds: WindowBounds, displays: readonly DisplayArea[]): Landing {
     let display: DisplayArea | undefined;
@@ -52,7 +61,7 @@ function largestOverlap(bounds: WindowBounds, displays: readonly DisplayArea[]):
     for (const area of displays) {
         const w = overlap(bounds.x, bounds.width, area.workArea.x, area.workArea.width);
         const h = overlap(bounds.y, bounds.height, area.workArea.y, area.workArea.height);
-        if (w * h > width * height) {
+        if (usableArea(w, h) > usableArea(width, height)) {
             display = area;
             width = w;
             height = h;
