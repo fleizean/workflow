@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MAIN_WINDOW, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './config';
 import { describeError } from './errors';
-import { decideWindowClose, isQuitting } from './quit';
+import { decideWindowClose, isQuitting, markQuitting } from './quit';
 import { hasAppTray } from './tray';
 import { chooseWindowBounds } from './window-bounds';
 import type { WindowBounds } from './window-bounds';
@@ -54,6 +54,18 @@ let boundsStore: WindowBoundsStore | undefined;
 
 export function registerWindowBoundsStore(store: WindowBoundsStore | undefined): void {
     boundsStore = store;
+}
+
+/** Owner decision 2026-09-13: the one-time hide notice, in app_state. Injected for the same reason the bounds are. */
+export interface HideNoticeStore {
+    /** True the first time it is asked and false ever after; it records the answer as it gives it. */
+    claim(): boolean;
+}
+
+let hideNoticeStore: HideNoticeStore | undefined;
+
+export function registerHideNoticeStore(store: HideNoticeStore | undefined): void {
+    hideNoticeStore = store;
 }
 
 const MINIMUM = { width: MAIN_WINDOW.minWidth, height: MAIN_WINDOW.minHeight };
@@ -159,20 +171,39 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
 }
 
 /*
- * IPC-05: v1.2.1 hid the window on both the minimize and the close button (main.js:638-648), so the app went to the
- * tray rather than to the taskbar. Both are kept while there is a tray. With none there is nothing to come back
- * from, so minimize goes to the taskbar and close really closes (WR-03). Both act on the first main window - there
- * is only ever one.
+ * IPC-05: what the titlebar's two buttons do. v1.2.1 sent both of them to one hide (main.js:638-648), so X put the
+ * app in the tray rather than ending it; the owner separated them on 2026-09-13 and the channel names now say which
+ * is which. Both act on the first main window - there is only ever one.
  */
-export const windowControls = {
-    minimize(): void {
+export const shellControls = {
+    /** To the tray while there is one; with none there is nothing to come back from, so the taskbar (WR-03). */
+    hide(): void {
         const win = mainWindows()[0];
         if (hasAppTray()) { win?.hide(); } else { win?.minimize(); }
     },
 
-    close(): void {
-        const win = mainWindows()[0];
-        if (hasAppTray()) { win?.hide(); } else { win?.close(); }
+    /*
+     * A failure here must not cost the user the hide: the notice is an explanation, and an app that refuses to get
+     * out of the way because it could not write a flag is worse than one that explains itself twice.
+     */
+    claimHideNotice(): { due: boolean } {
+        try {
+            return { due: hideNoticeStore?.claim() ?? false };
+        } catch (error) {
+            console.error('src/main/window.ts: the hide notice could not be recorded - ' + describeError(error));
+            return { due: false };
+        }
+    },
+
+    /*
+     * Criterion 8 (Phase 5): the flag first, exactly as the tray's own Quit item does it - without it the close
+     * handler below hides the window again and the process never ends. app.quit() runs before-quit and will-quit, so
+     * the timer flushes what it has counted and the database closes; the seconds come back paused on the next
+     * launch (G3/G4). app.exit() would skip all of that.
+     */
+    quit(): void {
+        markQuitting();
+        app.quit();
     }
 };
 

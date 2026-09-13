@@ -1,2 +1,2 @@
 export { default as TitleBar } from './components/TitleBar';
-export { useWindowControls } from './api/useWindowControls';
+export { useShellControls } from './api/useShellControls';

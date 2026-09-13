@@ -15,10 +15,10 @@ import { markQuitting } from './quit';
 import { createAppTray, destroyAppTray } from './tray';
 import type { TimerService } from './services/timer.service';
 import {
-    createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerWindowBoundsStore, showRenderer,
-    windowControls
+    createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerHideNoticeStore,
+    registerWindowBoundsStore, shellControls, showRenderer
 } from './window';
-import type { WindowBoundsStore } from './window';
+import type { HideNoticeStore, WindowBoundsStore } from './window';
 
 export function registerLifecycle(): void {
     // WR-01: registered before any window exists, so every web contents gets the guard.
@@ -139,9 +139,25 @@ function createWindowBoundsStore(layer: DatabaseLayer, connection: StartedDataba
     };
 }
 
+/**
+ * The one-time hide notice: read and set in one step, so two hides in flight cannot both be told they are the first.
+ * Owner decision 2026-09-13.
+ */
+export function createHideNoticeStore(layer: DatabaseLayer, connection: StartedDatabase['db']): HideNoticeStore {
+    return {
+        claim: () => {
+            if (layer.readHideNoticeShown(connection)) {
+                return false;
+            }
+            layer.markHideNoticeShown(connection, new Date());
+            return true;
+        }
+    };
+}
+
 /** The services the container holds, plus the window the titlebar drives. Resolved per call, never held. */
 function handlerContext(): HandlerContext {
-    return { ...activeContainer().services, window: windowControls };
+    return { ...activeContainer().services, shell: shellControls };
 }
 
 // D-30: the database is probed, refused or migrated before the first window; a refusal exits here, not deeper.
@@ -172,6 +188,7 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
                 // The store is registered first: the window reads its saved bounds as it is constructed, and a
                 // window that opened at the default and then jumped would be worse than one that never moved.
                 registerWindowBoundsStore(createWindowBoundsStore(database, connection));
+                registerHideNoticeStore(createHideNoticeStore(database, connection));
                 openMainWindow();
                 createAppTray({
                     show: surfaceMainWindow,

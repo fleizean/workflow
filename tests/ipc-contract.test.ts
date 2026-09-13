@@ -23,12 +23,12 @@ const CHANNELS = [
     'timer:reset', 'timer:setMode', 'timer:stopAndSave', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause',
     'pomodoro:abort',
     'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress',
-    'window:minimize', 'window:close'
+    'window:hide', 'window:claimHideNotice', 'app:quit'
 ];
 const VOID_INPUT_CHANNELS = [
-    'companies:list', 'pomodoro:abort', 'pomodoro:counts', 'pomodoro:getSnapshot', 'pomodoro:pause', 'pomodoro:skipBreak',
+    'app:quit', 'companies:list', 'pomodoro:abort', 'pomodoro:counts', 'pomodoro:getSnapshot', 'pomodoro:pause', 'pomodoro:skipBreak',
     'pomodoro:start', 'sessions:list', 'settings:get', 'stats:streak', 'stats:weekTotals', 'timer:getSnapshot',
-    'timer:pause', 'timer:reset', 'timer:start', 'window:close', 'window:minimize'
+    'timer:pause', 'timer:reset', 'timer:start', 'window:claimHideNotice', 'window:hide'
 ];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
@@ -478,8 +478,9 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'stats:streak': reject,
         'stats:weekTotals': reject,
         'stats:dayProgress': reject,
-        'window:minimize': reject,
-        'window:close': reject
+        'window:hide': reject,
+        'window:claimHideNotice': reject,
+        'app:quit': reject
     };
     void wrongOutput;
     void unknownHandled;

@@ -62,6 +62,8 @@ const { TRAY_ICON_SIZE, TRAY_TOOLTIP } = await import('../src/main/config');
 
 const WINDOW_FILE = 'src/main/window.ts';
 const LIFECYCLE_FILE = 'src/main/lifecycle.ts';
+const CONTRACT_FILE = 'src/shared/ipc/contract.ts';
+const CHANNELS_FILE = 'src/shared/ipc/channels.ts';
 
 interface Window {
     visible: boolean;
@@ -164,7 +166,7 @@ describe('criterion 8: the tray', () => {
     });
 });
 
-describe('criterion 8: closing the window hides it, quitting does not', () => {
+describe('criterion 8: a system close hides the window, quitting does not', () => {
     beforeEach(resetQuittingForTests);
 
     it('hides while the app is running and closes once it is quitting', () => {
@@ -183,13 +185,45 @@ describe('criterion 8: closing the window hides it, quitting does not', () => {
         expect(decideWindowClose({ quitting: true, hasTray: false })).toBe('close');
     });
 
-    it('is what window.ts asks, on the close handler and on the titlebar alike', () => {
+    it('is what window.ts asks on a system close, and what the hide button asks for', () => {
         const source = read(WINDOW_FILE);
         expect(source, 'the close handler no longer asks whether there is a tray')
             .toMatch(/decideWindowClose\(\{[^}]*hasTray/);
-        expect(source, 'the titlebar still hides into a tray that may not exist')
-            .toMatch(/minimize\(\): void \{[\s\S]*?hasAppTray\(\)/);
-        expect(source).toMatch(/close\(\): void \{[\s\S]*?hasAppTray\(\)/);
+        // WR-03: hiding into a tray that does not exist leaves a process only Task Manager can end.
+        expect(source, 'the hide button hides into a tray that may not exist')
+            .toMatch(/hide\(\): void \{[\s\S]*?hasAppTray\(\)/);
+    });
+
+    /*
+     * Owner decision 2026-09-13. The titlebar's X ends the process, and it must end it the way the tray's Quit
+     * item does: markQuitting first, then app.quit(). Without the flag the close handler above hides the window
+     * and the process lives on - the bug v1.2.1 shipped - and with app.exit() the will-quit handlers never run,
+     * so the timer never flushes the seconds it was holding (D-32).
+     */
+    it('quits from the titlebar the same way the tray does: the flag, then app.quit', () => {
+        const source = ts.createSourceFile(
+            WINDOW_FILE, read(WINDOW_FILE), ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+        const [quit] = findAll(source, (node): node is ts.MethodDeclaration =>
+            ts.isMethodDeclaration(node) && node.name.getText(source) === 'quit');
+        expect(quit, WINDOW_FILE + ': nothing on the shell controls quits').toBeDefined();
+
+        const body = quit?.body?.getText(source) ?? '';
+        expect(body, 'the quit does not mark the app as quitting, so the close handler would re-hide the window')
+            .toContain('markQuitting()');
+        expect(body, 'the quit does not ask the app to quit').toContain('app.quit()');
+        expect(body, 'app.exit skips will-quit, and the timer flushes there').not.toContain('app.exit');
+        expect(body.indexOf('markQuitting'), 'the flag must be set before the quit, not after')
+            .toBeLessThan(body.indexOf('app.quit'));
+    });
+
+    // The renderer cannot ask for the old meaning any more: the channel that hid on a close is gone.
+    it('has no window:close channel left to ask for', () => {
+        // Quoted, because contract.ts names the retired channel in prose to say why it is gone.
+        const retired = String.fromCharCode(39) + 'window:close' + String.fromCharCode(39);
+        expect(read(CHANNELS_FILE), CHANNELS_FILE + ' still lists the channel that meant both things')
+            .not.toContain(retired);
+        expect(read(CONTRACT_FILE), CONTRACT_FILE + ' still declares the channel that meant both things')
+            .not.toContain(retired);
     });
 
     it('marks quitting once and does not forget', () => {

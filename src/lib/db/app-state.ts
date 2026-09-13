@@ -14,7 +14,8 @@ export const APP_STATE_KEYS = Object.freeze({
     timerState: 'timer.state',
     pomodoroState: 'pomodoro.state',
     goalNotifiedDate: 'goal.lastNotifiedDate',
-    windowBounds: 'window.bounds'
+    windowBounds: 'window.bounds',
+    hideNoticeShown: 'window.hideNoticeShown'
 } as const);
 
 export const LegacyTimerRecordSchema = z.strictObject({
@@ -71,13 +72,21 @@ export const WindowBoundsRecordSchema = z.strictObject({
     updatedAt: z.string()
 });
 
+/*
+ * Owner decision 2026-09-13: the hide button says once where the window went, and never again. The row is the flag -
+ * its presence is the whole answer, and the timestamp is there so a reader can see when it was set. In app_state
+ * rather than in localStorage, which the renderer may not touch (ARCH-03) and main could not read anyway.
+ */
+export const HideNoticeRecordSchema = z.strictObject({ shownAt: z.string() });
+
 const SCHEMAS = {
     'legacy.v121.timerState': LegacyTimerRecordSchema,
     'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema,
     'timer.state': TimerStateRecordSchema,
     'pomodoro.state': PomodoroStateRecordSchema,
     'goal.lastNotifiedDate': GoalNotifiedRecordSchema,
-    'window.bounds': WindowBoundsRecordSchema
+    'window.bounds': WindowBoundsRecordSchema,
+    'window.hideNoticeShown': HideNoticeRecordSchema
 } as const;
 
 export type AppStateKey = keyof typeof SCHEMAS;
@@ -238,6 +247,15 @@ export function readWindowBounds(db: DatabaseType.Database): StoredWindowBounds 
 
 export function writeWindowBounds(db: DatabaseType.Database, bounds: StoredWindowBounds, now: Date): void {
     writeAppState(db, APP_STATE_KEYS.windowBounds, { ...bounds, updatedAt: utcIsoTimestamp(now) }, now);
+}
+
+/** Whether the user has already been told where the hide button puts the window; a corrupt row counts as not yet. */
+export function readHideNoticeShown(db: DatabaseType.Database): boolean {
+    return recorded(db, APP_STATE_KEYS.hideNoticeShown) !== null;
+}
+
+export function markHideNoticeShown(db: DatabaseType.Database, now: Date): void {
+    writeAppState(db, APP_STATE_KEYS.hideNoticeShown, { shownAt: utcIsoTimestamp(now) }, now);
 }
 
 // The raw string decides whenever either side carries no lastUpdated to compare (D-34).

@@ -10,10 +10,16 @@ import type { SettingsService } from '../services/settings.service';
 import type { StatsService } from '../services/stats.service';
 import type { TimerCommands } from '../container';
 
-/** The window the titlebar drives. v1.2.1 hid on both, and the tray is where the window went (IPC-05). */
-export interface WindowControls {
-    minimize(): void;
-    close(): void;
+/**
+ * What the titlebar drives (IPC-05). The two buttons mean different things as of the owner's 2026-09-13 decision:
+ * one puts the window away, the other ends the process. Where "away" is - the tray or the taskbar - is main's
+ * decision, taken in window.ts.
+ */
+export interface ShellControls {
+    hide(): void;
+    /** True the first time and never again: whether this hide owes the user an explanation. */
+    claimHideNotice(): { due: boolean };
+    quit(): void;
 }
 
 export interface HandlerContext {
@@ -24,11 +30,11 @@ export interface HandlerContext {
     readonly timer: TimerCommands;
     readonly pomodoro: PomodoroService;
     readonly stats: StatsService;
-    readonly window: WindowControls;
+    readonly shell: ShellControls;
 }
 
 export function createHandlers(context: HandlerContext): IpcHandlers {
-    const { companies, pomodoro, sessions, settings, stats, timer, window } = context;
+    const { companies, pomodoro, sessions, settings, shell, stats, timer } = context;
 
     return {
         'sessions:list': () => sessions.list(),
@@ -66,7 +72,8 @@ export function createHandlers(context: HandlerContext): IpcHandlers {
         'stats:weekTotals': () => stats.weeks(),
         'stats:dayProgress': (input) => stats.dayProgress(input.date),
 
-        'window:minimize': () => { window.minimize(); },
-        'window:close': () => { window.close(); }
+        'window:hide': () => { shell.hide(); },
+        'window:claimHideNotice': () => shell.claimHideNotice(),
+        'app:quit': () => { shell.quit(); }
     };
 }

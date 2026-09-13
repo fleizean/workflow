@@ -13,8 +13,8 @@ import { probeDatabase } from '../src/lib/db/probe';
 import { migrateDatabase } from '../src/lib/db/runner';
 import { LATEST } from '../src/lib/db/migrations/registry';
 import {
-    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readTimerState, writeAppState,
-    writeGoalNotifiedDate, writeTimerState
+    APP_STATE_KEYS, importLegacyState, markHideNoticeShown, readAppState, readGoalNotifiedDate,
+    readHideNoticeShown, readTimerState, writeAppState, writeGoalNotifiedDate, writeTimerState
 } from '../src/lib/db/app-state';
 import type { LocalDate } from '../src/shared/types';
 
@@ -391,5 +391,36 @@ describe('CORE-13: the goal-notification day survives a restart', () => {
             writeGoalNotifiedDate(db, '2026-09-12', NOW);
         };
         expect(typeof neverCalled).toBe('function');
+    });
+});
+
+/*
+ * Owner decision 2026-09-13: the hide button explains itself once. The flag is a row, so it survives a reinstall of
+ * the renderer's profile and main can read it - which is the whole reason it is not a localStorage key.
+ */
+describe('the one-time hide notice', () => {
+    it('is not shown before it is recorded, and is after', async () => {
+        const db = await migratedDatabase('hide-notice');
+        expect(readHideNoticeShown(db), 'a fresh database owes the user the explanation').toBe(false);
+
+        markHideNoticeShown(db, NOW);
+        expect(readHideNoticeShown(db)).toBe(true);
+        expect(readAppState(db, APP_STATE_KEYS.hideNoticeShown)).toEqual({ shownAt: NOW_ISO });
+    });
+
+    it('stays shown however often it is recorded', async () => {
+        const db = await migratedDatabase('hide-notice-twice');
+        markHideNoticeShown(db, NOW);
+        markHideNoticeShown(db, NOW);
+        expect(readHideNoticeShown(db)).toBe(true);
+        expect(db.prepare<[string], { n: number }>('SELECT COUNT(*) AS n FROM app_state WHERE key = ?')
+            .get(APP_STATE_KEYS.hideNoticeShown)?.n, 'the key is one row, not one per hide').toBe(1);
+    });
+
+    it('counts a corrupt row as not yet shown rather than throwing at the titlebar', async () => {
+        const db = await migratedDatabase('hide-notice-corrupt');
+        db.prepare<[string, string, string]>('INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?)')
+            .run(APP_STATE_KEYS.hideNoticeShown, 'not json', NOW_ISO);
+        expect(readHideNoticeShown(db)).toBe(false);
     });
 });

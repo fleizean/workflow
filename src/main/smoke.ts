@@ -22,9 +22,10 @@ import { createAppTray, destroyAppTray, hasAppTray } from './tray';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
+import { createHideNoticeStore } from './lifecycle';
 import { LEGACY_STORAGE_PAGE, readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
-import { createMainWindow, loadRenderer, windowControls } from './window';
+import { createMainWindow, loadRenderer, registerHideNoticeStore, shellControls } from './window';
 
 export type SmokeDatabase = typeof DatabaseLayerModule;
 
@@ -109,7 +110,9 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             exit: (code) => { exitCode = code; },
             log: (line) => { lines.push('SMOKE_DB_MIGRATION=' + line); },
             readLegacyStorage: () => readLegacyStorage(),
-            openMainWindow: () => {
+            openMainWindow: (connection) => {
+                // The same store the app registers, over the injected database, so the claim below is the real one.
+                registerHideNoticeStore(createHideNoticeStore(layer, connection));
                 win = createMainWindow({ show: false });
                 lines.push('SMOKE_WINDOW_CREATED=true');
             }
@@ -134,7 +137,7 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         // IPC-01: the real registration, over the real container, so the page below calls the app rather than a stub.
         setActiveContainer(container);
         registerIpcHandlers({
-            context: () => ({ ...built.services, window: windowControls }),
+            context: () => ({ ...built.services, shell: shellControls }),
             log: (line) => lines.push('SMOKE_IPC_LOG=' + line)
         });
 
@@ -280,6 +283,14 @@ async function checkBridge(win: BrowserWindow, container: AppContainer, lines: s
                 String(Number(after.ticks) - Number(delivered.ticks)) + ' events';
         }
         container.services.timer.reset();
+
+        const notice = asRecord(await win.webContents.executeJavaScript(CLAIM_HIDE_NOTICE_SCRIPT));
+        lines.push('SMOKE_HIDE_NOTICE_FIRST=' + text(notice.first));
+        lines.push('SMOKE_HIDE_NOTICE_SECOND=' + text(notice.second));
+        if (notice.first !== 'true' || notice.second !== 'false') {
+            return 'the hide notice claimed ' + text(notice.first) + ' then ' + text(notice.second) +
+                '; it must be due exactly once';
+        }
     } catch (error) {
         return 'bridge: ' + describeError(error);
     }
@@ -325,6 +336,21 @@ const SUBSCRIBE_SCRIPT = `(async () => {
     };
 })()`;
 
+/*
+ * Owner decision 2026-09-13, end to end: the hide notice is claimed through the bridge, answered by main against the
+ * app_state row, and the second ask gets nothing. Two calls in one script, so nothing between them can explain a
+ * false second answer.
+ */
+const CLAIM_HIDE_NOTICE_SCRIPT = `(async () => {
+    const api = window.${API_BRIDGE_KEY};
+    const first = await api['window:claimHideNotice']();
+    const second = await api['window:claimHideNotice']();
+    return {
+        first: first && first.ok === true ? String(first.data.due) : JSON.stringify(first),
+        second: second && second.ok === true ? String(second.data.due) : JSON.stringify(second)
+    };
+})()`;
+
 const READ_TICKS_SCRIPT = `({
     ticks: window.__smokeBridge.ticks.length,
     keys: window.__smokeBridge.last === null ? '' : Object.keys(window.__smokeBridge.last).sort().join(',')
@@ -361,9 +387,12 @@ const READ_AUDIO_SCRIPT = `(() => {
 })()`;
 
 /*
- * Criterion 8 in the packaged app: one tray icon however often it is asked for, a close that hides the window while
- * the app is running, and a close that lets it go once the app is quitting. The quitting flag is set at the very end
- * of the smoke on purpose - nothing runs after it but the report.
+ * Criterion 8 in the packaged app: one tray icon however often it is asked for, a close raised by the system - Alt+F4,
+ * a session ending - that hides the window while the app is running, and a close that lets it go once the app is
+ * quitting. The titlebar's X is a different path as of 2026-09-13: it asks app:quit, which ends the process, and the
+ * smoke cannot take that path without ending itself. What it proves is the consequence - that once the app is
+ * quitting nothing re-hides the window. The quitting flag is set at the very end on purpose: nothing runs after it
+ * but the report.
  */
 async function checkShell(lines: string[]): Promise<string | null> {
     try {
@@ -378,14 +407,14 @@ async function checkShell(lines: string[]): Promise<string | null> {
         // throw between the two closes used to leave it in `created`, where the renderer bus would still deliver to it.
         const probe = createMainWindow({ show: false });
         try {
-            lines.push('SMOKE_CLOSE_DECISION=' + decideWindowClose({ quitting: false, hasTray: hasAppTray() }));
+            lines.push('SMOKE_SYSTEM_CLOSE_DECISION=' + decideWindowClose({ quitting: false, hasTray: hasAppTray() }));
             // WR-03: the same question in the state a failed new Tray() leaves the app in, where hiding would be a
             // process only Task Manager can end.
             lines.push('SMOKE_NO_TRAY_CLOSE_DECISION=' + decideWindowClose({ quitting: false, hasTray: false }));
             probe.close();
             // A close that is allowed through destroys the window on a later turn of the loop, so both readings wait.
             await settled(probe);
-            lines.push('SMOKE_WINDOW_AFTER_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
+            lines.push('SMOKE_WINDOW_AFTER_SYSTEM_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
 
             markQuitting();
             lines.push('SMOKE_QUIT_DECISION=' + decideWindowClose({ quitting: true, hasTray: hasAppTray() }));

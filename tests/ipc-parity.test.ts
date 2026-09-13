@@ -20,7 +20,9 @@ type Disposition =
 
 // One row per name in baselines/v1.2.1/preload-surface.txt. A name with no row fails the totality check below.
 const DISPOSITIONS: Readonly<Record<string, Disposition>> = {
-    closeWindow: { channel: 'window:close' },
+    // It hid the window rather than closing it, so window:hide is the capability it actually provided. What changed
+    // on 2026-09-13 is which button asks for it: the titlebar X asks app:quit now.
+    closeWindow: { channel: 'window:hide' },
     createCompany: { channel: 'companies:create' },
     deleteAllSessions: { channel: 'sessions:deleteAll' },
     deleteCompany: { channel: 'companies:delete' },
@@ -41,7 +43,7 @@ const DISPOSITIONS: Readonly<Record<string, Disposition>> = {
     getTodaySessions: { channel: 'sessions:listByDateRange' },
     getTodaysSessionsSummary: { channel: 'stats:dayProgress' },
     getWeekTotal: { channel: 'stats:weekTotals' },
-    minimizeWindow: { channel: 'window:minimize' },
+    minimizeWindow: { channel: 'window:hide' },
     navigateTo: {
         removed: 'deleted',
         why: 'S1: an unvalidated page argument reached loadFile. HashRouter needs no server to rewrite a path ' +
@@ -77,7 +79,13 @@ const NEW_IN_V2: Readonly<Record<string, string>> = {
     'pomodoro:pause': 'the cycle is a main-process state machine',
     'pomodoro:abort': 'POMO-04: an abandoned interval records nothing and advances no counter',
     'pomodoro:skipBreak': 'POMO-05: a break can be ended from the UI',
-    'pomodoro:counts': 'POMO-09: the daily and weekly pomodoro counts, which v1.2.1 never showed'
+    'pomodoro:counts': 'POMO-09: the daily and weekly pomodoro counts, which v1.2.1 never showed',
+    'window:claimHideNotice':
+        'owner decision 2026-09-13: the hide button explains once where the window went, and the flag is a row in ' +
+        'app_state rather than a localStorage key the renderer may not have (ARCH-03)',
+    'app:quit':
+        'owner decision 2026-09-13: v1.2.1 had no way to end the app from the window at all - closeWindow hid it, ' +
+        'and only the tray menu could quit'
 };
 
 const artifactLines = (rel: string): string[] =>

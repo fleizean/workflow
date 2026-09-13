@@ -110,9 +110,21 @@ export const ipcContract = {
     'stats:streak': { input: z.void(), output: StreakSchema },
     'stats:weekTotals': { input: z.void(), output: WeekTotalsSchema },
     'stats:dayProgress': { input: z.strictObject({ date: LocalDateSchema }), output: DayProgressSchema },
-    // v1.2.1's minimize and close both hid to the tray, and the titlebar is the renderer's (IPC-05).
-    'window:minimize': { input: z.void(), output: z.void() },
-    'window:close': { input: z.void(), output: z.void() }
+    /*
+     * Owner decision 2026-09-13: the two titlebar buttons no longer mean the same thing, so the channel says which
+     * one is being asked for. v1.2.1 sent both to one hide (legacy/renderer/titlebar.js), and `window:close` - which
+     * hid rather than closed - is retired rather than quietly redefined. Where the window goes is still main's
+     * decision, not the renderer's (IPC-05): with no tray to hide to, hide minimises to the taskbar instead.
+     */
+    'window:hide': { input: z.void(), output: z.void() },
+    /*
+     * True once, ever. A user who believes they closed the app while it keeps counting has misunderstood something,
+     * and a misunderstanding is corrected once - a confirm on every hide only teaches people to click through
+     * dialogs. Asked before hiding, because a notice raised after it is behind a window that is no longer there.
+     */
+    'window:claimHideNotice': { input: z.void(), output: z.strictObject({ due: z.boolean() }) },
+    /** Ends the process. The renderer asks only after its own confirm; main marks the quit so nothing re-hides. */
+    'app:quit': { input: z.void(), output: z.void() }
 } as const satisfies ContractMap;
 
 export type IpcContract = typeof ipcContract;

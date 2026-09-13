@@ -43,7 +43,7 @@ export const LEGACY_TIMER_KEY = 'legacy.v121.timerState';
 export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 
 /** src/shared/ipc/channels.ts's IPC_CHANNELS and the container's services; tests/smoke-harness.test.ts holds them equal. */
-export const EXPECTED_IPC_CHANNELS = 31;
+export const EXPECTED_IPC_CHANNELS = 32;
 export const EXPECTED_SERVICES = 'companies,goal,pomodoro,sessions,settings,stats,timer';
 
 /** src/main/config.ts's EXIT_CODES, restated for plain Node; tests/smoke-harness.test.ts holds the two equal (T-04-50). */
@@ -257,7 +257,7 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE === f.SMOKE_BRIDGE_TICKS,
         'before=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS) + ' after=' + JSON.stringify(f.SMOKE_BRIDGE_TICKS_AFTER_DISPOSE));
 
-    // Criterion 8: the tray, and the close that hides rather than quits. Windows is the verified runtime target
+    // Criterion 8: the tray, and what each way out of the window does. Windows is the verified runtime target
     // (PROJECT.md); elsewhere a runner with no notification area may legitimately have no tray, and the reason it
     // reported is recorded rather than failed on.
     check('asking for the tray twice produced one tray',
@@ -266,19 +266,26 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_TRAY_CREATED === 'true' || process.platform !== 'win32',
         'reported ' + JSON.stringify(f.SMOKE_TRAY_CREATED) +
         (f.SMOKE_TRAY_LOG === undefined ? '' : ' - ' + f.SMOKE_TRAY_LOG));
-    // WR-03: what the close does depends on whether there is a tray to hide to, so the expectation does too.
+    // WR-03: what a system close does depends on whether there is a tray to hide to, so the expectation does too.
+    // This is Alt+F4 and a session ending, not the titlebar's X - since 2026-09-13 that one asks app:quit instead.
     const hidesToTray = f.SMOKE_TRAY_CREATED === 'true';
-    check('closing the window ' + (hidesToTray ? 'hides it instead of ending the app' : 'closes it, there being no tray'),
+    check('a system close ' + (hidesToTray ? 'hides the window instead of ending the app' : 'closes it, there being no tray'),
         hidesToTray
-            ? f.SMOKE_CLOSE_DECISION === 'hide' && f.SMOKE_WINDOW_AFTER_CLOSE === 'alive'
-            : f.SMOKE_CLOSE_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_CLOSE === 'destroyed',
-        'decision=' + JSON.stringify(f.SMOKE_CLOSE_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_CLOSE));
+            ? f.SMOKE_SYSTEM_CLOSE_DECISION === 'hide' && f.SMOKE_WINDOW_AFTER_SYSTEM_CLOSE === 'alive'
+            : f.SMOKE_SYSTEM_CLOSE_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_SYSTEM_CLOSE === 'destroyed',
+        'decision=' + JSON.stringify(f.SMOKE_SYSTEM_CLOSE_DECISION) +
+        ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_SYSTEM_CLOSE));
     check('with no tray to hide to the window really closes, so the app stays quittable (WR-03)',
         f.SMOKE_NO_TRAY_CLOSE_DECISION === 'close',
         'decision=' + JSON.stringify(f.SMOKE_NO_TRAY_CLOSE_DECISION));
-    check('choosing Quit lets the window go instead of re-hiding it',
+    check('quitting lets the window go instead of re-hiding it, whichever path asked for it',
         f.SMOKE_QUIT_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_QUIT === 'destroyed',
         'decision=' + JSON.stringify(f.SMOKE_QUIT_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_QUIT));
+    // Owner decision 2026-09-13: the hide button explains itself once, against the app_state row rather than a flag
+    // in the renderer that a reload would re-arm.
+    check('the hide notice was due on the first ask through the bridge and on no later one',
+        f.SMOKE_HIDE_NOTICE_FIRST === 'true' && f.SMOKE_HIDE_NOTICE_SECOND === 'false',
+        'first=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_FIRST) + ' second=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_SECOND));
 
     return checks;
 }

@@ -31,8 +31,9 @@ export const IPC_CHANNELS = [
     'stats:streak',
     'stats:weekTotals',
     'stats:dayProgress',
-    'window:minimize',
-    'window:close'
+    'window:hide',
+    'window:claimHideNotice',
+    'app:quit'
 ] as const;
 
 export const IPC_EVENT_CHANNELS = ['app:playSound', 'timer:tick', 'pomodoro:tick'] as const;

@@ -16,8 +16,9 @@ export type { AnomalyCounts, MigrationOptions, MigrationReport, MigrationStep, R
 export { LATEST, MIGRATIONS } from './migrations/registry';
 
 export {
-    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readPomodoroState, readTimerState,
-    readWindowBounds, writeAppState, writeGoalNotifiedDate, writePomodoroState, writeTimerState, writeWindowBounds
+    APP_STATE_KEYS, importLegacyState, markHideNoticeShown, readAppState, readGoalNotifiedDate, readHideNoticeShown,
+    readPomodoroState, readTimerState, readWindowBounds, writeAppState, writeGoalNotifiedDate, writePomodoroState,
+    writeTimerState, writeWindowBounds
 } from './app-state';
 export type {
     AppStateKey, AppStateValue, LegacyImportResult, LegacyStorageValues, RestoredPomodoroState, RestoredTimerState,

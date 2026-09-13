@@ -110,9 +110,10 @@ function spyingServices(): Spy {
             weeks: answer('stats.weeks', { thisWeekSeconds: 7200, lastWeekSeconds: 3600 }),
             pomodoroCounts: answer('stats.pomodoroCounts', { date: DAY, todayCount: 2, thisWeekCount: 9 })
         },
-        window: {
-            minimize: answer('window.minimize', undefined),
-            close: answer('window.close', undefined)
+        shell: {
+            hide: answer('shell.hide', undefined),
+            claimHideNotice: answer('shell.claimHideNotice', { due: true }),
+            quit: answer('shell.quit', undefined)
         }
     };
 
@@ -171,8 +172,9 @@ const WELL_FORMED: Readonly<Record<IpcChannel, { input?: unknown; reaches: strin
     'stats:streak': { reaches: 'stats.streak' },
     'stats:weekTotals': { reaches: 'stats.weeks' },
     'stats:dayProgress': { input: { date: DAY }, reaches: 'stats.dayProgress' },
-    'window:minimize': { reaches: 'window.minimize' },
-    'window:close': { reaches: 'window.close' }
+    'window:hide': { reaches: 'shell.hide' },
+    'window:claimHideNotice': { reaches: 'shell.claimHideNotice' },
+    'app:quit': { reaches: 'shell.quit' }
 };
 
 // Refused by every channel: a void input rejects an object, and every object input is strict.
