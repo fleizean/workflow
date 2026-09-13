@@ -427,3 +427,17 @@ describe('WR-07: what a session payload may say', () => {
             'a single day is not a reversed range').toBe(true);
     });
 });
+
+/** IN-01: what a refusal really says, pinned - because the comment above invalidInputError once claimed more. */
+describe('IN-01: an unrecognised key comes back by name', () => {
+    it('names the key the caller sent, and nothing it was sent with', async () => {
+        const h = harness();
+        const answer = await h.call('settings:update', { dailyTargetSeconds: 3600, sideChannel: 'a value of mine' });
+
+        expect(answer.error?.code).toBe('INVALID_INPUT');
+        expect(answer.error?.message, 'the key the caller supplied is named, which is the IN-01 correction')
+            .toContain('sideChannel');
+        expect(answer.error?.message, 'the value it carried must never cross').not.toContain('a value of mine');
+        expect(h.calls, 'a refused payload reached the service').toEqual([]);
+    });
+});

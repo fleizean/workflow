@@ -19,7 +19,13 @@ export function toIpcError(error: unknown): IpcError {
         : { code: 'INTERNAL', message: INTERNAL_MESSAGE };
 }
 
-/** The reason the input was refused, built from zod's issue paths so no rejected value is quoted back. */
+/*
+ * The reason the input was refused, built from zod's own issue text - a path and what was expected. IN-01: one
+ * issue does carry a value back, and the comment here used to deny it. Zod v4's unrecognised-key issue names the
+ * key, so a caller that sent {secretKeyName: 1} is told "Unrecognized key: \"secretKeyName\"". It is the caller's
+ * own string coming back to them and the message is clipped, so this is a correction to the claim rather than a
+ * hole - but the claim was "no rejected value is quoted back", and that is not what the code does.
+ */
 export function invalidInputError(channel: string, issues: readonly { path: PropertyKey[]; message: string }[]): IpcError {
     const where = issues.slice(0, 3).map((issue) =>
         (issue.path.length === 0 ? channel : issue.path.map(String).join('.')) + ': ' + issue.message);

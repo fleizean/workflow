@@ -101,6 +101,9 @@ let powerHandlersRegistered = false;
  * with the container rather than in registerLifecycle.
  */
 export function registerPowerMonitor(timer: TimerService): void {
+    // IN-06: the closure below holds the timer of whichever container registered first, and this flag keeps it
+    // there for the life of the process. There is only ever one container; if that changes, suspend and resume
+    // would gate a disposed timer while the replacement counted straight through a sleep.
     if (powerHandlersRegistered) {
         return;
     }
