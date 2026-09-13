@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { MAIN_WINDOW, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './config';
 import { describeError } from './errors';
 import { decideWindowClose, isQuitting } from './quit';
+import { hasAppTray } from './tray';
 import { chooseWindowBounds } from './window-bounds';
 import type { WindowBounds } from './window-bounds';
 
@@ -142,7 +143,7 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
      * the app is actually quitting the close is allowed through, which is what makes Quit exit rather than re-hide.
      */
     win.on('close', (event) => {
-        if (decideWindowClose({ quitting: isQuitting() }) === 'hide') {
+        if (decideWindowClose({ quitting: isQuitting(), hasTray: hasAppTray() }) === 'hide') {
             event.preventDefault();
             win.hide();
         }
@@ -159,11 +160,20 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
 
 /*
  * IPC-05: v1.2.1 hid the window on both the minimize and the close button (main.js:638-648), so the app went to the
- * tray rather than to the taskbar. Both are kept, and both act on the first main window - there is only ever one.
+ * tray rather than to the taskbar. Both are kept while there is a tray. With none there is nothing to come back
+ * from, so minimize goes to the taskbar and close really closes (WR-03). Both act on the first main window - there
+ * is only ever one.
  */
 export const windowControls = {
-    minimize(): void { mainWindows()[0]?.hide(); },
-    close(): void { mainWindows()[0]?.hide(); }
+    minimize(): void {
+        const win = mainWindows()[0];
+        if (hasAppTray()) { win?.hide(); } else { win?.minimize(); }
+    },
+
+    close(): void {
+        const win = mainWindows()[0];
+        if (hasAppTray()) { win?.hide(); } else { win?.close(); }
+    }
 };
 
 /** The dev server when unpackaged, otherwise the built index.html beside __dirname (inside app.asar, never cwd-relative). */

@@ -17,7 +17,7 @@ import { clearActiveContainer, createContainer, setActiveContainer } from './con
 import type { AppContainer } from './container';
 import { registerIpcHandlers, removeIpcHandlers } from './ipc';
 import { decideWindowClose, markQuitting } from './quit';
-import { createAppTray, destroyAppTray } from './tray';
+import { createAppTray, destroyAppTray, hasAppTray } from './tray';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
@@ -337,20 +337,32 @@ async function checkShell(lines: string[]): Promise<string | null> {
         lines.push('SMOKE_TRAY_CREATED=' + String(first !== undefined));
         lines.push('SMOKE_TRAY_SINGLETON=' + String(first === second));
 
-        // A window of its own, so the one the renderer checks ran against is left alone.
+        // A window of its own, so the one the renderer checks ran against is left alone. The finally is IN-07: a
+        // throw between the two closes used to leave it in `created`, where the renderer bus would still deliver to it.
         const probe = createMainWindow({ show: false });
-        lines.push('SMOKE_CLOSE_DECISION=' + decideWindowClose({ quitting: false }));
-        probe.close();
-        // A close that is allowed through destroys the window on a later turn of the loop, so both readings wait.
-        await settled(probe);
-        lines.push('SMOKE_WINDOW_AFTER_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
+        try {
+            lines.push('SMOKE_CLOSE_DECISION=' + decideWindowClose({ quitting: false, hasTray: hasAppTray() }));
+            // WR-03: the same question in the state a failed new Tray() leaves the app in, where hiding would be a
+            // process only Task Manager can end.
+            lines.push('SMOKE_NO_TRAY_CLOSE_DECISION=' + decideWindowClose({ quitting: false, hasTray: false }));
+            probe.close();
+            // A close that is allowed through destroys the window on a later turn of the loop, so both readings wait.
+            await settled(probe);
+            lines.push('SMOKE_WINDOW_AFTER_CLOSE=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
 
-        markQuitting();
-        lines.push('SMOKE_QUIT_DECISION=' + decideWindowClose({ quitting: true }));
-        probe.close();
-        await settled(probe);
-        lines.push('SMOKE_WINDOW_AFTER_QUIT=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
-        destroyAppTray();
+            markQuitting();
+            lines.push('SMOKE_QUIT_DECISION=' + decideWindowClose({ quitting: true, hasTray: hasAppTray() }));
+            if (!probe.isDestroyed()) {
+                probe.close();
+                await settled(probe);
+            }
+            lines.push('SMOKE_WINDOW_AFTER_QUIT=' + (probe.isDestroyed() ? 'destroyed' : 'alive'));
+        } finally {
+            if (!probe.isDestroyed()) {
+                probe.destroy();
+            }
+            destroyAppTray();
+        }
     } catch (error) {
         return 'shell: ' + describeError(error);
     }

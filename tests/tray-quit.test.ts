@@ -14,6 +14,7 @@ interface MenuItem {
 }
 
 const state = {
+    trayThrows: false,
     trays: 0,
     destroyed: 0,
     quits: 0,
@@ -28,6 +29,7 @@ const state = {
 vi.mock('electron', () => {
     class FakeTray {
         constructor() {
+            if (state.trayThrows) throw new Error('no notification area');
             state.trays += 1;
         }
         setToolTip(text: string): void { state.tooltip = text; }
@@ -81,7 +83,8 @@ const menuItem = (label: string): MenuItem | undefined =>
 describe('criterion 8: the tray', () => {
     beforeEach(() => {
         destroyAppTray();
-        Object.assign(state, { trays: 0, destroyed: 0, quits: 0, menu: [], listeners: new Map(), imageEmpty: false });
+        Object.assign(state,
+            { trays: 0, destroyed: 0, quits: 0, menu: [], listeners: new Map(), imageEmpty: false, trayThrows: false });
         resetQuittingForTests();
     });
 
@@ -109,6 +112,17 @@ describe('criterion 8: the tray', () => {
         expect(createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), (line) => lines.push(line)))
             .toBeDefined();
         expect(lines.join('\n')).toContain('icon could not be read');
+    });
+
+    it('does not fail startup when no tray can be created, and leaves the app quittable', () => {
+        state.trayThrows = true;
+        const lines: string[] = [];
+        expect(createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), (line) => lines.push(line)))
+            .toBeUndefined();
+        expect(hasAppTray()).toBe(false);
+        expect(lines.join('\n')).toContain('no tray could be created');
+        expect(decideWindowClose({ quitting: false, hasTray: hasAppTray() }), 'the only way out was Task Manager')
+            .toBe('close');
     });
 
     it('toggles the window on a click, as v1.2.1 did', () => {
@@ -139,7 +153,7 @@ describe('criterion 8: the tray', () => {
         expect(state.quits, 'Quit did not ask the app to quit').toBe(1);
         expect(isQuitting(), 'criterion 8: without this the close handler hides the window and the process lives on')
             .toBe(true);
-        expect(decideWindowClose({ quitting: isQuitting() })).toBe('close');
+        expect(decideWindowClose({ quitting: isQuitting(), hasTray: hasAppTray() })).toBe('close');
     });
 
     it('releases the icon when the app goes', () => {
@@ -154,8 +168,28 @@ describe('criterion 8: closing the window hides it, quitting does not', () => {
     beforeEach(resetQuittingForTests);
 
     it('hides while the app is running and closes once it is quitting', () => {
-        expect(decideWindowClose({ quitting: false })).toBe('hide');
-        expect(decideWindowClose({ quitting: true })).toBe('close');
+        expect(decideWindowClose({ quitting: false, hasTray: true })).toBe('hide');
+        expect(decideWindowClose({ quitting: true, hasTray: true })).toBe('close');
+    });
+
+    /*
+     * WR-03. The close handler hid unless the app was quitting, and markQuitting was reachable only from before-quit
+     * and a tray menu that does not exist when new Tray() fails. Alt+F4 and the titlebar both hid, so the user was
+     * left with a process only Task Manager could end - and force-killing it costs up to PERSIST_INTERVAL_MS of
+     * counted time. With no tray the close has to close.
+     */
+    it('closes rather than hides when there is no tray to hide to', () => {
+        expect(decideWindowClose({ quitting: false, hasTray: false })).toBe('close');
+        expect(decideWindowClose({ quitting: true, hasTray: false })).toBe('close');
+    });
+
+    it('is what window.ts asks, on the close handler and on the titlebar alike', () => {
+        const source = read(WINDOW_FILE);
+        expect(source, 'the close handler no longer asks whether there is a tray')
+            .toMatch(/decideWindowClose\(\{[^}]*hasTray/);
+        expect(source, 'the titlebar still hides into a tray that may not exist')
+            .toMatch(/minimize\(\): void \{[\s\S]*?hasAppTray\(\)/);
+        expect(source).toMatch(/close\(\): void \{[\s\S]*?hasAppTray\(\)/);
     });
 
     it('marks quitting once and does not forget', () => {

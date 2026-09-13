@@ -217,9 +217,16 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_TRAY_CREATED === 'true' || process.platform !== 'win32',
         'reported ' + JSON.stringify(f.SMOKE_TRAY_CREATED) +
         (f.SMOKE_TRAY_LOG === undefined ? '' : ' - ' + f.SMOKE_TRAY_LOG));
-    check('closing the window hides it instead of ending the app',
-        f.SMOKE_CLOSE_DECISION === 'hide' && f.SMOKE_WINDOW_AFTER_CLOSE === 'alive',
+    // WR-03: what the close does depends on whether there is a tray to hide to, so the expectation does too.
+    const hidesToTray = f.SMOKE_TRAY_CREATED === 'true';
+    check('closing the window ' + (hidesToTray ? 'hides it instead of ending the app' : 'closes it, there being no tray'),
+        hidesToTray
+            ? f.SMOKE_CLOSE_DECISION === 'hide' && f.SMOKE_WINDOW_AFTER_CLOSE === 'alive'
+            : f.SMOKE_CLOSE_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_CLOSE === 'destroyed',
         'decision=' + JSON.stringify(f.SMOKE_CLOSE_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_CLOSE));
+    check('with no tray to hide to the window really closes, so the app stays quittable (WR-03)',
+        f.SMOKE_NO_TRAY_CLOSE_DECISION === 'close',
+        'decision=' + JSON.stringify(f.SMOKE_NO_TRAY_CLOSE_DECISION));
     check('choosing Quit lets the window go instead of re-hiding it',
         f.SMOKE_QUIT_DECISION === 'close' && f.SMOKE_WINDOW_AFTER_QUIT === 'destroyed',
         'decision=' + JSON.stringify(f.SMOKE_QUIT_DECISION) + ' window=' + JSON.stringify(f.SMOKE_WINDOW_AFTER_QUIT));
