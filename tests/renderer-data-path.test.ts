@@ -7,6 +7,8 @@ import { IpcCallError, invoke, subscribe } from '@renderer/lib/ipc';
 import { queryKeys } from '@renderer/lib/query-keys';
 import { companiesQuery } from '@renderer/features/companies/api/useCompanies';
 import { sessionsQuery } from '@renderer/features/history/api/useSessions';
+import { weekTotalsQuery } from '@renderer/features/history/api/useWeekTotals';
+import { companySessionsQuery } from '@renderer/features/companies/api/useCompanySessions';
 import { settingsQuery } from '@renderer/features/settings/api/useSettings';
 import { timerSnapshotQuery } from '@renderer/features/timer/api/useTimerSnapshot';
 import { useUiStore } from '@renderer/store/ui.store';
@@ -309,10 +311,23 @@ describe('SPA-07: a change made in main refreshes the views that show it', () =>
 
     it('keys every query the features export by one of the declared keys', () => {
         const declared = Object.values(queryKeys).map((key) => JSON.stringify(key));
-        for (const query of [companiesQuery, sessionsQuery, settingsQuery, timerSnapshotQuery]) {
+        const all = [
+            companiesQuery, sessionsQuery, settingsQuery, timerSnapshotQuery, weekTotalsQuery, companySessionsQuery
+        ];
+        for (const query of all) {
             expect(declared, 'a feature keyed a query outside lib/query-keys.ts, where nothing can find it to invalidate')
                 .toContain(JSON.stringify(query.queryKey));
         }
+    });
+
+    /*
+     * Companies reads the session list through its own api file rather than through features/history, because an
+     * index.ts carries its feature's page with it and the two screens need each other's data. That is only
+     * acceptable while the two objects are the SAME cache entry - otherwise the app fetches the list twice and one
+     * copy goes stale behind the other.
+     */
+    it('reads the session list from one cache entry, whichever feature asked for it', () => {
+        expect(JSON.stringify(companySessionsQuery.queryKey)).toBe(JSON.stringify(sessionsQuery.queryKey));
     });
 
     it('keys every query by a domain main can announce', () => {

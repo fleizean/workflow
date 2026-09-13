@@ -307,6 +307,39 @@ describe('SPA-12: the renamed utility scales are swept, and stay swept', () => {
         ).toEqual([]);
     });
 
+    /*
+     * The fifth rename, and the one with no wrong-looking output to give it away. v3's bg-gradient-to-* interpolated
+     * in sRGB; v4 kept the spelling as an alias that interpolates in oklab, so a block of markup copied out of
+     * legacy/ renders a visibly different gradient and nothing complains. The /srgb modifier on bg-linear-to-<dir>
+     * is v4's way of asking for what v3 drew, and it is what every gradient in this renderer is written with.
+     */
+    it('asks for a gradient the way v3 drew one, not the way v4 renamed it', () => {
+        const offenders: string[] = [];
+        for (const file of rendererSources()) {
+            for (const value of literalsOf(file)) {
+                for (const token of value.split(/\s+/)) {
+                    const utility = token.replace(/^(?:[^\s:]+:)*/, '');
+                    if (/^bg-gradient-to-/.test(utility)) offenders.push(file + ': ' + token);
+                }
+            }
+        }
+        expect(
+            offenders,
+            'v4 keeps bg-gradient-to-* alive and interpolates it in oklab; v3 interpolated in sRGB. Write ' +
+            'bg-linear-to-<dir>/srgb, which is the same gradient v1.2.1 rendered.'
+        ).toEqual([]);
+    });
+
+    it('emits sRGB interpolation for the spelling the renderer uses, and oklab for the one it does not', async () => {
+        const base = path.join(repoRoot, STYLES_DIR);
+        const compiler = await compile(read(GLOBALS), { base, onDependency: () => undefined });
+        const css = compiler.build(['bg-linear-to-br/srgb', 'bg-gradient-to-br']);
+        expect(css, 'the /srgb modifier no longer asks for sRGB, so the parity claim above is empty')
+            .toContain('in srgb');
+        expect(css, 'bg-gradient-to-br no longer means oklab, so the ban above guards nothing')
+            .toContain('in oklab');
+    }, 60_000);
+
     it('scans files that actually carry class names, so the sweep is not vacuous', () => {
         const withClasses = rendererSources()
             .filter((file) => literalsOf(file).some((value) => /\b(?:flex|text-|bg-|rounded-)/.test(value)));
