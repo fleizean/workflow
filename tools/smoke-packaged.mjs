@@ -231,6 +231,11 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         'mediaError=' + JSON.stringify(f.SMOKE_SOUND_ERROR) + ' duration=' +
         JSON.stringify(f.SMOKE_SOUND_DURATION) + ' rejections=' + JSON.stringify(f.SMOKE_SOUND_REJECTIONS));
 
+    // The smoke is not allowed to make a noise on the machine running it, and a regression that un-mutes it would
+    // otherwise be reported by the owner's speakers rather than by this file.
+    check('the smoke window was muted before anything played',
+        f.SMOKE_AUDIO_MUTED === 'true', 'reported ' + JSON.stringify(f.SMOKE_AUDIO_MUTED));
+
     // WR-01: the page must not be able to leave its own CSP-bearing document.
     check('window.open from the page was refused and opened no window',
         f.SMOKE_WINDOW_OPEN_BLOCKED === 'true',

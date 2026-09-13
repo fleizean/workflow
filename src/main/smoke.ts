@@ -114,7 +114,16 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
                 // The same store the app registers, over the injected database, so the claim below is the real one.
                 registerHideNoticeStore(createHideNoticeStore(layer, connection));
                 win = createMainWindow({ show: false });
+                /*
+                 * The smoke plays the bundled notification to prove the file is in the bundle and decodes; it has no
+                 * reason to be audible to whoever is running it, and every run used to come out of the developer's
+                 * speakers. Muted here rather than in the sound path: nothing outside smoke mode reaches this line,
+                 * and what checkSound reads - a play, a file: src, a decoded duration, no MediaError - is decode
+                 * state, which muting does not touch.
+                 */
+                win.webContents.setAudioMuted(true);
                 lines.push('SMOKE_WINDOW_CREATED=true');
+                lines.push('SMOKE_AUDIO_MUTED=' + String(win.webContents.isAudioMuted()));
             }
         }
     );
