@@ -54,8 +54,17 @@
      * The one width the app is laid out at. v1.2.1 capped the shell at Tailwind's md (448px) and the bottom
      * navigation at 430px, so above the md breakpoint the bar was 18px narrower than the thing it belongs to.
      * Both read this token now (SPA-02); --container-* is the namespace Tailwind builds max-w-app out of.
+     *
+     * Owner decision 2026-09-14: 40rem, not v1.2.1's 28rem. The app was phone-shaped and stayed 448px wide on a
+     * 1280px window, which the owner asked to grow "with a limit". 40rem is the measured compromise: cards and
+     * list rows breathe, and one column still reads as one column - past roughly 48rem a single column of
+     * full-width rows looks stretched and would need a multi-column layout to be worth the space.
+     *
+     * The cost, stated: the Phase 1 baselines were captured from v1.2.1 at its own widths, so above 28rem there
+     * is nothing left to match. Phase 10 criterion 10 keeps meaning "matches the baselines" only at the phone
+     * sizes; wider than that, the matrix checks that nothing overflows or clips, not that it matches a picture.
      */
-    --container-app: 28rem;
+    --container-app: 40rem;
 
     /*
      * Motion. v1.2.1 injected a <style> element from shared.js for these; ARCH-05 makes a value Tailwind cannot

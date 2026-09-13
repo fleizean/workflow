@@ -20,7 +20,7 @@
  * The bar tracks the content column at EVERY width, not only above md. It used to centre itself at md and span the
  * whole window below it, so between 448 px and 768 px a 448 px column sat above an edge-to-edge bar. v1.2.1 was
  * full-width at every size, so neither spelling was parity with it; ROADMAP Phase 10 criterion 1 asks for the bar
- * aligned with the content column at all five matrix sizes, which is this. Only the rounded top stays at md.
+ * aligned with the content column at all five matrix sizes, which is this. The rounded top starts at sm (40rem), which is where the bar stops spanning the window.
  */
 
 import type { ReactElement } from 'react';
@@ -43,7 +43,7 @@ const NAV_ITEMS: readonly NavItem[] = [
 const NAV_CLASS =
     'fixed bottom-0 left-0 right-0 z-50 max-w-app mx-auto bg-white dark:bg-surface-dark border-t border-slate-200 dark:border-slate-800 ' +
     'shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1),0_-2px_4px_-1px_rgba(0,0,0,0.06)] ' +
-    'md:rounded-t-[24px]';
+    'sm:rounded-t-[24px]';
 
 const LINK_CLASS: Record<'active' | 'inactive', string> = {
     active: 'flex items-end justify-center text-center mx-auto px-4 pt-2 w-full transition-colors duration-200 text-primary',
