@@ -59,7 +59,9 @@ export function subscribe<C extends IpcEventChannel>(
     channel: C,
     listener: (payload: IpcEventPayload<C>) => void
 ): () => void {
-    const on = bridge()?.on[channel];
+    // IN-05: optional on both hops. A bridge present without `on` is a broken preload, not a reason to take
+    // the whole tree down from inside a provider effect.
+    const on = bridge()?.on?.[channel];
     if (on === undefined) {
         // No bridge means no events will ever arrive; a disposer that does nothing is the honest answer.
         return () => undefined;

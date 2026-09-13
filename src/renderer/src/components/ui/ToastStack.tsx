@@ -13,7 +13,9 @@ import type { ReactElement } from 'react';
 import { useUiStore } from '@renderer/store/ui.store';
 import type { Toast, Tone } from '@renderer/store/ui.store';
 
-const AUTO_DISMISS_MS = 5_000;
+// IN-01: v1.2.1's showToast(message, type, duration = 3000). The two visual deviations from v1.2.1 are both owner
+// decisions; this one was not one, so it goes back.
+const AUTO_DISMISS_MS = 3_000;
 /** Must match the --animate-toast-out duration in styles/globals.css: the row leaves when the animation ends. */
 const EXIT_MS = 300;
 

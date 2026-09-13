@@ -77,6 +77,9 @@ function checkpointAndClose(dbPath: string): void {
  * which this operation loses data.
  */
 function requireQuiescent(dbPath: string, stage: string): void {
+    // IN-04: SIDECARS is ['-wal', '-shm'] and the order is load-bearing. The -wal is checked for content before
+    // anything is deleted; reordering this list would delete the -shm first and then throw, which is a mutation
+    // made on the way to refusing to mutate.
     for (const sidecar of SIDECARS) {
         const companion = dbPath + sidecar;
         if (!fs.existsSync(companion)) continue;
@@ -161,6 +164,19 @@ export function adoptLegacyDatabase(
 
     const before = readDatabaseStats(legacyPath);
     requireQuiescent(legacyPath, 'after reading it back');
+
+    /*
+     * IN-01: the integrity refusal used to be applied to the target AFTER the move, through
+     * describeVerificationMismatches - so a user whose krono.db was slightly corrupt had it renamed, renamed back,
+     * and startup refused, with the file touched twice on the way to being left alone. `before` is the same read,
+     * taken before the irreversible step, so it can say so first.
+     */
+    if (before.integrity !== 'ok') {
+        throw new Error(
+            'Refusing to adopt ' + legacyPath + ': PRAGMA integrity_check reports "' + before.integrity +
+            '". The database has not been moved, and is exactly where it was.'
+        );
+    }
 
     hooks.beforeRename?.();
     moveOnto(legacyPath, targetPath);

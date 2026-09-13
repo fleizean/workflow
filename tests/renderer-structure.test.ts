@@ -69,7 +69,8 @@ describe('ARCH-02: the renderer is app/, features/, components/, store/ and lib/
 
     it('declares every route in one file, and that file is ' + ROUTER, () => {
         const declaring = rendererSources()
-            .filter((file) => /<Route\b|create(?:Hash|Browser|Memory)Router\b/.test(codeOf(file)));
+            // IN-06: useRoutes([{ path, element }]) is a route table that names no <Route and no createRouter.
+            .filter((file) => /<Route\b|create(?:Hash|Browser|Memory)Router\b|\buseRoutes\s*\(/.test(codeOf(file)));
         expect(declaring, 'a route is declared outside the one route table').toEqual([ROUTER]);
     });
 

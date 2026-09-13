@@ -292,6 +292,27 @@ describe('V2-SCHEMA-02: a database that appears at the new name during the move 
         expect(left.digest, 'the refusal altered the legacy database').toBe(before.digest);
     });
 
+    /*
+     * IN-01: the integrity refusal lived in describeVerificationMismatches, which runs against the TARGET after
+     * the move - so a slightly corrupt krono.db was renamed, renamed back, and then refused. The same read taken
+     * before the irreversible step can say so without touching anything.
+     */
+    it('refuses a corrupt source before it moves it, not after', () => {
+        const legacy = copyFixture(makeCleanFixture());
+        const target = path.join(path.dirname(legacy), 'workflow.db');
+
+        // Corrupt a page in the middle of the file: the header still reads, integrity_check does not.
+        const bytes = fs.readFileSync(legacy);
+        bytes.fill(0x5a, 4096, 4400);
+        fs.writeFileSync(legacy, bytes);
+
+        expect(() => adoptLegacyDatabase(legacy, target)).toThrow(/integrity_check/);
+
+        expect(fs.existsSync(target), 'a corrupt database was moved to the new name and then moved back').toBe(false);
+        expect(entriesIn(legacy), 'the refusal left something beside the file it refused')
+            .toEqual([path.basename(legacy)]);
+    });
+
     it('takes the move with an operation that fails on an existing target, not a check that precedes one', () => {
         const source = fs.readFileSync(path.join(process.cwd(), 'src/lib/db/adopt.ts'), 'utf8');
         expect(

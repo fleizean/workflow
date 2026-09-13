@@ -29,6 +29,7 @@ import { read, repoRoot, scriptKindFor, stripCommentsAndStrings } from './helper
 const STYLES_DIR = 'src/renderer/src/styles';
 const GLOBALS = 'src/renderer/src/styles/globals.css';
 const ALERT = 'src/renderer/src/components/ui/AlertDialog.tsx';
+const TOASTS = 'src/renderer/src/components/ui/ToastStack.tsx';
 const RENDERER_SRC = 'src/renderer/src';
 
 // The maps criterion 3 names: four tones, each resolving to a whole class string rather than a built one.
@@ -194,6 +195,36 @@ describe('C3: the same scanner misses a class name that is built rather than wri
         expect(written, 'the colour is not in the palette at all, so the miss above was never about scanning')
             .toContain(selectorFor('bg-fuchsia-100'));
     }, 60_000);
+});
+
+/*
+ * IN-02. dismissToast marks a row leaving and removeToast drops it EXIT_MS later, so if the constant and the
+ * token's duration drift the toast either vanishes mid-animation or lingers as a transparent row that still holds
+ * its slot in the stack. 07-E-SUMMARY.md names this as agreed by comment and untested; it is tested now.
+ */
+describe('the toast leaves exactly when its animation ends', () => {
+    // tsconfig.node.json carries no jsx and no DOM lib, so a node test cannot import a .tsx - the value is read
+    // out of the source, which is the same thing tone maps are read out of above.
+    const constantOf = (name: string): number => {
+        const raw = new RegExp('const ' + name + '\\s*=\\s*([0-9_]+)').exec(read(TOASTS))?.[1];
+        expect(raw, TOASTS + ' no longer declares ' + name + ' as a plain number').toBeDefined();
+        return Number((raw ?? '').replace(/_/g, ''));
+    };
+
+    it('holds EXIT_MS equal to the --animate-toast-out duration', () => {
+        const token = /--animate-toast-out:\s*toast-out\s+(\d+)ms/.exec(read(GLOBALS))?.[1];
+        expect(token, GLOBALS + ' no longer declares --animate-toast-out in ms').toBeDefined();
+        const exit = constantOf('EXIT_MS');
+        expect(
+            exit,
+            'ToastStack.tsx drops the row ' + String(exit) + ' ms after dismissal while the animation runs for ' +
+            String(token) + ' ms - the row either vanishes mid-animation or lingers holding its slot'
+        ).toBe(Number(token));
+    });
+
+    it('auto-dismisses after the dwell v1.2.1 used (IN-01)', () => {
+        expect(constantOf('AUTO_DISMISS_MS'), 'legacy/renderer/shared.js:99 defaults duration to 3000').toBe(3_000);
+    });
 });
 
 describe('SPA-12: the v4 compatibility layer restores what v3 rendered', () => {
