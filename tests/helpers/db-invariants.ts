@@ -176,6 +176,79 @@ function cellIndex(columns: readonly string[], name: string): number {
     return columns.indexOf(name);
 }
 
+/*
+ * V2-SCHEMA-01: the one loss this project sanctions. Migration 0002 takes the Google Sheets export's two companies
+ * columns and its two settings rows out of the database. The oracle predicts exactly that, so everything else it
+ * checks - counts, cells, sum(duration), day totals, sqlite_sequence, the streak - still has to match.
+ */
+export const RETIRED_COLUMNS: Readonly<Partial<Record<V121Table, readonly string[]>>> = Object.freeze({
+    companies: Object.freeze(['excel_column', 'note_column'])
+});
+
+export const RETIRED_SETTINGS: readonly string[] = Object.freeze(['export_half_hour_precision', 'script_url']);
+
+const isRetiredColumn = (table: V121Table, column: string): boolean =>
+    (RETIRED_COLUMNS[table] ?? []).includes(column);
+
+/** originalColumns less what 0002 retires: the set a capture taken at LATEST must digest over. */
+export function survivingColumns(
+    invariants: DatabaseInvariants
+): Readonly<Partial<Record<V121Table, readonly string[]>>> {
+    const over: Partial<Record<V121Table, readonly string[]>> = {};
+    for (const table of INVARIANT_TABLES) {
+        const captured = invariants.tables[table];
+        if (captured === null) continue;
+        over[table] = captured.columns.filter((column) => !isRetiredColumn(table, column));
+    }
+    return over;
+}
+
+// `before` with the retirement applied and nothing else. Idempotent, so it composes with a capture already
+// digested over the surviving columns.
+export function retireFrom(before: DatabaseInvariants): DatabaseInvariants {
+    const tables: Record<V121Table, TableInvariant | null> = { ...before.tables };
+    const counts: Record<V121Table, number | null> = { ...before.counts };
+
+    for (const table of INVARIANT_TABLES) {
+        const captured = before.tables[table];
+        if (captured === null) continue;
+        const keep = captured.columns
+            .map((column, at) => ({ column, at }))
+            .filter((entry) => !isRetiredColumn(table, entry.column));
+        if (keep.length === captured.columns.length) continue;
+        const columns = keep.map((entry) => entry.column);
+        const rows = captured.rows.map((row) => keep.map((entry) => row[entry.at] ?? ''));
+        tables[table] = { columns, rows, digest: digestOf(columns, rows) };
+    }
+
+    let settings = before.settings;
+    if (settings !== null) {
+        const kept: Record<string, string> = {};
+        for (const [key, value] of Object.entries(settings)) {
+            if (!RETIRED_SETTINGS.includes(key)) kept[key] = value;
+        }
+        settings = kept;
+        counts.settings = Object.keys(kept).length;
+
+        const settingsTable = tables.settings;
+        if (settingsTable !== null) {
+            const keyAt = cellIndex(settingsTable.columns, 'key');
+            const rows = keyAt === -1
+                ? settingsTable.rows
+                : settingsTable.rows.filter(
+                    (row) => !RETIRED_SETTINGS.some((key) => row[keyAt] === quoteText(key))
+                );
+            tables.settings = {
+                columns: settingsTable.columns,
+                rows,
+                digest: digestOf(settingsTable.columns, rows)
+            };
+        }
+    }
+
+    return { ...before, tables, counts, settings };
+}
+
 // v1.2.1 inserts Unassigned naming only `name`; every other column takes its declared default.
 function unassignedRow(columns: readonly string[], id: number): string[] {
     return columns.map((column) => {

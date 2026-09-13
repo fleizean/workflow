@@ -168,7 +168,7 @@ describe('CORE-03: a nonsensical value is refused, not stored', () => {
     });
 
     it('refuses a key this app does not have, naming it', () => {
-        // script_url and export_half_hour_precision still sit in the table the owner stopped using (slice A).
+        // script_url left the table with migration 0002; the service refused it before that and refuses it still.
         const error = attempt(harness(), { script_url: 'https://example.test' } as unknown as Partial<Settings>);
         expect(error?.key).toBe('script_url');
         expect(error?.message).toContain('script_url');

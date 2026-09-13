@@ -1,5 +1,6 @@
-// D-06/D-13/D-17/D-18: a fresh file and every v1.x shape reach v2 through the real registry and the real baseline,
-// the schema at v1 is the real v1.2.1 text, and the committed migration bytes hash to the values approved at the door.
+// D-06/D-13/D-17/D-18: a fresh file and every v1.x shape reach LATEST through the real registry and the real
+// baseline, the schema at v1 is the real v1.2.1 text, at LATEST it is that text less what 0002 retired, and the
+// committed migration bytes hash to the values approved at the door.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -36,6 +37,17 @@ const V2_OBJECTS = [
     'CREATE TABLE `app_state` (\n\t`key` text PRIMARY KEY NOT NULL,\n\t`value` text NOT NULL,\n\t' +
         '`updated_at` text DEFAULT CURRENT_TIMESTAMP NOT NULL\n);'
 ].join('\n\n');
+
+// Restated in full, never edited out of the v1.2.1 text: exactly what companies reads as once 0002 has run.
+// SQLite rewrites the CREATE text in place, so the ALTER scar before note_required survives the drop.
+const V3_COMPANIES = [
+    'CREATE TABLE companies (',
+    '      id INTEGER PRIMARY KEY AUTOINCREMENT,',
+    '      name TEXT NOT NULL UNIQUE,',
+    '      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,',
+    '      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP',
+    '    , note_required INTEGER DEFAULT 0);'
+].join('\n');
 
 const tempDirs: string[] = [];
 
@@ -75,6 +87,15 @@ const backupsIn = (dir: string): string[] =>
 function realSchema(): string {
     const text = fs.readFileSync(REAL_SCHEMA, 'utf8').replace(/\r\n/g, '\n');
     return text.slice(text.indexOf('CREATE TABLE'));
+}
+
+// The same schema after 0002. Only the companies statement moves, and it is replaced rather than edited, so a
+// drop that also disturbed anything else in it - a type, a default, the ALTER scar - fails this comparison.
+function retiredSchema(): string {
+    const statements = realSchema().replace(/\n+$/, '').split('\n\n');
+    expect(statements[0], 'the v1.2.1 extract no longer starts with companies')
+        .toMatch(/^CREATE TABLE companies \(/);
+    return [V3_COMPANIES, ...statements.slice(1)].join('\n\n') + '\n';
 }
 
 // Probes and classifies exactly as startup will; applyBaseline is never passed, so the production default applies.
@@ -119,7 +140,7 @@ function baselineLiterals(): string[] {
     return texts;
 }
 
-describe('tracer: a missing krono.db reaches v2 through the real registry and the real baseline', () => {
+describe('tracer: a missing krono.db reaches LATEST through the real registry and the real baseline', () => {
     it('migrates on the production defaults alone, with no steps and no baseline passed in', async () => {
         const dir = tempDir('fresh');
         const dbPath = path.join(dir, 'krono.db');
@@ -144,10 +165,10 @@ describe('tracer: a missing krono.db reaches v2 through the real registry and th
             closeDatabase(db);
         }
 
-        expect(report.applied).toEqual([1, 2]);
-        expect(report.toVersion).toBe(2);
+        expect(report.applied).toEqual([1, 2, 3]);
+        expect(report.toVersion).toBe(LATEST);
         expect(report.backupPath).toBeNull();
-        expect(userVersionOf(dbPath)).toBe(2);
+        expect(userVersionOf(dbPath)).toBe(LATEST);
     });
 
     it('renders the real v1.2.1 schema at v1, ALTER scars included', async () => {
@@ -166,12 +187,12 @@ describe('tracer: a missing krono.db reaches v2 through the real registry and th
         expect(settingsOf(dbPath).sort()).toEqual([...V121_DEFAULT_SETTINGS].map(([k, v]) => [k, v]).sort());
     });
 
-    it('adds exactly app_state and the three indexes on top of that schema', async () => {
+    it('adds exactly app_state and the three indexes, and retires the two sheets columns', async () => {
         const dbPath = path.join(tempDir('full'), 'krono.db');
         await migrateAt(dbPath, MIGRATIONS);
 
-        expect(userVersionOf(dbPath)).toBe(2);
-        expect(schemaOf(dbPath)).toBe(V2_OBJECTS + '\n\n' + realSchema());
+        expect(userVersionOf(dbPath)).toBe(LATEST);
+        expect(schemaOf(dbPath)).toBe(V2_OBJECTS + '\n\n' + retiredSchema());
     });
 });
 
@@ -180,7 +201,7 @@ describe('D-13/DATA-04: every v1.x shape adopts through the one baseline', () =>
         expect(Object.keys(SHAPES)).toEqual(SHAPE_IDS);
     });
 
-    it.each(SHAPE_IDS)('shape %s reaches v2, and its v1-only copy renders the real schema', async (shape) => {
+    it.each(SHAPE_IDS)('shape %s reaches LATEST, and its v1-only copy renders the real schema', async (shape) => {
         const fixture = copyFixture(buildLegacyFixture(shape, 'representative'));
         const v1Copy = copyFixture(fixture);
 
@@ -191,14 +212,14 @@ describe('D-13/DATA-04: every v1.x shape adopts through the one baseline', () =>
 
         const report = await migrateAt(fixture, MIGRATIONS);
         expect(report.dbClass).toBe('legacy');
-        expect(report.applied).toEqual([1, 2]);
-        expect(userVersionOf(fixture)).toBe(2);
-        expect(schemaOf(fixture)).toBe(V2_OBJECTS + '\n\n' + realSchema());
+        expect(report.applied).toEqual([1, 2, 3]);
+        expect(userVersionOf(fixture)).toBe(LATEST);
+        expect(schemaOf(fixture)).toBe(V2_OBJECTS + '\n\n' + retiredSchema());
     });
 });
 
-describe('D-22 ordering: the backup exists before the baseline runs, and v1 commits before v2', () => {
-    it('takes the backup before insideTransaction(1), and runs v1 before v2', async () => {
+describe('D-22 ordering: the backup exists before the baseline runs, and the steps commit in order', () => {
+    it('takes the backup before insideTransaction(1), and runs the steps 1, 2, 3', async () => {
         const fixture = copyFixture(buildLegacyFixture('C', 'representative'));
         const backupDir = path.join(path.dirname(fixture), 'backups');
         const seen: { version: number; backups: number }[] = [];
@@ -208,10 +229,10 @@ describe('D-22 ordering: the backup exists before the baseline runs, and v1 comm
             hooks: { insideTransaction: (version) => { seen.push({ version, backups: backupsIn(backupDir).length }); } }
         });
 
-        expect(seen.map((entry) => entry.version)).toEqual([1, 2]);
+        expect(seen.map((entry) => entry.version)).toEqual([1, 2, 3]);
         expect(seen[0]?.backups).toBe(1);
         expect(report.backupPath).not.toBeNull();
-        expect(userVersionOf(fixture)).toBe(2);
+        expect(userVersionOf(fixture)).toBe(LATEST);
     });
 });
 
@@ -245,8 +266,8 @@ describe('D-09/D-21: the committed migration bytes hash to the approved pins', (
 
     it('registers the baseline as v1 with no SQL, and LATEST is the registry length', () => {
         expect(LATEST).toBe(MIGRATIONS.length);
-        expect(LATEST).toBe(2);
-        expect(MIGRATIONS.map((step) => step.version)).toEqual([1, 2]);
+        expect(LATEST).toBe(3);
+        expect(MIGRATIONS.map((step) => step.version)).toEqual([1, 2, 3]);
         expect(MIGRATIONS[0]?.kind).toBe('baseline');
         expect(MIGRATIONS[0]).not.toHaveProperty('sql');
     });

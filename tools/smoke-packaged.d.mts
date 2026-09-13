@@ -31,6 +31,7 @@ export interface SmokeReport {
 
 export interface DatabaseObservation {
     readonly userVersion: number;
+    readonly companyColumns: string;
     readonly companies: number;
     readonly workSessions: number;
     readonly pomodoroSessions: number;

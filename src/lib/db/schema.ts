@@ -1,5 +1,5 @@
-// The v1.2.1 tables in live column order (ALTER-appended columns last). drizzle-kit loads this file with its own
-// loader, so it imports only drizzle-orm and drizzle-orm/sqlite-core (D-11).
+// The v1.2.1 tables in live column order (ALTER-appended columns last), less what migration 0002 retired.
+// drizzle-kit loads this file with its own loader, so it imports only drizzle-orm and drizzle-orm/sqlite-core (D-11).
 import { sql } from 'drizzle-orm';
 import { customType, index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
@@ -11,8 +11,6 @@ export const companies = sqliteTable('companies', {
     name: text('name').notNull().unique(),
     created_at: text('created_at').notNull().default(sql`CURRENT_TIMESTAMP`),
     updated_at: text('updated_at').notNull().default(sql`CURRENT_TIMESTAMP`),
-    excel_column: text('excel_column'),
-    note_column: text('note_column'),
     note_required: integer('note_required').default(0)
 });
 

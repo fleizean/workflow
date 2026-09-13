@@ -277,7 +277,7 @@ describe('tracer: a v1.2.1 database is adopted, migrated and then the window ope
 
         expect(started, 'startup returned no connection for a legacy database').not.toBeNull();
         expect(started?.report.dbClass).toBe('legacy');
-        expect(started?.report.applied).toEqual([1, 2]);
+        expect(started?.report.applied).toEqual([1, 2, 3]);
         expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
         expect(backupsIn(h.backupDir), 'a legacy adoption must leave exactly one verified backup').toHaveLength(1);
         expect(started?.report.backupPath).toBe(path.join(h.backupDir, backupsIn(h.backupDir)[0] ?? ''));
@@ -287,7 +287,7 @@ describe('tracer: a v1.2.1 database is adopted, migrated and then the window ope
         expect(h.recorder.calls.filter((call) => call === 'openMainWindow')).toHaveLength(1);
         expect(h.recorder.calls.indexOf('openMainWindow'), 'the window opened before the migration committed')
             .toBeGreaterThan(h.recorder.calls.indexOf('migrated'));
-        expect(h.recorder.logs.join('\n')).toContain('legacy 0 -> 2');
+        expect(h.recorder.logs.join('\n')).toContain('legacy 0 -> ' + String(realLayer.LATEST));
     });
 });
 
@@ -612,7 +612,7 @@ describe('D-31: a failure closes the connection, says where things are, and chan
         const started = await run(h);
 
         expect(started, 'a migrated database was refused over its journal mode').not.toBeNull();
-        expect(started?.report.applied).toEqual([1, 2]);
+        expect(started?.report.applied).toEqual([1, 2, 3]);
         expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
         expect(h.recorder.reports, 'a committed migration still reported a failure').toEqual([]);
         expect(h.recorder.exits).toEqual([]);
@@ -937,7 +937,7 @@ describe('WR-04: an adopted database that already carries a v2 object name is st
         const started = await run(h);
 
         expect(h.recorder.reports, 'a pre-existing index name failed the whole v2 transaction').toEqual([]);
-        expect(started?.report.applied).toEqual([1, 2]);
+        expect(started?.report.applied).toEqual([1, 2, 3]);
         expect(userVersionOf(h.dbPath)).toBe(realLayer.LATEST);
     });
 });

@@ -15,6 +15,13 @@
       "when": 1789167360639,
       "tag": "0001_history_indexes_app_state",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1789308515437,
+      "tag": "0002_sheets_retirement",
+      "breakpoints": true
     }
   ]
 }

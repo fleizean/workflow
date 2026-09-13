@@ -90,6 +90,23 @@ const schemaObjects = (dbPath: string): string[] => {
     }
 };
 
+// Every table's columns in cid order, so a column that moved is as visible as one that left.
+const allColumns = (dbPath: string): Record<string, string[]> => {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        const columns: Record<string, string[]> = {};
+        const read = db.prepare<[string], { name: string }>('SELECT name FROM pragma_table_info(?) ORDER BY cid');
+        for (const row of db.prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+        ).all()) {
+            columns[row.name] = read.all(row.name).map((column) => column.name);
+        }
+        return columns;
+    } finally {
+        db.close();
+    }
+};
+
 const sqlTags = (): string[] =>
     fs.readdirSync(MIGRATIONS_DIR)
         .filter((name) => name.endsWith('.sql'))
@@ -172,7 +189,7 @@ describe('D-08: the registry is the order, and the journal agrees with it', () =
     it('numbers the registry 1..n with no gap or duplicate, and LATEST is its length', () => {
         expect(MIGRATIONS.map((step) => step.version)).toEqual(MIGRATIONS.map((_step, index) => index + 1));
         expect(LATEST).toBe(MIGRATIONS.length);
-        expect(LATEST).toBe(2);
+        expect(LATEST).toBe(3);
     });
 
     it('matches the drizzle journal tag for tag, in order', () => {
@@ -210,7 +227,7 @@ describe('D-22: a database already at LATEST is left alone', () => {
         const backupDir = path.join(dir, 'backups');
 
         const first = await migrateReal(dbPath, { backupDir });
-        expect(first.applied).toEqual([1, 2]);
+        expect(first.applied).toEqual([1, 2, 3]);
         expect(userVersionOf(dbPath)).toBe(LATEST);
 
         const again = await migrateReal(dbPath, { backupDir });
@@ -296,7 +313,7 @@ describe('D-08: nothing drizzle-managed tracks these migrations', () => {
         const report = await migrateReal(fixture);
 
         expect(report.dbClass).toBe('legacy');
-        expect(report.applied).toEqual([1, 2]);
+        expect(report.applied).toEqual([1, 2, 3]);
         expect(schemaObjects(fixture)).not.toContain('__drizzle_migrations');
     });
 });
@@ -353,6 +370,30 @@ describe('D-17/D-18/D-19: v2 adds exactly app_state and the three history indexe
         const after = schemaObjects(atLatest);
 
         expect(after.filter((name) => !before.includes(name)).sort()).toEqual(V2_NEW_OBJECTS);
-        expect(before.filter((name) => !after.includes(name)), 'v2 removed an object').toEqual([]);
+        expect(before.filter((name) => !after.includes(name)), 'a migration removed an object').toEqual([]);
+    });
+});
+
+describe('V2-SCHEMA-01: v3 removes exactly the two sheets columns, and no other column of any table', () => {
+    it('takes those two off companies and leaves every other column of every table where it was', async () => {
+        const atV2 = path.join(tempDir('retire-v2'), 'krono.db');
+        const atV3 = path.join(tempDir('retire-v3'), 'krono.db');
+
+        await migrateReal(atV2, { steps: MIGRATIONS.slice(0, 2) });
+        expect(userVersionOf(atV2)).toBe(2);
+        await migrateReal(atV3);
+        expect(userVersionOf(atV3)).toBe(LATEST);
+
+        const before = allColumns(atV2);
+        const after = allColumns(atV3);
+
+        expect(Object.keys(after).sort(), 'a table appeared or disappeared').toEqual(Object.keys(before).sort());
+        const removed = Object.entries(before).flatMap(([table, columns]) =>
+            columns.filter((column) => !(after[table] ?? []).includes(column)).map((column) => table + '.' + column));
+        const added = Object.entries(after).flatMap(([table, columns]) =>
+            columns.filter((column) => !(before[table] ?? []).includes(column)).map((column) => table + '.' + column));
+
+        expect(removed.sort()).toEqual(['companies.excel_column', 'companies.note_column']);
+        expect(added, 'v3 is the step that only takes away').toEqual([]);
     });
 });

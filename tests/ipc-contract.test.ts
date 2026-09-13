@@ -178,7 +178,8 @@ const SETTING_SEEDS: [keyof Settings, string, Settings[keyof Settings]][] = [
     ['pomodoroAutoStartWork', 'pomodoro_auto_start_work', false]
 ];
 const UNREAD_SEEDS = ['haptic_feedback', 'start_reminder'];
-// Seeded by v1.2.1, kept in the database, outside the v2 domain surface: the owner removed the export on 2026-09-11.
+// Seeded by v1.2.1 and outside the v2 domain surface: the owner removed the export on 2026-09-11, and migration
+// 0002 deleted the row. This list is v1.2.1's own seeds, so the key stays accounted for here.
 const RETIRED_SEEDS = ['export_half_hour_precision'];
 
 describe('SHARED-04 / D-19: LocalDateSchema', () => {

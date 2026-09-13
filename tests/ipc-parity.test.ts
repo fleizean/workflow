@@ -55,7 +55,7 @@ const DISPOSITIONS: Readonly<Record<string, Disposition>> = {
     updateCompany: { channel: 'companies:update' },
     updateCompanyExcelConfig: {
         removed: 'owner-removed',
-        why: 'the per-company sheet columns; excel_column and note_column stay in krono.db and no service reads them'
+        why: 'the per-company sheet columns; migration 0002 took excel_column and note_column off the table'
     },
     updateSession: { channel: 'sessions:update' }
 };

@@ -53,7 +53,7 @@ export const PomodoroSessionSchema = z.strictObject({
 });
 
 // The 10 keys v1.2.1 reads or writes that v2 still has a use for (D-20). Out: the two seeded-but-unread keys, and
-// export_half_hour_precision / script_url, whose rows stay in the database after the owner removed the export.
+// export_half_hour_precision / script_url, which migration 0002 deleted along with the export that wrote them.
 export const SettingsSchema = z.strictObject({
     dailyTargetSeconds: z.int().positive(),
     goalNotification: z.boolean(),

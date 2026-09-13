@@ -218,24 +218,24 @@ describe('CORE-01: the companies repository', () => {
         expect(repo.findByName('No Such Fixture')).toBeNull();
     });
 
-    it('an update touches name and note_required only, and leaves the export letters where they are', () => {
+    it('an update rewrites name, note_required and updated_at, and no other cell of the row', () => {
         const repo = createCompaniesRepository(ctx.handle);
-        const before = rawRows<{ id: number; excel_column: string | null }>(
-            ctx.dbPath, 'SELECT id, excel_column FROM companies WHERE name = ' + "'Northwind Fixture'"
-        )[0];
-        expect(before?.excel_column, 'the fixture must carry the data this test is about').toBe('B');
+        const all = 'SELECT * FROM companies WHERE name = ';
+        const before = rawRows<Record<string, unknown>>(ctx.dbPath, all + "'Northwind Fixture'")[0];
+        expect(Object.keys(before ?? {}), 'V2-SCHEMA-01: 0002 took the two export columns off this table')
+            .toEqual(['id', 'name', 'created_at', 'updated_at', 'note_required']);
 
-        const updated = repo.update(before?.id ?? 0, { name: 'Northwind Renamed', noteRequired: false });
+        const updated = repo.update(Number(before?.id ?? 0), { name: 'Northwind Renamed', noteRequired: false });
         expect(updated?.name).toBe('Northwind Renamed');
         expect(updated?.noteRequired).toBe(false);
 
-        const after = rawRows<{ excel_column: string | null; updated_at: string }>(
-            ctx.dbPath, 'SELECT excel_column, updated_at FROM companies WHERE name = ' + "'Northwind Renamed'"
-        )[0];
-        expect(after?.excel_column, 'V2-SCHEMA-01: the data stays until a migration deliberately removes it').toBe('B');
+        const after = rawRows<Record<string, unknown>>(ctx.dbPath, all + "'Northwind Renamed'")[0];
+        const changed = Object.keys(after ?? {}).filter((column) => after?.[column] !== before?.[column]).sort();
+        expect(changed, 'a company update must rewrite nothing the patch did not name')
+            .toEqual(['name', 'note_required', 'updated_at']);
         expect(after?.updated_at, 'v1.2.1 bumped updated_at on every company update').not.toBe('2026-01-01 09:00:00');
 
-        repo.update(before?.id ?? 0, { name: 'Northwind Fixture', noteRequired: true });
+        repo.update(Number(before?.id ?? 0), { name: 'Northwind Fixture', noteRequired: true });
         expect(repo.update(999_999, { name: 'x', noteRequired: false }), 'a missing row is null').toBeNull();
     });
 
@@ -279,8 +279,9 @@ describe('CORE-01: the settings repository', () => {
         expect(createSettingsRepository(ctx.handle).get().dailyTargetSeconds, 'the stored daily_target').toBe(28800);
 
         // The baseline replay seeds every v1.2.1 key, so the fallback needs a row taken away to be proven at all.
+        // 13 v1.2.1 defaults, less the one 0002 retires, less this one.
         ctx.connection.exec('DELETE FROM settings WHERE key = ' + "'pomodoro_short_break'");
-        expect(rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM settings')[0]?.c).toBe(12);
+        expect(rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM settings')[0]?.c).toBe(11);
         expect(createSettingsRepository(ctx.handle).get().pomodoroShortBreakSeconds)
             .toBe(DEFAULT_SETTINGS.pomodoroShortBreakSeconds);
     });
@@ -469,7 +470,7 @@ describe('CORE-01: the pomodoro repository', () => {
     });
 });
 
-// The retired export columns and settings keys, as the SQL a repository issues would spell them.
+// The export columns and settings keys migration 0002 removed, as the SQL a repository issues would spell them.
 const RETIRED = ['excel_column', 'note_column', 'script_url', 'export_half_hour_precision'];
 
 describe('SC4: no repository asks the database for a retired column', () => {
@@ -506,21 +507,18 @@ describe('SC4: no repository asks the database for a retired column', () => {
         expect(issued.some((statement) => statement.includes('note_required')),
             'negative control: the trace does see the column names a repository legitimately uses').toBe(true);
 
+        // Before 0002 this list held drizzle's INSERT, which enumerated every column schema.ts declared and passed
+        // the retired pair their default. schema.ts no longer declares them and the table no longer has them, so
+        // the allowance that covered it is gone too: nothing may name one at all.
         const named = issued.filter((statement) => RETIRED.some((column) => statement.includes(column)));
-        const reads = named.filter((statement) => /^\s*(select|update|delete)/i.test(statement));
-        expect(reads, 'SC4: a repository read or wrote a column the app no longer has any use for').toEqual([]);
+        expect(named, 'SC4/V2-SCHEMA-01: a repository named a column or key 0002 removed').toEqual([]);
 
-        // What is left is drizzle's INSERT, which enumerates every column schema.ts declares and passes the default.
-        // The repository supplies no value for either retired column and reads neither back, so a new company gets
-        // the SQL NULL a plain INSERT INTO companies (name, note_required) would have left there anyway.
-        expect(named.every((statement) => statement.startsWith('insert into "companies"')),
-            'a statement other than the companies insert named a retired column: ' + named.join(' | ')).toBe(true);
-        const created = rawRows<{ excel_column: string | null; note_column: string | null }>(
-            migrated.dbPath, 'SELECT excel_column, note_column FROM companies WHERE name = ' + "'Traced Insert'"
+        const created = rawRows<Record<string, unknown>>(
+            migrated.dbPath, 'SELECT * FROM companies WHERE name = ' + "'Traced Insert'"
         )[0];
         expect(created, 'the traced insert must have produced a row').toBeDefined();
-        expect(created?.excel_column).toBeNull();
-        expect(created?.note_column).toBeNull();
+        expect(Object.keys(created ?? {}), 'a company created after 0002 carries only the surviving columns')
+            .toEqual(['id', 'name', 'created_at', 'updated_at', 'note_required']);
     });
 });
 

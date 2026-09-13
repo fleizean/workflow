@@ -1,5 +1,10 @@
 // D-26/X5: after every corpus fixture reaches LATEST, v1.2.1's own SQL still runs against it - its init path,
 // its writes and its reads - and the rows it writes read back. v1.2.1 never touches user_version.
+//
+// V2-SCHEMA-01 makes this the load-bearing test for the one destructive migration. 0002 drops
+// companies.excel_column and companies.note_column, and v1.2.1's initDatabase reads PRAGMA table_info(companies)
+// on every open and re-adds both with ALTER TABLE when they are absent (database/db.js:58-69). A downgraded user
+// self-heals to two empty columns rather than crashing, and that is asserted here rather than assumed.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -52,6 +57,21 @@ async function migrateReal(dbPath: string): Promise<MigrationReport> {
     }
 }
 
+// What companies holds once 0002 has run, and what v1.2.1's ALTERs must leave it holding afterwards: the two
+// columns come back at the end, because ADD COLUMN appends.
+const AFTER_RETIREMENT = ['id', 'name', 'created_at', 'updated_at', 'note_required'];
+const AFTER_DOWNGRADE = [...AFTER_RETIREMENT, 'excel_column', 'note_column'];
+
+function companyColumns(dbPath: string): string[] {
+    const db = openDatabase(dbPath);
+    try {
+        return db.prepare<[string], { name: string }>('SELECT name FROM pragma_table_info(?) ORDER BY cid')
+            .all('companies').map((row) => row.name);
+    } finally {
+        closeDatabase(db);
+    }
+}
+
 // v1.2.1 reinstalled over a migrated database: its own statements, against the real schema.
 function downgradeOver(dbPath: string): readonly string[] {
     const db = openDatabase(dbPath);
@@ -66,7 +86,14 @@ async function proveDowngrade(id: string, dbPath: string): Promise<void> {
     const report = await migrateReal(dbPath);
     expect(report.toVersion, id).toBe(LATEST);
 
+    expect(companyColumns(dbPath), id + ': 0002 left a retired column behind').toEqual(AFTER_RETIREMENT);
+
     expect(downgradeOver(dbPath), id + ': v1.2.1 statements that failed').toEqual([]);
+
+    // The self-heal: v1.2.1's guarded ALTERs put both columns back, empty, and its own writes to them read back
+    // (runV121Downgrade's updateCompanyExcelConfig would have reported a failure above if they had not).
+    expect(companyColumns(dbPath), id + ': v1.2.1 did not re-add the columns its own SQL needs')
+        .toEqual(AFTER_DOWNGRADE);
 
     // v1.2.1 has no notion of user_version, so the file still reads as current afterwards.
     const probe = probeDatabase(dbPath);

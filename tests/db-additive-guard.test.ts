@@ -39,6 +39,18 @@ const ctx: GuardContext = {
 
 const SQL_STEPS = MIGRATIONS.filter((step) => step.kind === 'sql');
 
+// What each registered file is approved to add, restated here rather than read out of the file it checks.
+// 0002 adds nothing: it is the one step that only takes away (V2-SCHEMA-01).
+const CREATED_OBJECTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+    '0001_history_indexes_app_state': [
+        'app_state',
+        'pomodoro_sessions_date_idx',
+        'work_sessions_date_idx',
+        'work_sessions_company_id_idx'
+    ],
+    '0002_sheets_retirement': []
+});
+
 const tempDirs: string[] = [];
 
 function tempDir(tag: string): string {
@@ -109,7 +121,10 @@ describe('D-25.1: the static guard passes every registered kind \'sql\' file', (
         expect(MIGRATIONS[0]?.kind, 'v1 is the imperative baseline').toBe('baseline');
         expect(MIGRATIONS[0], 'a baseline entry has no SQL, so the static guard cannot run over it')
             .not.toHaveProperty('sql');
-        expect(SQL_STEPS.map((step) => step.tag)).toEqual(['0001_history_indexes_app_state']);
+        expect(SQL_STEPS.map((step) => step.tag))
+            .toEqual(['0001_history_indexes_app_state', '0002_sheets_retirement']);
+        expect(Object.keys(CREATED_OBJECTS).sort(), 'a registered file is not named in CREATED_OBJECTS')
+            .toEqual(SQL_STEPS.map((step) => step.tag).sort());
     });
 
     it.each(SQL_STEPS.map((step) => [step.tag, step] as const))('%s passes the D-20 allowlist', (tag, step) => {
@@ -118,12 +133,7 @@ describe('D-25.1: the static guard passes every registered kind \'sql\' file', (
         const result = checkMigrationSql(step.sql, ctx);
         expect(result.violations, tag).toEqual([]);
         expect(result.ok).toBe(true);
-        expect(result.created, tag + ' creates exactly the approved objects').toEqual([
-            'app_state',
-            'pomodoro_sessions_date_idx',
-            'work_sessions_date_idx',
-            'work_sessions_company_id_idx'
-        ]);
+        expect(result.created, tag + ' creates exactly the approved objects').toEqual(CREATED_OBJECTS[tag]);
     });
 });
 
@@ -184,9 +194,9 @@ const CONTROLS: readonly (readonly [string, string])[] = [
     ['a UNIQUE index on a v1.2.1 table', 'CREATE UNIQUE INDEX companies_name_idx ON companies (name)']
 ];
 
-// Version 3, appended after the real registry: the control travels the runner's own path.
+// Appended after the real registry, at whatever version comes next: the control travels the runner's own path.
 const controlStep = (sql: string): MigrationStep & { kind: 'sql' } =>
-    ({ version: 3, tag: '0002_control', kind: 'sql', sql });
+    ({ version: LATEST + 1, tag: 'control', kind: 'sql', sql });
 
 // WR-09: the one control the per-statement rules cannot refuse, so it exercises the whole-file layer alone.
 // CREATE TABLE ... AS SELECT carries no forbidden keyword and reads as a plain create-table; only the rule over

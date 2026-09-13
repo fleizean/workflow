@@ -24,7 +24,9 @@ import {
     captureInvariants,
     diffInvariants,
     originalColumns,
-    predictAdoption
+    predictAdoption,
+    retireFrom,
+    survivingColumns
 } from './helpers/db-invariants';
 
 const CHILD_ENTRY = path.join(repoRoot, 'tests', 'fixtures', 'migrate-child.ts');
@@ -32,13 +34,16 @@ const NOW = new Date(2026, 5, 1, 9, 0, 0);
 const MARKER_DEADLINE_MS = 45_000;
 
 // Restated here rather than imported, because importing the child would execute it in this process.
-const KILL_POINTS: readonly KillPoint[] = ['baseline-tx', 'between-v1-v2', 'v2-tx', 'backup'];
+const KILL_POINTS: readonly KillPoint[] = ['baseline-tx', 'between-v1-v2', 'v2-tx', 'v3-tx', 'backup'];
 
-// A cut transaction must never be reported as applied: v1 commits before v2, and the backup precedes both.
+// A cut transaction must never be reported as applied: each step commits before the next, and the backup
+// precedes them all. v3-tx is the destructive step (V2-SCHEMA-01), so a kill there must leave both retired
+// columns and every value in them exactly as they were.
 const EXPECTED_VERSION: Readonly<Record<KillPoint, number>> = {
     'baseline-tx': 0,
     'between-v1-v2': 1,
     'v2-tx': 1,
+    'v3-tx': 2,
     backup: 0
 };
 
@@ -195,6 +200,9 @@ describe('D-24: a SIGKILL mid-migration leaves a recoverable database', () => {
             expect(version, point + ': a cut transaction must never be reported as applied')
                 .toBe(EXPECTED_VERSION[point]);
 
+            // Every kill lands before 0002 commits, so the retired columns and rows must all still be there.
+            expect(version, point + ': a kill that reached LATEST would not test the rollback below')
+                .toBeLessThan(LATEST);
             const over = originalColumns(before);
             const after = captureInvariants(fixture, { over });
             // D-13 predicts no change for this fixture (Unassigned exists, no NULL company_id, all 13 settings),
@@ -227,9 +235,11 @@ describe('D-24: a SIGKILL mid-migration leaves a recoverable database', () => {
                     'the killed run\'s staging file outlived the next backup').toEqual([]);
             }
 
-            const final = captureInvariants(fixture, { over });
-            expect(diffInvariants(predictAdoption(before), final), point + ': D-23 invariants after the re-run')
-                .toEqual([]);
+            // The re-run reaches LATEST, so 0002 has run: the oracle predicts the retirement and nothing else.
+            const final = captureInvariants(fixture, { over: survivingColumns(before) });
+            expect(diffInvariants(retireFrom(predictAdoption(before)), final),
+                point + ': D-23 invariants after the re-run').toEqual([]);
+            expect(final.totalDuration, point + ': tracked time after the re-run').toBe(before.totalDuration);
         },
         60_000
     );

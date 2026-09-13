@@ -8,9 +8,9 @@ import { probeDatabase } from '../../src/lib/db/probe';
 import { migrateDatabase } from '../../src/lib/db/runner';
 import { LATEST } from '../../src/lib/db/migrations/registry';
 
-export type KillPoint = 'baseline-tx' | 'between-v1-v2' | 'v2-tx' | 'backup';
+export type KillPoint = 'baseline-tx' | 'between-v1-v2' | 'v2-tx' | 'v3-tx' | 'backup';
 
-export const KILL_POINTS: readonly KillPoint[] = ['baseline-tx', 'between-v1-v2', 'v2-tx', 'backup'];
+export const KILL_POINTS: readonly KillPoint[] = ['baseline-tx', 'between-v1-v2', 'v2-tx', 'v3-tx', 'backup'];
 
 const isKillPoint = (value: string): value is KillPoint => (KILL_POINTS as readonly string[]).includes(value);
 
@@ -47,6 +47,8 @@ async function main(): Promise<void> {
                 insideTransaction: (version) => {
                     if (point === 'baseline-tx' && version === 1) parkForever(markerPath, point);
                     if (point === 'v2-tx' && version === 2) parkForever(markerPath, point);
+                    // V2-SCHEMA-01: the only step that takes something away, killed mid-transaction.
+                    if (point === 'v3-tx' && version === 3) parkForever(markerPath, point);
                 },
                 afterCommit: (version) => {
                     if (point === 'between-v1-v2' && version === 1) parkForever(markerPath, point);

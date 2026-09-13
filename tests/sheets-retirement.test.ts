@@ -1,6 +1,6 @@
-// Phase 5 SC4: the Google Sheets export left the app on 2026-09-11; the data it wrote did not. Both halves are
-// proven here - the vocabulary is gone from src/shared and src/main, and the columns and settings rows it filled
-// survive a real migration untouched.
+// Phase 5 SC4 and V2-SCHEMA-01: the Google Sheets export left the app on 2026-09-11, and on 2026-09-13 its data
+// followed. Both halves are proven here - the vocabulary is gone from src/shared, src/main and src/lib, and a real
+// migration takes the two columns and the two settings rows out while everything beside them stays where it was.
 
 import { afterAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
@@ -26,21 +26,27 @@ const SURFACE_NAMES = ['scriptUrl', 'SheetsTarget', 'updateSheetsTarget', 'expor
 // which is what "nothing reads it" means now that the repositories exist (owner decision, 2026-09-12).
 const LEGACY_NAMES = ['excel_column', 'note_column', 'script_url', 'export_half_hour_precision'];
 
-// The three places under src/lib that may still name them, each by name rather than by a wildcard. All three exist to
-// KEEP the data: schema.ts declares the columns, and the other two replay v1.2.1's own DDL verbatim and are SHA-256
-// pinned. Everything else under src/lib - the repositories included - is scanned like src/shared and src/main.
-// Destructive cleanup is deferred to V2-SCHEMA-01: a user who downgraded to v1.2.1 would crash on every company
-// update if the columns were gone.
-const LIB_EXEMPT_FILES = ['src/lib/db/schema.ts', 'src/lib/db/baseline-v121.ts'];
+// The two places under src/lib that may still name them, each by name rather than by a wildcard. Both exist because
+// version 1 is still v1.2.1's own schema, replayed verbatim and SHA-256 pinned: the columns are created there and
+// removed again by 0002, so the text that creates them cannot be edited. schema.ts left this list with 0002, which
+// is what "the app no longer has these columns" means now. Everything else under src/lib - the repositories
+// included - is scanned like src/shared and src/main.
+const LIB_EXEMPT_FILES = ['src/lib/db/baseline-v121.ts'];
 const LIB_EXEMPT_DIR = 'src/lib/db/migrations/';
 // The byte-pinned replay the directory exemption exists for; a .sql is not reached by the TypeScript scan on its own.
 const MIGRATION_BASELINE = 'src/lib/db/migrations/0000_v121_baseline.sql';
+const MIGRATION_RETIREMENT = 'src/lib/db/migrations/0002_sheets_retirement.sql';
+
+// What companies holds once 0002 has run, in cid order.
+const SURVIVING_COMPANY_COLUMNS = ['id', 'name', 'created_at', 'updated_at', 'note_required'];
+const RETIRED_SETTINGS = ['script_url', 'export_half_hour_precision'];
 
 // Frozen until SPA-14 (D-01/D-04) and expected to keep every reference.
 const LEGACY_FILES = ['main.js', 'database/db.js', 'legacy/pages/settings.html', 'legacy/pages/companies.html'];
 
 const COMPANY = { name: 'Northwind Fixture', excelColumn: 'D', noteColumn: 'E' };
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxRetained/exec';
+const SESSION_SECONDS = 7_200;
 
 const tempDirs: string[] = [];
 
@@ -102,7 +108,7 @@ const inWholeText = (file: string, names: readonly string[]): string[] => {
     return occurrences(file, source, source, names).sort();
 };
 
-// A v1.2.1 database whose export fields are filled in, as a real user's would be.
+// A v1.2.1 database whose export fields are filled in, as a real user's would be, with tracked time beside them.
 function v121FixtureWithExportData(): string {
     const dbPath = path.join(tempDir('fixture'), 'krono.db');
     const db = new Database(dbPath);
@@ -112,6 +118,11 @@ function v121FixtureWithExportData(): string {
         db.prepare<[string, string, string]>(
             'INSERT INTO companies (name, excel_column, note_column, note_required) VALUES (?, ?, ?, 1)'
         ).run(COMPANY.name, COMPANY.excelColumn, COMPANY.noteColumn);
+        db.prepare<[string, number, string]>(
+            'INSERT INTO work_sessions (name, duration, date, company_id, note) ' +
+            'VALUES (?, ?, ?, (SELECT id FROM companies WHERE name = ' + "'" + COMPANY.name + "'" + '), ' +
+            "'Fixture note')"
+        ).run('Billable block', SESSION_SECONDS, '2026-01-05');
         const setting = db.prepare<[string, string]>('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
         setting.run('script_url', SCRIPT_URL);
         setting.run('export_half_hour_precision', 'true');
@@ -120,6 +131,35 @@ function v121FixtureWithExportData(): string {
         db.close();
     }
     return dbPath;
+}
+
+interface DatabaseState {
+    readonly userVersion: unknown;
+    readonly companyColumns: readonly string[];
+    readonly companies: readonly Record<string, unknown>[];
+    readonly settings: ReadonlyMap<string, string>;
+    readonly totalDuration: number;
+}
+
+// Read with the driver, not through a repository: the only honest way to ask what is on disk.
+function readState(dbPath: string): DatabaseState {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        return {
+            userVersion: db.pragma('user_version', { simple: true }),
+            companyColumns: [...liveContract(db, 'companies').columns.keys()],
+            companies: db.prepare<[], Record<string, unknown>>('SELECT * FROM companies ORDER BY id').all(),
+            settings: new Map(
+                db.prepare<[], { key: string; value: string }>('SELECT key, value FROM settings').all()
+                    .map((row) => [row.key, row.value] as const)
+            ),
+            totalDuration: db.prepare<[], { s: number }>(
+                'SELECT COALESCE(sum(duration), 0) AS s FROM work_sessions'
+            ).get()?.s ?? -1
+        };
+    } finally {
+        db.close();
+    }
 }
 
 // The production chain, exactly as startup runs it.
@@ -164,11 +204,16 @@ describe('SC4: the Sheets vocabulary is gone from the app surface', () => {
             .toContain('excel_column');
     });
 
-    it('exempts three places under src/lib and no more', () => {
-        expect([...LIB_EXEMPT_FILES, LIB_EXEMPT_DIR]).toHaveLength(3);
+    it('exempts two places under src/lib and no more', () => {
+        expect([...LIB_EXEMPT_FILES, LIB_EXEMPT_DIR]).toHaveLength(2);
         expect(trackedTs('src/lib').filter(isExempt).sort(),
             'a new TypeScript file under src/lib/db/migrations would inherit the directory exemption; name it here')
             .toEqual([...LIB_EXEMPT_FILES, 'src/lib/db/migrations/registry.ts'].sort());
+    });
+
+    it('exempts the migrations directory for the file that removes them as well', () => {
+        expect(read(MIGRATION_RETIREMENT), 'the migration that retires the columns stopped naming one')
+            .toContain('excel_column');
     });
 
     it('finds a planted name (negative control)', () => {
@@ -198,44 +243,46 @@ describe('SC4: the Sheets vocabulary is gone from the app surface', () => {
     });
 });
 
-describe('SC4: the database keeps the data the export wrote', () => {
-    it('still declares companies.excel_column and companies.note_column in schema.ts', () => {
-        const declared = declaredContract(schema.companies);
-        for (const column of ['excel_column', 'note_column']) {
-            expect(declared.columns.has(column),
-                'SC4: schema.ts dropped ' + column + '; removing it from the app must not remove it from the database')
-                .toBe(true);
-        }
+describe('V2-SCHEMA-01: the database no longer carries what the export wrote', () => {
+    it('declares neither column in schema.ts', () => {
+        expect([...declaredContract(schema.companies).columns.keys()].sort())
+            .toEqual([...SURVIVING_COMPANY_COLUMNS].sort());
     });
 
-    it('carries the columns and the settings rows through a real migration unchanged', async () => {
+    it('takes both columns and both settings rows out, and moves nothing else', async () => {
         const dbPath = v121FixtureWithExportData();
+
+        const before = readState(dbPath);
+        expect(before.companyColumns, 'the fixture must hold the columns this test is about')
+            .toEqual(expect.arrayContaining(['excel_column', 'note_column']));
+        expect(before.settings.get('script_url')).toBe(SCRIPT_URL);
+        expect(before.settings.get('export_half_hour_precision')).toBe('true');
+        expect(before.totalDuration, 'the fixture must hold tracked time for the claim below to mean anything')
+            .toBe(SESSION_SECONDS);
+
         await migrateAt(dbPath);
+        const after = readState(dbPath);
 
-        const db = new Database(dbPath, { readonly: true, fileMustExist: true });
-        try {
-            expect(db.pragma('user_version', { simple: true }),
-                'the chain did not migrate, so the retention below is proven against an unmigrated database').toBe(LATEST);
-            const live = liveContract(db, 'companies');
-            expect([...live.columns.keys()]).toEqual(expect.arrayContaining(['excel_column', 'note_column']));
+        expect(after.userVersion, 'the chain did not migrate, so nothing below is proven').toBe(LATEST);
+        expect(after.companyColumns).toEqual(SURVIVING_COMPANY_COLUMNS);
+        expect(after.settings.has('script_url')).toBe(false);
+        expect(after.settings.has('export_half_hour_precision')).toBe(false);
 
-            const company = db
-                .prepare<[string], { excel_column: string | null; note_column: string | null }>(
-                    'SELECT excel_column, note_column FROM companies WHERE name = ?'
-                )
-                .get(COMPANY.name);
-            expect(company, 'the fixture company did not survive the migration').toBeDefined();
-            expect(company?.excel_column).toBe(COMPANY.excelColumn);
-            expect(company?.note_column).toBe(COMPANY.noteColumn);
-
-            const settings = new Map(
-                db.prepare<[], { key: string; value: string }>('SELECT key, value FROM settings').all()
-                    .map((row) => [row.key, row.value] as const)
-            );
-            expect(settings.get('script_url'), 'SC4: the migration rewrote a setting the app no longer reads').toBe(SCRIPT_URL);
-            expect(settings.get('export_half_hour_precision')).toBe('true');
-        } finally {
-            db.close();
+        // And the other half of the claim: the retirement took nothing it was not sent for.
+        expect(after.totalDuration, 'V2-SCHEMA-01: tracked time changed across the retirement')
+            .toBe(before.totalDuration);
+        expect([...after.settings.keys()].sort()).toEqual(
+            [...before.settings.keys()].filter((key) => !RETIRED_SETTINGS.includes(key)).sort()
+        );
+        for (const [key, value] of after.settings) {
+            expect(before.settings.get(key), 'settings key ' + key + ' changed across the retirement').toBe(value);
         }
+        expect(after.companies, 'a company row changed beyond losing the two retired cells').toEqual(
+            before.companies.map((row) => Object.fromEntries(
+                Object.entries(row).filter(([column]) => SURVIVING_COMPANY_COLUMNS.includes(column))
+            ))
+        );
+        expect(after.companies.some((row) => row.name === COMPANY.name),
+            'the fixture company did not survive the migration').toBe(true);
     });
 });

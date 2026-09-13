@@ -37,7 +37,10 @@ export const FILL_ON = '"FILL" 1';
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
 export const BACKUP_DIR = 'backups';
-export const EXPECTED_LATEST = 2;
+export const EXPECTED_LATEST = 3;
+/** src/lib/db/migrations/0002_sheets_retirement.sql: what companies holds afterwards, and the keys it deletes. */
+export const EXPECTED_COMPANY_COLUMNS = 'id,name,created_at,updated_at,note_required';
+export const RETIRED_SETTINGS = Object.freeze(['export_half_hour_precision', 'script_url']);
 /** src/lib/db/app-state.ts's APP_STATE_KEYS.legacyTimerState. */
 export const LEGACY_TIMER_KEY = 'legacy.v121.timerState';
 export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
@@ -351,6 +354,16 @@ export function evaluateLegacyCase({ report, before, after, backups }) {
         before.settings.every((row) => after.settingsByKey[row.key] === row.value),
         JSON.stringify(before.settings));
 
+    // V2-SCHEMA-01, in the packaged build: 0002 ran, and it took exactly what it names.
+    check('companies holds only the columns that survive the sheets retirement',
+        after.companyColumns === EXPECTED_COMPANY_COLUMNS, after.companyColumns);
+    check('the seeded database did carry the retired columns before the launch',
+        before.companyColumns.includes('excel_column') && before.companyColumns.includes('note_column'),
+        before.companyColumns);
+    check('no retired settings key is left',
+        RETIRED_SETTINGS.every((key) => after.settingsByKey[key] === undefined),
+        RETIRED_SETTINGS.filter((key) => after.settingsByKey[key] !== undefined).join(',') || 'none');
+
     check('an Unassigned company exists', after.unassignedCompanies === 1,
         String(after.unassignedCompanies) + ' rows named Unassigned');
     check('no work session is left without a company', after.nullCompanySessions === 0,
@@ -511,6 +524,8 @@ export function observeDatabase(dbPath) {
         for (const row of settings) settingsByKey[row.key] = row.value;
         return {
             userVersion: db.pragma('user_version', { simple: true }),
+            companyColumns: db.prepare('SELECT name FROM pragma_table_info(?) ORDER BY cid').all('companies')
+                .map((row) => row.name).join(','),
             companies: count(db, 'SELECT COUNT(*) AS n FROM companies'),
             workSessions: count(db, 'SELECT COUNT(*) AS n FROM work_sessions'),
             pomodoroSessions: count(db, 'SELECT COUNT(*) AS n FROM pomodoro_sessions'),

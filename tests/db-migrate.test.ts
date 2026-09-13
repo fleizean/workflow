@@ -21,6 +21,8 @@ import {
     diffInvariants,
     originalColumns,
     predictAdoption,
+    retireFrom,
+    survivingColumns,
     streakOn
 } from './helpers/db-invariants';
 import type { LocalDate } from '@shared/utils/date';
@@ -147,22 +149,22 @@ describe('D-23/SC1: every corpus fixture reaches LATEST with its tracked time in
             const oracle = oracleOf(fixture);
             const report = await migrateReal(fixture);
 
-            expect(report.applied).toEqual([1, 2]);
+            expect(report.applied).toEqual([1, 2, 3]);
             expect(report.toVersion).toBe(LATEST);
             expect(userVersionOf(fixture)).toBe(LATEST);
 
-            const over = originalColumns(before);
+            const over = survivingColumns(before);
             const after = captureInvariants(fixture, { over });
 
-            // The only differences are the ones D-13 predicts, and each is predicted explicitly.
-            expect(diffInvariants(predictAdoption(before), after), id).toEqual([]);
+            // The only differences are the ones D-13 predicts and the one V2-SCHEMA-01 retires, each stated.
+            expect(diffInvariants(retireFrom(predictAdoption(before)), after), id).toEqual([]);
 
             // sum(duration) and the day totals are untouched, by exact equality.
             expect(after.totalDuration, id + ' sum(duration) after').toBe(expected.totalDuration);
             expect(after.dayTotals).toEqual(before.dayTotals);
 
             // Independently: the end state is what v1.2.1's own init would have produced.
-            const oracleAfter = captureInvariants(oracle, { over });
+            const oracleAfter = retireFrom(captureInvariants(oracle, { over }));
             expect(after.settings, id + ' settings vs the v1.2.1 oracle').toEqual(oracleAfter.settings);
             expect(after.counts.companies).toBe(oracleAfter.counts.companies);
             expect(after.counts.work_sessions).toBe(oracleAfter.counts.work_sessions);
@@ -187,15 +189,18 @@ describe('D-23/SC1: every corpus fixture reaches LATEST with its tracked time in
 
         const report = await migrateReal(dbPath);
         expect(report.dbClass).toBe('fresh');
-        expect(report.applied).toEqual([1, 2]);
+        expect(report.applied).toEqual([1, 2, 3]);
         expect(report.backupPath, 'a fresh install has nothing to back up').toBeNull();
 
         const after = captureInvariants(dbPath);
         expect(after.counts.companies, 'the Unassigned company').toBe(1);
         expect(after.counts.work_sessions).toBe(0);
-        expect(after.counts.settings).toBe(13);
+        expect(after.counts.settings, 'v1.2.1\'s 13 defaults less the one 0002 retires').toBe(12);
         expect(after.totalDuration).toBe(0);
-        expect(after.settings).toEqual(captureInvariants(oracle).settings);
+        // The oracle is v1.2.1's own init, so the retirement is applied to it rather than assumed away.
+        expect(after.settings).toEqual(retireFrom(captureInvariants(oracle)).settings);
+        expect(after.settings, 'a fresh install must not be seeded with a retired key')
+            .not.toHaveProperty('export_half_hour_precision');
     });
 });
 
@@ -208,12 +213,16 @@ describe('D-23 edge cases', () => {
         expect(before.counts.settings, 'the empty variant seeds no settings at all').toBe(0);
 
         await migrateReal(fixture);
-        const after = captureInvariants(fixture, { over: originalColumns(before) });
+        const after = captureInvariants(fixture, { over: survivingColumns(before) });
 
-        expect(diffInvariants(predictAdoption(before), after)).toEqual([]);
+        expect(diffInvariants(retireFrom(predictAdoption(before)), after)).toEqual([]);
         expect(after.counts.work_sessions, 'an empty table migrates to an empty table').toBe(0);
         expect(after.counts.companies, 'only the Unassigned row is added').toBe(1);
-        expect(after.settings).toEqual(Object.fromEntries(V121_DEFAULT_SETTINGS.map(([k, v]) => [k, v])));
+        expect(after.settings, 'v1.2.1\'s defaults, less the key 0002 retires').toEqual(
+            Object.fromEntries(V121_DEFAULT_SETTINGS
+                .filter(([k]) => k !== 'export_half_hour_precision')
+                .map(([k, v]) => [k, v]))
+        );
         expect(after.totalDuration).toBe(0);
     });
 
@@ -224,9 +233,9 @@ describe('D-23 edge cases', () => {
         expect(before.totalDuration).toBe(3600);
 
         await migrateReal(fixture);
-        const after = captureInvariants(fixture, { over: originalColumns(before) });
+        const after = captureInvariants(fixture, { over: survivingColumns(before) });
 
-        expect(diffInvariants(predictAdoption(before), after)).toEqual([]);
+        expect(diffInvariants(retireFrom(predictAdoption(before)), after)).toEqual([]);
         expect(after.counts.work_sessions).toBe(1);
         expect(after.totalDuration).toBe(3600);
         expect(Number.isInteger(after.totalDuration), 'sum(duration) stays a SQLite INTEGER').toBe(true);
@@ -246,9 +255,9 @@ describe('D-23 edge cases', () => {
             .toBeGreaterThan(0);
 
         await migrateReal(fixture);
-        const after = captureInvariants(fixture, { over: originalColumns(before) });
+        const after = captureInvariants(fixture, { over: survivingColumns(before) });
 
-        expect(diffInvariants(predictAdoption(before), after)).toEqual([]);
+        expect(diffInvariants(retireFrom(predictAdoption(before)), after)).toEqual([]);
         expect(after.counts.work_sessions).toBe(before.counts.work_sessions);
         expect(after.tables.work_sessions?.rows.length).toBe(sessions?.rows.length);
     });
@@ -399,10 +408,10 @@ describe('D-23: the streak is recomputed from day totals, and survives the migra
             .toBeGreaterThan(0);
 
         await migrateReal(fixture);
-        const after = captureInvariants(fixture, { over: originalColumns(before) });
+        const after = captureInvariants(fixture, { over: survivingColumns(before) });
 
         expect(streakOn(after, TODAY)).toBe(streakOn(before, TODAY));
-        expect(diffInvariants(predictAdoption(before), after)).toEqual([]);
+        expect(diffInvariants(retireFrom(predictAdoption(before)), after)).toEqual([]);
     });
 });
 
