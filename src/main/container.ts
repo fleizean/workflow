@@ -25,7 +25,7 @@ import { createStatsService } from './services/stats.service';
 import type { StatsService } from './services/stats.service';
 import { createTimerService } from './services/timer.service';
 import type { CountedDay, TimerService, TimerStateStore } from './services/timer.service';
-import type { TimerSnapshot } from '@shared/types';
+import type { PomodoroSnapshot, TimerSnapshot } from '@shared/types';
 import type {
     CompaniesRepository, PomodoroRepository, RepositoryOptions, SessionsRepository, SettingsRepository, SkippedRowReport
 } from '../lib/db';
@@ -307,6 +307,21 @@ export function createContainer(input: ContainerInput): AppContainer {
 
     const sessions = createSessionsService(repositories.sessions, repositories.companies);
 
+    /*
+     * WR-02: at most one accumulator counts at a time. The two services each own a clock and a repeat, and neither
+     * can see the other - by design, since a service that knew about its sibling would be a composition. So the
+     * invariant belongs here, and it is enforced rather than documented: starting one pauses the other.
+     *
+     * Paused, not reset. Whatever the other one was holding is time the user really worked, and it stays counted
+     * and savable; only the counting stops. Without this a 25-minute interval is written as a session row AND left
+     * sitting in the main accumulator for the user to save again - fifty minutes recorded for twenty-five worked,
+     * which is the invented-time half of the Core Value this phase exists to make unreachable.
+     */
+    const exclusive = {
+        timer: (): TimerSnapshot => { pomodoro.pause(); return timer.start(); },
+        pomodoro: (): PomodoroSnapshot => { timer.pause(); return pomodoro.start(); }
+    };
+
     return {
         ports,
         repositories,
@@ -325,8 +340,8 @@ export function createContainer(input: ContainerInput): AppContainer {
             }),
             settings,
             stats,
-            timer,
-            pomodoro,
+            timer: { ...timer, start: exclusive.timer },
+            pomodoro: { ...pomodoro, start: exclusive.pomodoro },
             goal
         },
         transaction,

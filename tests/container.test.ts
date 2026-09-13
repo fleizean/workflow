@@ -499,6 +499,53 @@ describe('the services the container composes', () => {
     });
 
     /*
+     * WR-02. The timer and the pomodoro each own an accumulator and each register their own repeat, and nothing
+     * below the composition root can stop both from running. An hour spent in pomodoro mode then produces interval
+     * rows AND an hour in the main accumulator the user is prompted to save - two hours recorded for one worked.
+     * Inventing time is the same failure as losing it, so the rule is stated and enforced here: at most one
+     * accumulator counts at a time. The sum below is the whole assertion - what is on disk plus what is still held
+     * must equal the wall clock that passed, never twice it.
+     */
+    it('counts a pomodoro-mode hour once, whichever accumulator the user started first', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver } = await driven(dbPath);
+        container.services.settings.update({ pomodoroWorkSeconds: 1800 });
+        const alreadyToday = container.services.stats.today().totalSeconds;
+
+        container.services.timer.start();
+        driver.tick(60);
+        expect(container.services.timer.snapshot().elapsedSeconds).toBe(60);
+
+        // The user switches to the cycle. The minute already counted is real work and stays savable; from here on
+        // the cycle is the one counting.
+        container.services.pomodoro.start();
+        expect(container.services.timer.snapshot().status, 'both accumulators were left running').toBe('paused');
+
+        driver.tick(1800);
+
+        const written = container.services.stats.today().totalSeconds - alreadyToday;
+        const held = container.services.timer.snapshot().elapsedSeconds;
+        expect(written, 'the completed interval was not written as a session').toBe(1800);
+        expect(held + written, 'WR-02: a 1860-second stretch was recorded as more than 1860 seconds').toBe(1860);
+    });
+
+    it('pauses the cycle when the main timer is started, so neither counts the other\'s seconds', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver } = await driven(dbPath);
+        container.services.settings.update({ pomodoroWorkSeconds: 1800 });
+
+        container.services.pomodoro.start();
+        driver.tick(120);
+        container.services.timer.start();
+        expect(container.services.pomodoro.snapshot().status, 'both accumulators were left running').toBe('paused');
+
+        driver.tick(60);
+
+        expect(container.services.pomodoro.snapshot().elapsedSeconds, 'the paused cycle went on counting').toBe(120);
+        expect(container.services.timer.snapshot().elapsedSeconds).toBe(60);
+    });
+
+    /*
      * CORE-13/B1: the decision is made on the timer's own tick - there is no second clock - and it fires once. The
      * day it fired on is in the database, so the next launch of this same fixture does not fire again.
      */
@@ -569,15 +616,18 @@ describe('the services the container composes', () => {
             layer: guardedLayer(), connection, log: () => undefined, ports
         });
 
-        container.services.timer.start();
-        breakTheNextCancel = true;
+        // WR-02 lets one accumulator count at a time, so the cycle is started first and the timer takes over from
+        // it. The repeat the timer is then given is the brittle one, and cancelling it is the last thing dispose
+        // does - after the flush below has already landed, which is the whole claim.
         container.services.pomodoro.start();
+        breakTheNextCancel = true;
+        container.services.timer.start();
         // Under PERSIST_INTERVAL_MS, so these three seconds are counted and not yet written.
         driver.tick(3);
         expect(realLayer.readTimerState(connection).accumulatedSeconds, 'the seconds were already on disk').toBe(0);
 
         setActiveContainer(container);
-        expect(disposeActiveContainer(), 'the pomodoro teardown was expected to throw')
+        expect(disposeActiveContainer(), 'the teardown was expected to throw')
             .toBe('the notification area went away');
         clearActiveContainer();
         expect(realLayer.readTimerState(connection).accumulatedSeconds, 'three counted seconds were lost at quit')
@@ -617,14 +667,17 @@ describe('the services the container composes', () => {
 
     it('stops both the timer and the pomodoro when the container is disposed', async () => {
         const { container, driver } = await driven(makeCleanFixture());
-        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        container.services.settings.update({ pomodoroWorkSeconds: 600 });
+        // One at a time (WR-02), so each is driven in its turn and both end holding seconds and a live repeat.
         container.services.timer.start();
-        container.services.pomodoro.start();
-
         driver.tick(5);
+        container.services.pomodoro.start();
+        driver.tick(5);
+
         const timerBefore = container.services.timer.snapshot().elapsedSeconds;
         const pomodoroBefore = container.services.pomodoro.snapshot().elapsedSeconds;
-        expect(timerBefore, 'the clocks were not running, so stopping them proves nothing').toBe(5);
+        expect(timerBefore, 'the timer never counted, so stopping it proves nothing').toBe(5);
+        expect(pomodoroBefore, 'the cycle never counted, so stopping it proves nothing').toBe(5);
 
         container.dispose();
         driver.tick(30);
