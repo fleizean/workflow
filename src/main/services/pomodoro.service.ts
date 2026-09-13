@@ -5,7 +5,7 @@
 
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
 import { localDayOf } from '../ports';
-import { TICK_MS, creditableMs } from './timer.service';
+import { PERSIST_INTERVAL_MS, TICK_MS, creditableMs } from './timer.service';
 import type { LocalDate, PomodoroInterval, PomodoroSnapshot, PomodoroStatus } from '@shared/types';
 import type { ClockPort, RepeatingTimer, SchedulerPort } from '../ports';
 
@@ -37,10 +37,28 @@ export interface PomodoroLedger {
     countForDay(date: LocalDate): number;
 }
 
+/*
+ * WR-03: what an unfinished interval had counted. The timer persists every five seconds precisely because losing
+ * counted time is unacceptable, and the cycle held its seconds in memory alone - a quit at minute 49 of a 50-minute
+ * interval started the next launch from zero. Like the timer's record this is a count and no start timestamp, so
+ * the gap between two launches cannot be credited.
+ */
+export interface PersistedPomodoroState {
+    readonly interval: PomodoroInterval;
+    readonly elapsedSeconds: number;
+}
+
+export interface PomodoroStateStore {
+    read(): PersistedPomodoroState | null;
+    write(state: PersistedPomodoroState): void;
+}
+
 export interface PomodoroServiceInput {
     readonly clock: ClockPort;
     readonly scheduler: SchedulerPort;
     readonly ledger: PomodoroLedger;
+    /** Where the seconds of an unfinished interval survive a quit, a kill or a Windows shutdown (WR-03). */
+    readonly store: PomodoroStateStore;
     readonly durations: () => PomodoroDurations;
     /**
      * Called when an interval reaches its target, before the next one is decided. A work completion must be recorded
@@ -68,16 +86,34 @@ export interface PomodoroService {
 const positive = (value: number, fallback: number): number =>
     Number.isSafeInteger(value) && value > 0 ? value : fallback;
 
-export function createPomodoroService(input: PomodoroServiceInput): PomodoroService {
-    const { clock, durations, ledger, log, onChanged, onCompleted, scheduler } = input;
+const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : 'unknown');
 
-    let interval: PomodoroInterval = 'work';
-    let status: PomodoroStatus = 'idle';
-    let elapsedMs = 0;
+export function createPomodoroService(input: PomodoroServiceInput): PomodoroService {
+    const { clock, durations, ledger, log, onChanged, onCompleted, scheduler, store } = input;
+
+    /** What a previous launch left. Never resumed, only offered - the same rule the timer follows (G3/G4). */
+    function restore(): PersistedPomodoroState | null {
+        try {
+            return store.read();
+        } catch (error) {
+            log('pomodoro: the interval in flight could not be read back - ' + reasonOf(error));
+            return null;
+        }
+    }
+
+    const restored = restore();
+    const carried = restored !== null && restored.elapsedSeconds > 0 ? restored : null;
+
+    let interval: PomodoroInterval = carried?.interval ?? 'work';
+    let status: PomodoroStatus = carried === null ? 'idle' : 'paused';
+    let elapsedMs = (carried?.elapsedSeconds ?? 0) * TICK_MS;
     let lastTickAt = 0;
+    let lastPersistAt = 0;
     let repeat: RepeatingTimer | undefined;
     // CR-01: set when an interval reached its target and the write that would have preserved it threw.
     let recordingFailed = false;
+    let writtenSeconds = carried?.elapsedSeconds ?? 0;
+    let writtenInterval: PomodoroInterval = interval;
 
     let date = localDayOf(clock);
     let completedToday = 0;
@@ -140,6 +176,21 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         repeat = undefined;
     }
 
+    /** Reported, never thrown: a full disk must not stop the cycle the user is watching (the timer's rule). */
+    function persistNow(): void {
+        const seconds = elapsedSeconds();
+        if (seconds === writtenSeconds && interval === writtenInterval) {
+            return;
+        }
+        try {
+            store.write({ interval, elapsedSeconds: seconds });
+            writtenSeconds = seconds;
+            writtenInterval = interval;
+        } catch (error) {
+            log('pomodoro: the counted seconds could not be saved - ' + reasonOf(error));
+        }
+    }
+
     /** The local day, re-read whenever it could have rolled over. A pomodoro belongs to the day it finished on. */
     function syncDay(): void {
         const today = localDayOf(clock);
@@ -179,6 +230,8 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
                 // them, and starting again retries the write rather than counting the time a second time.
                 recordingFailed = true;
                 status = 'paused';
+                // Held on disk as well as in memory, so a kill now restores an interval that still owes its write.
+                persistNow();
                 return;
             }
             // A break earns no time, so a failed write destroys nothing and holding the user in it would help nobody.
@@ -194,6 +247,9 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         } else {
             interval = 'work';
         }
+        // Immediately, not on the next debounce: the interval is on disk now, and a record still naming its seconds
+        // would restore them on the next launch and let the same work be written twice.
+        persistNow();
     }
 
     function onTick(): PomodoroSnapshot {
@@ -208,6 +264,10 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
             syncDay();
             if (elapsedSeconds() >= targetSecondsOf(interval, settings())) {
                 complete();
+            } else if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
+                // The timer's debounce and the timer's reason: this bounds what a kill can cost to five seconds.
+                lastPersistAt = now;
+                persistNow();
             }
         }
 
@@ -220,6 +280,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         start() {
             if (status !== 'running') {
                 lastTickAt = clock.monotonicNow();
+                lastPersistAt = lastTickAt;
                 status = 'running';
                 syncDay();
                 refreshCount();
@@ -235,6 +296,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
                 lastTickAt = clock.monotonicNow();
                 status = 'paused';
                 stopRepeat();
+                persistNow();
             }
             return publish();
         },
@@ -247,6 +309,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
             recordingFailed = false;
             // The interval itself is unchanged: an abandoned break is still owed, and an abandoned pomodoro is not
             // one the user earned. Nothing is recorded, so the derived count cannot have moved.
+            persistNow();
             return publish();
         },
 
@@ -257,6 +320,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
                 elapsedMs = 0;
                 recordingFailed = false;
                 interval = 'work';
+                persistNow();
             }
             return publish();
         },
@@ -264,7 +328,15 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         tick: onTick,
 
         dispose() {
-            stopRepeat();
+            if (status === 'running') {
+                // The part-second since the last tick is real progress, and this is the last chance to keep it.
+                elapsedMs += creditableMs(clock.monotonicNow() - lastTickAt);
+            }
+            try {
+                persistNow();
+            } finally {
+                stopRepeat();
+            }
         }
     };
 }

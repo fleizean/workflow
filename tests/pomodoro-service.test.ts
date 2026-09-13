@@ -19,7 +19,8 @@ import { createPomodoroRepository } from '../src/lib/db/repositories/pomodoro.re
 import { TICK_MS } from '../src/main/services/timer.service';
 import { createPomodoroService } from '../src/main/services/pomodoro.service';
 import type {
-    PomodoroCompletion, PomodoroDurations, PomodoroLedger, PomodoroService, PomodoroSnapshot
+    PersistedPomodoroState, PomodoroCompletion, PomodoroDurations, PomodoroLedger, PomodoroService, PomodoroSnapshot,
+    PomodoroStateStore
 } from '../src/main/services/pomodoro.service';
 import { addDays, formatLocalDate, instantFromEpochMs, parseLocalDate } from '../src/shared/utils/date';
 import { read } from './helpers/ts-imports';
@@ -66,6 +67,8 @@ interface HarnessOptions {
     readonly onCompleted?: (completion: PomodoroCompletion, ledger: RecordingLedger) => void;
     readonly originMs?: number;
     readonly wallOriginMs?: number;
+    /** WR-03: what a previous launch left in app_state, or a read that throws. */
+    readonly store?: PomodoroStateStore;
 }
 
 interface Harness {
@@ -75,6 +78,7 @@ interface Harness {
     readonly changes: PomodoroSnapshot[];
     readonly logs: string[];
     readonly counters: { scheduled: number; cancelled: number; ticks: number; reads: number };
+    readonly writes: PersistedPomodoroState[];
     setDurations(next: Partial<PomodoroDurations>): void;
     advance(ms: number): void;
     advanceWallClock(ms: number): void;
@@ -121,10 +125,17 @@ function harness(options: HarnessOptions = {}): Harness {
         if (completion.interval === 'work') target.add(completion.date);
     });
 
+    const writes: PersistedPomodoroState[] = [];
+    const store: PomodoroStateStore = options.store ?? {
+        read: () => null,
+        write: (state) => { writes.push(state); }
+    };
+
     const service = createPomodoroService({
         clock,
         scheduler,
         ledger,
+        store,
         durations: () => durations,
         onCompleted: (completion) => { completions.push(completion); record(completion, ledger); },
         onChanged: (snapshot) => { changes.push(snapshot); },
@@ -146,7 +157,7 @@ function harness(options: HarnessOptions = {}): Harness {
     };
 
     return {
-        service, ledger, completions, changes, logs, counters, advance, fire, drive,
+        service, ledger, completions, changes, logs, counters, writes, advance, fire, drive,
         setDurations: (next) => { durations = { ...durations, ...next }; },
         advanceWallClock: (ms) => { wall += ms; },
         runOut() {
@@ -541,6 +552,85 @@ describe('CORE-11: a failure below is reported, never thrown at the user', () =>
         h.runOut();
 
         expect(h.snapshot()).toMatchObject({ interval: 'work', status: 'idle', recordingFailed: false });
+    });
+});
+
+/*
+ * WR-03. elapsedMs lived in memory alone: a quit at minute 49 of a 50-minute interval started the next launch from
+ * zero, and if the cycle is the user's primary tracker that is 49 minutes of billable time. The timer persists every
+ * five seconds for exactly this reason; the cycle now does the same, on the same debounce.
+ */
+describe('WR-03: an unfinished interval survives a quit', () => {
+    it('writes the counted seconds on the timer\'s debounce, and flushes what a quit would lose', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(12);
+        // Twelve seconds at a five-second debounce: two writes. Nothing had changed at start, so start wrote nothing.
+        expect(h.writes.map((w) => w.elapsedSeconds)).toEqual([5, 10]);
+
+        h.service.dispose();
+        expect(h.writes.at(-1), 'the last two seconds were lost at quit')
+            .toEqual({ interval: 'work', elapsedSeconds: 12 });
+    });
+
+    it('restores the interval and its seconds paused, and never resumes them', () => {
+        const h = harness({
+            store: { read: () => ({ interval: 'work', elapsedSeconds: 2940 }), write: () => undefined }
+        });
+
+        expect(h.snapshot(), 'forty-nine minutes were dropped at launch')
+            .toMatchObject({ interval: 'work', status: 'paused', elapsedSeconds: 2940 });
+
+        // G3/G4's rule, the timer's rule: a restored value is offered, never resumed. Ticks that arrive before the
+        // user decides credit nothing, so the gap between two launches cannot be counted.
+        h.drive(30);
+        expect(h.snapshot().elapsedSeconds, 'a restored interval resumed itself').toBe(2940);
+    });
+
+    it('restores the break it was on, not a work interval', () => {
+        const h = harness({
+            store: { read: () => ({ interval: 'longBreak', elapsedSeconds: 100 }), write: () => undefined }
+        });
+        expect(h.snapshot()).toMatchObject({ interval: 'longBreak', status: 'paused', elapsedSeconds: 100 });
+    });
+
+    it('clears the record the moment the interval it names is recorded', () => {
+        const h = harness({ durations: { workSeconds: 60 } });
+        h.service.start();
+        h.runOut();
+        // The seconds are a session row now. A record still naming them would restore them on the next launch and
+        // let the same minute be written a second time.
+        expect(h.writes.at(-1)).toEqual({ interval: 'shortBreak', elapsedSeconds: 0 });
+    });
+
+    it('keeps the counted seconds on disk when the interval could not be recorded', () => {
+        const h = harness({
+            durations: { workSeconds: 60 },
+            onCompleted: () => { throw new Error('disk is full'); }
+        });
+        h.service.start();
+        h.runOut();
+        // CR-01 holds them in memory; this is the half that survives a kill.
+        expect(h.writes.at(-1)).toEqual({ interval: 'work', elapsedSeconds: 60 });
+    });
+
+    it('keeps counting and says so when the write throws', () => {
+        const h = harness({
+            store: { read: () => null, write: () => { throw new Error('database or disk is full'); } }
+        });
+        h.service.start();
+        h.drive(7);
+
+        expect(h.snapshot().elapsedSeconds, 'a failed write stopped the clock').toBe(7);
+        expect(h.logs.join(' ')).toContain('could not be saved');
+    });
+
+    it('treats a record it cannot read as no record at all', () => {
+        const h = harness({
+            store: { read: () => { throw new Error('app_state holds a value its schema rejects'); }, write: () => undefined }
+        });
+        expect(h.snapshot()).toMatchObject({ interval: 'work', status: 'idle', elapsedSeconds: 0 });
+        expect(h.logs.join(' ')).toContain('could not be read back');
     });
 });
 

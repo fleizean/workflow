@@ -665,6 +665,37 @@ describe('the services the container composes', () => {
         clearActiveContainer();
     });
 
+    /*
+     * WR-03, driven through the real composition root over a real migrated fixture. The user is 49 minutes into a
+     * 50-minute interval when Windows restarts. Before this, the next launch started that interval from zero.
+     */
+    it('gives a second container the interval the first one was holding', async () => {
+        const dbPath = makeCleanFixture();
+        const connection = await migratedConnection(dbPath);
+        const first = drivenPorts();
+        const container = createContainer({
+            layer: guardedLayer(), connection, log: () => undefined, ports: first.ports
+        });
+        container.services.settings.update({ pomodoroWorkSeconds: 3000 });
+
+        container.services.pomodoro.start();
+        first.tick(2940);
+        container.dispose();
+
+        const second = drivenPorts();
+        const relaunched = createContainer({
+            layer: guardedLayer(), connection, log: () => undefined, ports: second.ports
+        });
+
+        expect(relaunched.services.pomodoro.snapshot(), 'forty-nine minutes of real work were dropped at launch')
+            .toMatchObject({ interval: 'work', status: 'paused', elapsedSeconds: 2940 });
+
+        // Sixty more seconds finish it, and the session written is the whole interval - not the last minute of it.
+        relaunched.services.pomodoro.start();
+        second.tick(60);
+        expect(relaunched.repositories.sessions.list()[0]?.durationSeconds).toBe(3000);
+    });
+
     it('stops both the timer and the pomodoro when the container is disposed', async () => {
         const { container, driver } = await driven(makeCleanFixture());
         container.services.settings.update({ pomodoroWorkSeconds: 600 });

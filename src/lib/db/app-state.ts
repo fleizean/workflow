@@ -2,9 +2,9 @@
 // The import writes app_state alone: it never creates a work session and never invents elapsed time.
 
 import { z } from 'zod';
-import { LocalDateSchema, TimerModeSchema } from '@shared/schemas';
+import { LocalDateSchema, PomodoroIntervalSchema, TimerModeSchema } from '@shared/schemas';
 import type DatabaseType from 'better-sqlite3';
-import type { LocalDate, TimerMode } from '@shared/types';
+import type { LocalDate, PomodoroInterval, TimerMode } from '@shared/types';
 import { isLocalDate, utcIsoTimestamp } from '@shared/utils/date';
 import { parseLegacyTimerState } from './legacy-timer';
 
@@ -12,6 +12,7 @@ export const APP_STATE_KEYS = Object.freeze({
     legacyTimerState: 'legacy.v121.timerState',
     legacyGoalDate: 'legacy.v121.lastGoalNotificationDate',
     timerState: 'timer.state',
+    pomodoroState: 'pomodoro.state',
     goalNotifiedDate: 'goal.lastNotifiedDate',
     windowBounds: 'window.bounds'
 } as const);
@@ -40,6 +41,18 @@ export const TimerStateRecordSchema = z.strictObject({
     updatedAt: z.string()
 });
 
+/*
+ * WR-03: the seconds a pomodoro interval had counted when the process last stopped. Like the timer's record this is
+ * a scalar count and no start timestamp, so the gap between two launches cannot be credited. The day is deliberately
+ * absent: a pomodoro belongs to the day it finishes on, which is the rule an interval running across midnight
+ * already follows, and storing a day that is never read would invite the question why.
+ */
+export const PomodoroStateRecordSchema = z.strictObject({
+    interval: PomodoroIntervalSchema,
+    elapsedSeconds: z.int().nonnegative(),
+    updatedAt: z.string()
+});
+
 // CORE-13: the local day the goal notification last fired on. v1.2.1 kept this in localStorage, which main cannot
 // read and a profile reset clears, and its in-memory sibling flag re-armed on every reload (index.html:945, B1).
 export const GoalNotifiedRecordSchema = z.strictObject({
@@ -62,6 +75,7 @@ const SCHEMAS = {
     'legacy.v121.timerState': LegacyTimerRecordSchema,
     'legacy.v121.lastGoalNotificationDate': LegacyGoalDateSchema,
     'timer.state': TimerStateRecordSchema,
+    'pomodoro.state': PomodoroStateRecordSchema,
     'goal.lastNotifiedDate': GoalNotifiedRecordSchema,
     'window.bounds': WindowBoundsRecordSchema
 } as const;
@@ -189,6 +203,24 @@ export function readGoalNotifiedDate(db: DatabaseType.Database): LocalDate | nul
 
 export function writeGoalNotifiedDate(db: DatabaseType.Database, date: LocalDate, now: Date): void {
     writeAppState(db, APP_STATE_KEYS.goalNotifiedDate, { date, notifiedAt: utcIsoTimestamp(now) }, now);
+}
+
+export interface RestoredPomodoroState {
+    readonly interval: PomodoroInterval;
+    readonly elapsedSeconds: number;
+}
+
+/**
+ * What a previous launch had counted toward the interval it was on, or null - including when the stored value no
+ * longer parses. Reads no clock, so nothing about how long ago that launch was can be credited (WR-03, CORE-05).
+ */
+export function readPomodoroState(db: DatabaseType.Database): RestoredPomodoroState | null {
+    const stored = recorded(db, APP_STATE_KEYS.pomodoroState);
+    return stored === null ? null : { interval: stored.interval, elapsedSeconds: stored.elapsedSeconds };
+}
+
+export function writePomodoroState(db: DatabaseType.Database, state: RestoredPomodoroState, now: Date): void {
+    writeAppState(db, APP_STATE_KEYS.pomodoroState, { ...state, updatedAt: utcIsoTimestamp(now) }, now);
 }
 
 export interface StoredWindowBounds {

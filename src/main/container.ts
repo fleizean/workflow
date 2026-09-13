@@ -16,7 +16,7 @@ import type { CompaniesService } from './services/companies.service';
 import { createGoalService } from './services/goal.service';
 import type { GoalNotificationStore, GoalService } from './services/goal.service';
 import { createPomodoroService } from './services/pomodoro.service';
-import type { PomodoroCompletion, PomodoroService } from './services/pomodoro.service';
+import type { PomodoroCompletion, PomodoroService, PomodoroStateStore } from './services/pomodoro.service';
 import { createSessionsService } from './services/sessions.service';
 import type { SessionsService } from './services/sessions.service';
 import { createSettingsService } from './services/settings.service';
@@ -132,6 +132,19 @@ function createTimerStateStore(
         },
         // The wall clock names the moment of the write and never measures one; the seconds come from the service.
         write: (state) => { layer.writeTimerState(connection, state, instantFromEpochMs(clock.now())); }
+    };
+}
+
+// WR-03: the cycle reaches the database the same way the timer does - one record in, one record out, app-state.ts
+// only. The wall clock names the moment of the write and never measures one.
+function createPomodoroStateStore(
+    layer: DatabaseLayer,
+    connection: StartedDatabase['db'],
+    clock: ClockPort
+): PomodoroStateStore {
+    return {
+        read: () => layer.readPomodoroState(connection),
+        write: (state) => { layer.writePomodoroState(connection, state, instantFromEpochMs(clock.now())); }
     };
 }
 
@@ -291,6 +304,7 @@ export function createContainer(input: ContainerInput): AppContainer {
         clock: ports.clock,
         scheduler: ports.scheduler,
         ledger: repositories.pomodoro,
+        store: createPomodoroStateStore(layer, input.connection, ports.clock),
         durations: () => {
             const current = settings.get();
             return {

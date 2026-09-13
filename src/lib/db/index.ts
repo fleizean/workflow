@@ -16,12 +16,12 @@ export type { AnomalyCounts, MigrationOptions, MigrationReport, MigrationStep, R
 export { LATEST, MIGRATIONS } from './migrations/registry';
 
 export {
-    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readTimerState, readWindowBounds,
-    writeAppState, writeGoalNotifiedDate, writeTimerState, writeWindowBounds
+    APP_STATE_KEYS, importLegacyState, readAppState, readGoalNotifiedDate, readPomodoroState, readTimerState,
+    readWindowBounds, writeAppState, writeGoalNotifiedDate, writePomodoroState, writeTimerState, writeWindowBounds
 } from './app-state';
 export type {
-    AppStateKey, AppStateValue, LegacyImportResult, LegacyStorageValues, RestoredTimerState, StoredWindowBounds,
-    TimerStateInput, TimerStateSource
+    AppStateKey, AppStateValue, LegacyImportResult, LegacyStorageValues, RestoredPomodoroState, RestoredTimerState,
+    StoredWindowBounds, TimerStateInput, TimerStateSource
 } from './app-state';
 
 export { parseLegacyTimerState } from './legacy-timer';
