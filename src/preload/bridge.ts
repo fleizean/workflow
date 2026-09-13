@@ -44,7 +44,15 @@ export function createIpcBridge(ipc: RendererIpc): IpcBridge {
         subscriptions[channel] = (listener: (payload: unknown) => void): (() => void) => {
             // The IpcRendererEvent stops here: it carries a sender the renderer has no business holding, and a
             // listener that received one would keep it alive for as long as the subscription lasted.
-            const forward: EventForwarder = (_event, payload) => { listener(payload); };
+            // WR-08: ipcRenderer is an EventEmitter, so a subscriber that throws stops emit() and every later
+            // subscriber misses that event - on timer:tick, one broken component would stop everyone's clock.
+            const forward: EventForwarder = (_event, payload) => {
+                try {
+                    listener(payload);
+                } catch {
+                    /* one subscriber must not silence the others */
+                }
+            };
             ipc.on(channel, forward);
             let disposed = false;
             return () => {

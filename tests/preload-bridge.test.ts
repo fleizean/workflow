@@ -170,6 +170,19 @@ describe('the bridge keeps the promises its types make', () => {
             .toEqual({ ok: false, error: { code: 'INTERNAL', message: INTERNAL_ERROR_MESSAGE } });
     });
 
+    it('keeps delivering a tick to the other subscribers when one of them throws', () => {
+        const ipc = fakeIpc();
+        const bridge = createIpcBridge(ipc);
+        const seen: string[] = [];
+
+        bridge.on['timer:tick'](() => { seen.push('first'); });
+        bridge.on['timer:tick'](() => { throw new Error('setState on an unmounted node'); });
+        bridge.on['timer:tick'](() => { seen.push('third'); });
+
+        expect(() => { ipc.deliver('timer:tick', TICK); }, 'the throw escaped the preload').not.toThrow();
+        expect(seen, 'one broken component stopped every other clock in the window').toEqual(['first', 'third']);
+    });
+
     it('does the same for an argument structured clone cannot carry, which throws before it leaves', async () => {
         const ipc = fakeIpc();
         const bridge = createIpcBridge({
