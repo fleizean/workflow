@@ -12,6 +12,9 @@ import { INTERNAL_MESSAGE, MAX_ERROR_MESSAGE_LENGTH, invalidInputError, toIpcErr
 import { ServiceError, conflict, invalidInput, notFound } from '../src/main/services/service-errors';
 import { SettingsValidationError } from '../src/main/services/settings.service';
 import { DEFAULT_SETTINGS } from '../src/shared/constants/settings';
+import {
+    MAX_SESSION_DURATION_SECONDS, MAX_SESSION_NAME_LENGTH, MAX_SESSION_NOTE_LENGTH
+} from '../src/shared/constants/sessions';
 import { findAll, read } from './helpers/ts-imports';
 import type { HandlerContext } from '../src/main/ipc/handlers';
 import type { IpcChannel, IpcHandlers, LocalDate, Settings } from '../src/shared/types';
@@ -364,5 +367,63 @@ describe('WR-05: an answer the contract does not describe', () => {
     it('is not parsed when the check is off, which is what a packaged app runs', async () => {
         const dispatch = createDispatch({ handlers: wrong, log: () => undefined });
         expect((await dispatch('settings:get', undefined)).ok).toBe(true);
+    });
+});
+
+/*
+ * WR-07: sessions:create accepted a durationSeconds of 1 099 511 627 776 and a name of nothing at all, while every
+ * settings number was argued over and bounded. The renderer is the only caller today; a date-picker or a duration
+ * slip on a later screen is exactly the class of defect a boundary exists to make impossible.
+ */
+describe('WR-07: what a session payload may say', () => {
+    const VALID = { name: 'Deep work', durationSeconds: 1800, date: DAY, companyId: null, note: null };
+
+    const refused: [string, unknown][] = [
+        ['a duration no day could hold', { ...VALID, durationSeconds: 1_099_511_627_776 }],
+        ['a duration one second past a day', { ...VALID, durationSeconds: MAX_SESSION_DURATION_SECONDS + 1 }],
+        ['a negative duration', { ...VALID, durationSeconds: -1 }],
+        ['no name at all', { ...VALID, name: '' }],
+        ['a name of nothing but spaces', { ...VALID, name: '   ' }],
+        ['a name past the cap', { ...VALID, name: 'n'.repeat(MAX_SESSION_NAME_LENGTH + 1) }],
+        ['a note past the cap', { ...VALID, note: 'x'.repeat(MAX_SESSION_NOTE_LENGTH + 1) }]
+    ];
+
+    it.each(refused)('refuses %s, as a typed IpcError, before the service runs', async (_why, input) => {
+        const h = harness();
+        const answer = await h.call('sessions:create', input);
+        expect(answer.ok).toBe(false);
+        expect(answer.error?.code).toBe('INVALID_INPUT');
+        expect(answer.error?.message.length).toBeGreaterThan(0);
+        expect(h.calls, 'the session reached the service anyway').toEqual([]);
+    });
+
+    it('refuses the same on an update, which writes the same row', async () => {
+        const h = harness();
+        const answer = await h.call('sessions:update', { id: 3, ...VALID, durationSeconds: 1_099_511_627_776 });
+        expect(answer.error?.code).toBe('INVALID_INPUT');
+        expect(h.calls).toEqual([]);
+    });
+
+    it('accepts a whole day and a name at the cap, which are the largest honest values', async () => {
+        const h = harness();
+        const answer = await h.call('sessions:create', {
+            ...VALID,
+            durationSeconds: MAX_SESSION_DURATION_SECONDS,
+            name: 'n'.repeat(MAX_SESSION_NAME_LENGTH),
+            note: 'x'.repeat(MAX_SESSION_NOTE_LENGTH)
+        });
+        expect(answer.ok, 'the cap refused the value it is meant to allow').toBe(true);
+        expect(h.calls).toEqual(['sessions.create']);
+    });
+
+    it('refuses a date range that runs backwards rather than answering an empty history', async () => {
+        const h = harness();
+        const answer = await h.call('sessions:listByDateRange', { startDate: '2026-12-31', endDate: '2020-01-01' });
+        expect(answer.error?.code).toBe('INVALID_INPUT');
+        expect(h.calls).toEqual([]);
+
+        const sameDay = harness();
+        expect((await sameDay.call('sessions:listByDateRange', { startDate: DAY, endDate: DAY })).ok,
+            'a single day is not a reversed range').toBe(true);
     });
 });

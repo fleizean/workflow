@@ -1,6 +1,9 @@
 // Wire schemas (D-19): days are LocalDate, instants integer epoch ms, durations whole seconds.
 // No transforms and no defaults, so z.input equals z.output and one inferred type serves both ends.
 import { z } from 'zod';
+import {
+    MAX_SESSION_DURATION_SECONDS, MAX_SESSION_NAME_LENGTH, MAX_SESSION_NOTE_LENGTH
+} from '@shared/constants/sessions';
 import { isLocalDate } from '@shared/utils/date';
 import type { LocalDate } from '@shared/utils/date';
 
@@ -10,6 +13,17 @@ export const LocalDateSchema = z.custom<LocalDate>(isLocalDate, 'Expected a loca
 export const IdSchema = z.int().positive();
 export const EpochMsSchema = z.int().nonnegative();
 export const DurationSecondsSchema = z.int().nonnegative();
+
+/*
+ * WR-07: the three fields a caller writes a session with, bounded. They are separate from the schemas above
+ * because those describe what is read: a week total is longer than a day by design, a running timer's elapsed
+ * seconds can be, and a migrated v1.2.1 row may be.
+ */
+export const SessionDurationSecondsSchema = z.int().nonnegative().max(MAX_SESSION_DURATION_SECONDS);
+export const SessionNameSchema = z.string().min(1).max(MAX_SESSION_NAME_LENGTH)
+    // A name of spaces is an unnamed session that renders as a blank row nobody can tell apart from another.
+    .refine((name) => name.trim() !== '', 'A session needs a name');
+export const SessionNoteSchema = z.string().max(MAX_SESSION_NOTE_LENGTH).nullable();
 
 export const WorkSessionSchema = z.strictObject({
     id: IdSchema,

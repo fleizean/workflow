@@ -1,9 +1,9 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
 import {
-    CompanySchema, DayProgressSchema, DurationSecondsSchema, IdSchema, LocalDateSchema, PomodoroCountsSchema,
-    PomodoroSnapshotSchema, SettingsSchema, SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema,
-    WeekTotalsSchema, WorkSessionSchema
+    CompanySchema, DayProgressSchema, IdSchema, LocalDateSchema, PomodoroCountsSchema,
+    PomodoroSnapshotSchema, SessionDurationSecondsSchema, SessionNameSchema, SessionNoteSchema, SettingsSchema,
+    SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema, WeekTotalsSchema, WorkSessionSchema
 } from '@shared/schemas';
 import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '@shared/ipc/channels';
 import type { DeclaredIpcChannel, DeclaredIpcEventChannel } from '@shared/ipc/channels';
@@ -38,18 +38,23 @@ export type HandlersOf<M extends ContractMap> = {
     readonly [C in keyof M & ChannelName]: (input: z.input<M[C]['input']>) => z.output<M[C]['output']> | Promise<z.output<M[C]['output']>>;
 };
 
+// WR-07: bounded at the boundary, so a duration arithmetic slip or a blank form on a later screen is refused
+// here rather than written to a row every statistic then counts.
 const sessionFields = {
-    name: z.string(),
-    durationSeconds: DurationSecondsSchema,
+    name: SessionNameSchema,
+    durationSeconds: SessionDurationSecondsSchema,
     date: LocalDateSchema,
     companyId: IdSchema.nullable(),
-    note: z.string().nullable()
+    note: SessionNoteSchema
 };
 
 export const ipcContract = {
     'sessions:list': { input: z.void(), output: z.array(WorkSessionSchema) },
     'sessions:listByDateRange': {
-        input: z.strictObject({ startDate: LocalDateSchema, endDate: LocalDateSchema }),
+        // WR-07: a reversed range is a bug in the caller, not an empty week. BETWEEN would answer nothing and the
+        // screen would show days that hold work as days that hold none.
+        input: z.strictObject({ startDate: LocalDateSchema, endDate: LocalDateSchema })
+            .refine((range) => range.startDate <= range.endDate, 'endDate must not be before startDate'),
         output: z.array(WorkSessionSchema)
     },
     'sessions:listByDateAndCompany': {
