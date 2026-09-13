@@ -175,6 +175,49 @@ describe('ARCH-03: one direction of flow, asserted on the source', () => {
         expect(offenders, 'a feature is reached past its public surface (ARCH-03)').toEqual([]);
     });
 
+    /*
+     * CR-03(b). A lifted area may CALL the facade; it may not hand it on. Each hop of
+     *
+     *   features/history/api/useSessions.ts   export { invoke } from '@renderer/lib/ipc'
+     *   features/history/index.ts             export { invoke } from './api/useSessions'
+     *   components/ui/Modal.tsx               import { invoke } from '@renderer/features/history'
+     *
+     * is individually legal - the first because api/ lifts the facade, the second because a relative sibling
+     * matches no pattern, the third because that IS the public surface - and together they put the bridge in any
+     * component. no-restricted-imports cannot see it: the ban it would have to apply is the one the first hop
+     * lifts. So the rule is decided here instead, and it is the narrowest one that closes the chain: no renderer
+     * file re-exports the facade, zustand or the query client, whatever its area. Importing them is unchanged.
+     */
+    it('never hands the facade, the store library or the query client on through an export', () => {
+        const aliases = readAliases('electron.vite.config.ts', ['renderer', 'resolve', 'alias']);
+        const LAUNDERED = /^(?:zustand|@tanstack\/react-query)(?:\/|$)|^@shared\/constants\/bridge$/;
+
+        // Only an export-from, never a plain import: what a file re-exports is its own public surface.
+        const reExportsOf = (file: string): string[] =>
+            [...read(file).matchAll(/\bexport\s+(?:\*|\{[^}]*\})(?:\s+as\s+\w+)?\s*from\s*['"]([^'"]+)['"]/g)]
+                .map((match) => match[1] ?? '');
+
+        const offenders: string[] = [];
+        let checked = 0;
+        for (const file of rendererSources()) {
+            for (const specifier of reExportsOf(file)) {
+                checked += 1;
+                if (LAUNDERED.test(specifier)) {
+                    offenders.push(file + ' re-exports ' + specifier);
+                    continue;
+                }
+                const target = resolveModuleFile(file, specifier, aliases);
+                if (target === FACADE) offenders.push(file + ' re-exports the IPC facade');
+            }
+        }
+        expect(checked, 'no file re-exports anything, so this scan proves nothing').toBeGreaterThan(5);
+        expect(
+            offenders,
+            'a lifted area may call these; handing one on makes it reachable from every file that imports the ' +
+            'feature, one legal hop at a time (ARCH-03)'
+        ).toEqual([]);
+    });
+
     it('imports nothing from the retired v1.2.1 tree', () => {
         const offenders = rendererSources()
             .filter((file) => literalsOf(file).some((value) => value.includes('legacy/')));

@@ -1036,16 +1036,69 @@ describe('ARCH-03: lint proves the direction of the renderer', () => {
             'void sessionStorage;',
             'void window.localStorage;',
             'void globalThis.sessionStorage;',
-            'void self.localStorage;'
+            'void self.localStorage;',
+            // CR-03(c): a web store reached off an object neither the globals nor the properties rule names.
+            'void document.defaultView?.localStorage;',
+            'void document.defaultView?.[\'sessionStorage\'];',
+            'void Reflect.get(globalThis, \'localStorage\');'
         ];
         const { missed } = await probe(COMPONENT_FILE, [], banned, [], says(STORAGE_TAG));
         expect(missed, 'renderer code reached a web store, which main cannot read').toEqual([]);
     }, 60_000);
 
     it('refuses naming the bridge on the global object', async () => {
-        const banned = ['void window.api;', 'void globalThis[\'api\'];', 'void self.api;'];
+        const banned = [
+            'void window.api;', 'void globalThis[\'api\'];', 'void self.api;',
+            // CR-03(c): Reflect.get is a member expression no member-expression selector can see.
+            'void Reflect.get(globalThis, \'api\');'
+        ];
         const { missed } = await probe(COMPONENT_FILE, [], banned, [], says(BRIDGE_TAG));
         expect(missed, 'a file reached window.api directly instead of through the facade').toEqual([]);
+    }, 60_000);
+
+    /*
+     * CR-03(a). no-restricted-imports inspects ImportDeclaration and the two export-from forms and nothing else,
+     * so every one of the four bans above - including the cross-feature one the config marks "never lifted" -
+     * was one await away from being unenforced. The syntactic rule reaches where the import rule cannot, and it
+     * is composed from the same lift set, which is what the second half of this test checks.
+     */
+    it('refuses the same four things asked for with a dynamic import', async () => {
+        const banned: [string, string][] = [
+            ['const m = await import(\'@renderer/lib/ipc\');', FACADE_TAG],
+            ['const n = await import(\'../../lib/ipc\');', FACADE_TAG],
+            ['const b = await import(\'@shared/constants/bridge\');', FACADE_TAG],
+            ['const q = await import(\'@tanstack/react-query\');', QUERY_TAG],
+            ['const z = await import(\'zustand\');', STORE_TAG],
+            ['const t = await import(\'@renderer/features/timer/state/timer.store\');', FEATURE_TAG],
+            ['const u = await import(\'../../features/timer/state/timer.store\');', FEATURE_TAG]
+        ];
+        for (const [code, tag] of banned) {
+            const { missed } = await probe(
+                COMPONENT_FILE, [], ['export async function f() { ' + code + ' return m; }'], [], says(tag)
+            );
+            expect(missed, 'a dynamic import walked past the ARCH-03 ban on ' + tag).toEqual([]);
+        }
+
+        // The public surface stays reachable dynamically, and each lifted area keeps its own lift.
+        const surface = await probe(
+            COMPONENT_FILE, [], [],
+            ['export async function g() { return import(\'@renderer/features/history\'); }'], says(FEATURE_TAG)
+        );
+        expect(surface.flagged, 'a dynamic import of a feature index was refused').toEqual([]);
+
+        for (const file of [API_FILE, PROVIDER_FILE]) {
+            const lifted = await probe(
+                file, [], [], ['export async function h() { return import(\'@renderer/lib/ipc\'); }'], says(FACADE_TAG)
+            );
+            expect(lifted.flagged, file + ' may call the facade and was refused a dynamic import of it').toEqual([]);
+        }
+        for (const file of [STORE_FILE, FEATURE_STATE_FILE]) {
+            const lifted = await probe(
+                file, [], [], ['export async function h() { return import(\'zustand\'); }'], says(STORE_TAG)
+            );
+            expect(lifted.flagged, file + ' is a home for state and was refused a dynamic import of zustand')
+                .toEqual([]);
+        }
     }, 60_000);
 
     it('refuses reaching past a feature index.ts, from every area including the ones with lifts', async () => {

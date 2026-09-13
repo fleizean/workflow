@@ -270,8 +270,60 @@ const WEB_STORAGE_PROPERTIES = ['window', 'globalThis', 'self']
 const BRIDGE_ACCESS_MESSAGE = 'Reach the preload bridge through invoke() or subscribe() in lib/ipc.ts, which is the one place that knows it is there (ARCH-03).';
 const BRIDGE_ACCESS_BANS = [
     'MemberExpression[object.name=/^(window|globalThis|self)$/][property.name=\'api\']',
-    'MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value=\'api\']'
+    'MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value=\'api\']',
+    // CR-03(c): Reflect.get is a member expression the parser cannot see as one.
+    "CallExpression[callee.object.name='Reflect'][arguments.1.value='api']"
 ].map((selector) => ({ selector, message: BRIDGE_ACCESS_MESSAGE }));
+
+/*
+ * CR-03(c): no-restricted-globals sees the bare name and no-restricted-properties sees window/globalThis/self, so
+ * document.defaultView?.localStorage reached a web store with nothing said about it. There is no object in this
+ * renderer that legitimately carries a localStorage, so the property name is refused whoever it hangs off.
+ */
+const WEB_STORAGE_BANS = [
+    'MemberExpression[property.name=/^(localStorage|sessionStorage)$/]',
+    'MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage)$/]',
+    "CallExpression[callee.object.name='Reflect'][arguments.1.value=/^(localStorage|sessionStorage)$/]"
+].map((selector) => ({ selector, message: WEB_STORAGE_MESSAGE }));
+
+/*
+ * CR-03(a): no-restricted-imports inspects ImportDeclaration and the two export-from forms, and nothing else. It
+ * does not inspect ImportExpression, so an await import of @renderer/lib/ipc walked past all four ARCH-03 bans -
+ * including the cross-feature one the config marks "never lifted". This is a syntactic rule, so it reaches where
+ * no-restricted-imports structurally cannot, and it is composed from the same lift set so an area that lifts a
+ * static import lifts the dynamic one with it and nothing else.
+ *
+ * The selectors use . where a / belongs: esquery parses an attribute regex itself and cannot escape a slash.
+ */
+const rendererDynamicImports = (lift) => {
+    const bans = [];
+    if (!lift.has('facade')) {
+        bans.push(
+            ['ImportExpression[source.value=/lib.ipc$/]', RENDERER_FACADE_MESSAGE],
+            ["ImportExpression[source.value='./ipc']", RENDERER_FACADE_MESSAGE],
+            ["ImportExpression[source.value='@shared/constants/bridge']", RENDERER_FACADE_MESSAGE]
+        );
+    }
+    if (!lift.has('query')) {
+        bans.push(['ImportExpression[source.value=/^@tanstack.react-query/]', RENDERER_QUERY_MESSAGE]);
+    }
+    if (!lift.has('store')) {
+        bans.push(['ImportExpression[source.value=/^zustand/]', RENDERER_STORE_MESSAGE]);
+    }
+    // Never lifted, as with the static form.
+    bans.push(
+        ['ImportExpression[source.value=/^@renderer[^a-z0-9_@-]features[^a-z0-9_@-][a-z0-9_-]+[^a-z0-9_@-].+/]', RENDERER_FEATURE_MESSAGE],
+        ['ImportExpression[source.value=/^(\\.\\.[^a-z0-9_@-])+features[^a-z0-9_@-][a-z0-9_-]+[^a-z0-9_@-].+/]', RENDERER_FEATURE_MESSAGE]
+    );
+    return bans.map(([selector, message]) => ({ selector, message }));
+};
+
+/** The renderer's syntax bans, composed the way rendererImports composes its paths (D-11). */
+const rendererSyntax = (...lifted) => [
+    'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS,
+    ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS, ...BRIDGE_ACCESS_BANS, ...WEB_STORAGE_BANS,
+    ...rendererDynamicImports(new Set(lifted))
+];
 
 /**
  * One composer for every renderer block, so an override restates what it does not lift (D-11) without repeating
@@ -561,10 +613,7 @@ module.exports = [
             '@typescript-eslint/no-restricted-imports': rendererImports(),
             // Criteria 3 and 7, as lint. Everything src/** already bans is restated, because a flat config replaces
             // a rule's options wholesale (D-11).
-            'no-restricted-syntax': [
-                'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS,
-                ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS, ...BRIDGE_ACCESS_BANS
-            ],
+            'no-restricted-syntax': rendererSyntax(),
             'no-restricted-globals': ['error', ...WEB_STORAGE_GLOBALS],
             'no-restricted-properties': [
                 'error', ...CUSTODY_02, PROCESS_ENV, PROCESS_ARGV, ...WEB_STORAGE_PROPERTIES
@@ -575,20 +624,32 @@ module.exports = [
     // The facade itself: the one file that may name the bridge key.
     {
         files: [RENDERER_FACADE_FILE],
-        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('facade') }
+        rules: {
+            '@typescript-eslint/no-restricted-imports': rendererImports('facade'),
+            'no-restricted-syntax': rendererSyntax('facade')
+        }
     },
     // Where a call to main and a query may live (ARCH-03).
     {
         files: RENDERER_API_AREAS,
-        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('facade', 'query') }
+        rules: {
+            '@typescript-eslint/no-restricted-imports': rendererImports('facade', 'query'),
+            'no-restricted-syntax': rendererSyntax('facade', 'query')
+        }
     },
     {
         files: RENDERER_QUERY_FILES,
-        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('query') }
+        rules: {
+            '@typescript-eslint/no-restricted-imports': rendererImports('query'),
+            'no-restricted-syntax': rendererSyntax('query')
+        }
     },
     // Where a Zustand store may live: global UI state, or one feature's own.
     {
         files: RENDERER_STORE_AREAS,
-        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('store') }
+        rules: {
+            '@typescript-eslint/no-restricted-imports': rendererImports('store'),
+            'no-restricted-syntax': rendererSyntax('store')
+        }
     }
 ];
