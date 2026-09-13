@@ -264,8 +264,15 @@ export function createContainer(input: ContainerInput): AppContainer {
                 repositories.pomodoro.recordCompletion(completion.date, null);
             });
         }
-        ports.notifier.notify(notificationForCompletion(completion.interval));
-        ports.sound.play('pomodoroCompleted');
+        // IN-01: outside the write's failure envelope and inside one of their own. These run after the transaction
+        // committed, so an OS that refused a notification must not be reported as an interval that could not be
+        // recorded - nor, after CR-01, leave the cycle holding an interval that is safely on disk.
+        try {
+            ports.notifier.notify(notificationForCompletion(completion.interval));
+            ports.sound.play('pomodoroCompleted');
+        } catch (error) {
+            log('pomodoro: the completed interval was recorded but could not be announced - ' + describeError(error));
+        }
         // The row the transaction above wrote may be the one that carried the day: a pomodoro-only day never starts
         // the main timer, so without this nothing would ever ask.
         announceGoalIfReached(null);

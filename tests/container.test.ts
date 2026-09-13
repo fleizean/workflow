@@ -461,6 +461,31 @@ describe('the services the container composes', () => {
         expect(rawCount(dbPath, 'pomodoro_sessions')).toBe(0);
     });
 
+    // IN-01: the notifier and the sound run after the transaction commits, so their failure says nothing about
+    // whether the interval was recorded - and the one log line a maintainer reads in an incident must not say it did.
+    it('reports a refused notification as a refused notification, not as an interval that was lost', async () => {
+        const dbPath = makeCleanFixture();
+        const driver = drivenPorts();
+        const connection = await migratedConnection(dbPath);
+        const lines: string[] = [];
+        const container = createContainer({
+            layer: guardedLayer(),
+            connection,
+            log: (line) => lines.push(line),
+            ports: { ...driver.ports, notifier: { notify: () => { throw new Error('no notification service'); } } }
+        });
+        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        const sessionsBefore = rawCount(dbPath, 'work_sessions');
+
+        container.services.pomodoro.start();
+        driver.tick(60);
+
+        expect(rawCount(dbPath, 'work_sessions'), 'the session the notifier failure had nothing to do with')
+            .toBe(sessionsBefore + 1);
+        expect(lines.join('\n')).toContain('could not be announced');
+        expect(lines.join('\n'), 'a committed interval was reported as unrecorded').not.toContain('could not be recorded');
+    });
+
     /*
      * CORE-13/B1: the decision is made on the timer's own tick - there is no second clock - and it fires once. The
      * day it fired on is in the database, so the next launch of this same fixture does not fire again.
