@@ -47,10 +47,34 @@ export function createPomodoroRepository(handle: DbHandle, options: RepositoryOp
         },
 
         countForDay(date) {
-            // coalesce for the same reason the day totals need it: sum() over no rows is NULL (DATA-05).
+            /*
+             * WR-09: the bad row is excluded, not the day. SQLite columns are dynamically typed, so this INTEGER
+             * column will hold text or a real; summing one of those and then refusing the unsafe result collapsed
+             * the whole day to zero, which makes the long break unreachable for the rest of it and under-reports
+             * POMO-09's week. Filtered in SQL, the way the sibling aggregate dayTotals() already filters duration,
+             * and the excluded rows are reported rather than dropped in silence.
+             *
+             * coalesce for the same reason the day totals need it: sum() over no rows is NULL (DATA-05).
+             */
+            const countable = sql`typeof(${pomodoroSessions.pomodoros_completed}) = 'integer'
+                AND ${pomodoroSessions.pomodoros_completed} >= 0`;
             const row = handle.select({
-                total: sql<number>`coalesce(sum(${pomodoroSessions.pomodoros_completed}), 0)`
+                total: sql<number>`coalesce(sum(CASE WHEN ${countable} THEN ${pomodoroSessions.pomodoros_completed} END), 0)`,
+                // NULL is what v1.2.1's ALTER left behind and sum() ignores it, so it is not an anomaly to report.
+                skipped: sql<number>`coalesce(sum(CASE WHEN ${countable}
+                    OR ${pomodoroSessions.pomodoros_completed} IS NULL THEN 0 ELSE 1 END), 0)`
             }).from(pomodoroSessions).where(eq(pomodoroSessions.date, date)).get();
+
+            const skipped = row?.skipped ?? 0;
+            if (typeof skipped === 'number' && skipped > 0) {
+                options.onSkippedRow?.({
+                    table: TABLE,
+                    column: 'pomodoros_completed',
+                    rowId: null,
+                    reason: String(skipped) + ' row(s) on this day are not a whole non-negative count'
+                });
+            }
+
             const total = row?.total ?? 0;
             return Number.isSafeInteger(total) && total > 0 ? total : 0;
         },

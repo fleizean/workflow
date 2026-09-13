@@ -348,6 +348,48 @@ describe('CORE-01: the pomodoro repository', () => {
         expect(repo.countForDay(ld('2026-01-04'))).toBe(1);
         expect(repo.listByDate(ld('2026-01-05')).map((p) => p.pomodorosCompleted)).toEqual([2]);
     });
+
+    /*
+     * WR-09. SQLite columns are dynamically typed and this one is nullable, so a third-party tool or a v1.x variant
+     * can leave text or a real in it. Summing that and then refusing the unsafe result collapsed the entire day to
+     * zero: the long break became unreachable for the rest of the day (nextAfterWork only ever said 'shortBreak')
+     * and POMO-09 reported nothing for the day and under-reported the week. The sibling aggregate dayTotals()
+     * already filters duration in SQL, so one bad row costs one bad row; the two now behave the same way.
+     */
+    it.each([
+        { label: 'a real', value: 1.5 },
+        { label: 'text', value: 'not a number' }
+    ])('excludes one row holding $label from a day rather than the whole day', async ({ value }) => {
+        const ctx = await open(makeCleanFixture());
+        const day = ld('2026-02-10');
+        // Three real completions, then a fourth row a third-party tool left in a shape INTEGER affinity permits.
+        for (let i = 0; i < 3; i += 1) createPomodoroRepository(ctx.handle).recordCompletion(day, null);
+        ctx.connection
+            .prepare('INSERT INTO pomodoro_sessions (date, company_id, pomodoros_completed) VALUES (?, NULL, ?)')
+            .run(day, value);
+
+        const skipped: SkippedRowReport[] = [];
+        const repo = createPomodoroRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.countForDay(day), 'one anomalous row cost the whole day its count').toBe(3);
+        expect(skipped.map((report) => report.column)).toEqual(['pomodoros_completed']);
+        expect(skipped[0]?.reason, 'the exclusion was never reported').toContain('1 row(s)');
+        expect(JSON.stringify(skipped), 'a stored value crossed into a log line').not.toContain('not a number');
+    });
+
+    it('says nothing about the NULL v1.2.1\'s ALTER left behind, which sum() already ignores', async () => {
+        const ctx = await open(makeCleanFixture());
+        const day = ld('2026-02-11');
+        createPomodoroRepository(ctx.handle).recordCompletion(day, null);
+        ctx.connection.prepare('INSERT INTO pomodoro_sessions (date, company_id, pomodoros_completed) VALUES (?, NULL, NULL)')
+            .run(day);
+
+        const skipped: SkippedRowReport[] = [];
+        const repo = createPomodoroRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.countForDay(day)).toBe(1);
+        expect(skipped, 'an unset count was reported as an anomaly').toEqual([]);
+    });
 });
 
 // The retired export columns and settings keys, as the SQL a repository issues would spell them.
