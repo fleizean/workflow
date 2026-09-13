@@ -252,15 +252,26 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         persistNow();
     }
 
+    /*
+     * IN-02: one read of the monotonic clock, credited and rebased together - timer.service.ts's own credit(now).
+     * Two reads dropped the interval between them, and the whole point of exporting creditableMs was that the two
+     * modules answer this question the same way.
+     *
+     * The timer's clamp, not a second one: no tick may credit more than two seconds of interval progress, so sleep,
+     * hibernation or a stalled event loop cannot finish a pomodoro nobody worked (CORE-04).
+     */
+    function credit(now: number): void {
+        elapsedMs += creditableMs(now - lastTickAt);
+        lastTickAt = now;
+    }
+
     function onTick(): PomodoroSnapshot {
         const now = clock.monotonicNow();
-        const delta = now - lastTickAt;
-        lastTickAt = now;
 
-        if (status === 'running') {
-            // The timer's clamp, not a second one: no tick may credit more than two seconds of interval progress,
-            // so sleep, hibernation or a stalled event loop cannot finish a pomodoro nobody worked (CORE-04).
-            elapsedMs += creditableMs(delta);
+        if (status !== 'running') {
+            lastTickAt = now;
+        } else {
+            credit(now);
             syncDay();
             if (elapsedSeconds() >= targetSecondsOf(interval, settings())) {
                 complete();
@@ -292,8 +303,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         pause() {
             if (status === 'running') {
                 // The part-second since the last tick is real progress; without this every pause loses up to a second.
-                elapsedMs += creditableMs(clock.monotonicNow() - lastTickAt);
-                lastTickAt = clock.monotonicNow();
+                credit(clock.monotonicNow());
                 status = 'paused';
                 stopRepeat();
                 persistNow();
@@ -330,7 +340,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         dispose() {
             if (status === 'running') {
                 // The part-second since the last tick is real progress, and this is the last chance to keep it.
-                elapsedMs += creditableMs(clock.monotonicNow() - lastTickAt);
+                credit(clock.monotonicNow());
             }
             try {
                 persistNow();
