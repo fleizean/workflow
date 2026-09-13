@@ -91,7 +91,7 @@ export default function CompanyForm({ mode, initial, busy, onSubmit, onDismiss }
                         type="text"
                         autoFocus
                         required
-                        placeholder="e.g., NG, DelphisAI"
+                        placeholder="e.g., Acme Corp"
                         className={INPUT_CLASS}
                         value={name}
                         onChange={(event) => { setName(event.target.value); }}

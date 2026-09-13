@@ -33,6 +33,7 @@ import type { SessionGroup } from './grouping';
 import { useHistoryFilterStore } from './state/filters.store';
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
 import type { LocalDate, WorkSession } from '@shared/types';
+import FloatingAction from '@renderer/components/ui/FloatingAction';
 
 const FILTER_BUTTON_CLASS: Record<'on' | 'off', string> = {
     on: 'flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-primary text-white transition',
@@ -47,8 +48,6 @@ const SHORTCUT_ICON_CLASS = 'relative flex h-10 w-10 items-center justify-center
 const SECTION_HEAD_CLASS = 'mb-3 flex items-end justify-between px-1';
 const SECTION_TITLE_CLASS = 'text-slate-900 dark:text-white text-lg font-bold leading-tight';
 const RANGE_CLASS = 'text-xs font-medium text-slate-500 dark:text-slate-400';
-const FAB_CLASS = 'fixed bottom-28 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full ' +
-    'bg-primary text-white shadow-xl shadow-primary/30 transition-transform hover:scale-110 active:scale-95';
 
 const HOURS_PER_SECOND = 1 / 3600;
 const newDraft = (today: LocalDate): SessionDraft =>
@@ -187,14 +186,7 @@ export default function HistoryPage(): ReactElement {
                 {section('Older', buckets.older)}
             </div>
 
-            <button
-                type="button"
-                aria-label="Add session"
-                className={FAB_CLASS}
-                onClick={() => { setEditing('new'); }}
-            >
-                <span className="material-symbols-outlined text-[28px]">add</span>
-            </button>
+            <FloatingAction label="Add session" onClick={() => { setEditing('new'); }} />
 
             {panelOpen ? (
                 <FilterPanel

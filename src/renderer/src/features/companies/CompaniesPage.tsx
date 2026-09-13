@@ -19,11 +19,10 @@ import CompanyForm from './components/CompanyForm';
 import CompanyRow from './components/CompanyRow';
 import { countSessionsByCompany, describeCompanyDelete, describeSessionCount } from './session-counts';
 import type { Company } from '@shared/types';
+import FloatingAction from '@renderer/components/ui/FloatingAction';
 
 const EMPTY_CLASS = 'flex flex-col items-center justify-center py-16 px-6';
 const EMPTY_ICON_CLASS = 'flex h-20 w-20 items-center justify-center rounded-full bg-slate-200 dark:bg-card-dark mb-4';
-const FAB_CLASS = 'fixed bottom-28 right-6 z-30 flex h-14 w-14 items-center justify-center rounded-full ' +
-    'bg-primary text-white shadow-xl shadow-primary/30 transition-transform hover:scale-110 active:scale-95';
 const NEW_COMPANY: CompanyValues = { name: '', noteRequired: false };
 
 export default function CompaniesPage(): ReactElement {
@@ -125,14 +124,7 @@ export default function CompaniesPage(): ReactElement {
                     ))}
                 </section>
             </div>
-            <button
-                type="button"
-                aria-label="Add company"
-                className={FAB_CLASS}
-                onClick={() => { setEditing('new'); }}
-            >
-                <span className="material-symbols-outlined text-[28px]">add</span>
-            </button>
+            <FloatingAction label="Add company" onClick={() => { setEditing('new'); }} />
             {editing === null ? null : (
                 <CompanyForm
                     mode={editing === 'new' ? 'create' : 'edit'}
