@@ -36,8 +36,14 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const SCRIPT_NAME = 'tools/baseline/archive-real-db.mjs';
-const DB_NAME = 'krono.db';
-const SIDECARS = ['krono.db-wal', 'krono.db-shm'];
+
+/*
+ * IN-06: both names, newest first. This hardcoded krono.db, so after V2-SCHEMA's rename the CUSTODY-07 archive -
+ * the thing that protects the owner's real data before a risky run - would have found nothing to archive and said
+ * so as "No database at ...". Whichever name is on disk is the one that gets archived, with its own sidecars.
+ */
+const DB_NAMES = ['workflow.db', 'krono.db'];
+const sidecarsOf = (name) => [name + '-wal', name + '-shm'];
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -211,10 +217,14 @@ function archive({ sourceDir, destRoot, schemaOut, guardRepoRoot, stamp }) {
     // Guard FIRST. Nothing is created, read or copied before the destination is proven safe.
     assertDestinationIsSafe(destDir, sourceDir, guardRepoRoot);
 
-    const sourceDb = path.join(sourceDir, DB_NAME);
-    if (!fs.existsSync(sourceDb)) {
-        throw new Error('No database at ' + sourceDb + '. Set WFT_ARCHIVE_SOURCE.');
+    const DB_NAME = DB_NAMES.find((name) => fs.existsSync(path.join(sourceDir, name)));
+    if (DB_NAME === undefined) {
+        throw new Error(
+            'No database at ' + DB_NAMES.map((name) => path.join(sourceDir, name)).join(' or ') +
+            '. Set WFT_ARCHIVE_SOURCE.'
+        );
     }
+    const SIDECARS = sidecarsOf(DB_NAME);
 
     fs.mkdirSync(destDir, { recursive: true });
 
@@ -263,7 +273,7 @@ const SECRET_ROWS = {
 
 function buildSyntheticSource(dir) {
     fs.mkdirSync(dir, { recursive: true });
-    const dbPath = path.join(dir, DB_NAME);
+    const dbPath = path.join(dir, DB_NAMES[DB_NAMES.length - 1]);
     const db = new DatabaseSync(dbPath);
     try {
         db.exec(
