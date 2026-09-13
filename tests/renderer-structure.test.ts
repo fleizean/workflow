@@ -258,12 +258,16 @@ describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
 
 /*
  * Criterion 5. v1.2.1 defined showAlert twice (legacy/pages/index.html:514, settings.html:387), hand-built an
- * overlay at six sites across three pages. These are the claims that replaces, each read off the tree rather
- * than off a reviewer's memory. The one shared width is the other half of the criterion; it lands next.
+ * overlay at six sites across three pages, and capped the shell and the bottom navigation at two different widths.
+ * These are the four claims that replaces, each read off the tree rather than off a reviewer's memory.
  */
-describe('criterion 5: one Modal, one Toast, one alert', () => {
+describe('criterion 5: one Modal, one Toast, one alert, one width', () => {
     const UI = 'components/ui';
     const MODAL = path.posix.join(SRC, UI, 'Modal.tsx');
+    const SHELL = path.posix.join(SRC, 'components/layout/AppShell.tsx');
+    const NAV = path.posix.join(SRC, 'components/layout/BottomNav.tsx');
+    const WIDTH_TOKEN = '--container-app';
+    const WIDTH_UTILITY = 'max-w-app';
 
     /** Component declarations only - an uppercase name, which is what React calls a component. */
     const componentsNamed = (file: string, word: RegExp): string[] =>
@@ -295,5 +299,17 @@ describe('criterion 5: one Modal, one Toast, one alert', () => {
         expect(exists(MODAL), MODAL + ' does not exist, so this whole block proves nothing').toBe(true);
         expect(exists(path.posix.join(SRC, UI, 'AlertDialog.tsx'))).toBe(true);
         expect(exists(path.posix.join(SRC, UI, 'ToastStack.tsx'))).toBe(true);
+    });
+
+    it('takes the shell and the bottom navigation from one width token', () => {
+        expect(read(GLOBALS), GLOBALS + ' no longer declares ' + WIDTH_TOKEN).toContain(WIDTH_TOKEN + ':');
+        for (const file of [SHELL, NAV]) {
+            const classes = literalsOf(file).join(' ');
+            expect(classes, file + ' does not read the one width token').toContain(WIDTH_UTILITY);
+            expect(
+                classes,
+                file + ': the 448/430 mismatch is back. Both widths must come from ' + WIDTH_TOKEN + ' (SPA-02).'
+            ).not.toMatch(/max-w-(?:md|sm|lg|xl|\[)/);
+        }
     });
 });

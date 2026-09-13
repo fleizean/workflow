@@ -11,9 +11,9 @@
  * The scrollbar-hiding utilities replace legacy/styles/common.css's global ::-webkit-scrollbar rule, scoped to the
  * one element that actually scrolls (ARCH-05: no second stylesheet).
  *
- * KNOWN DEFECT, LEFT AS IT IS ON PURPOSE: this container is max-w-md (448 px) while the bottom navigation caps
- * itself at 430 px, so above the md breakpoint the two do not line up. That mismatch is inherited verbatim from
- * v1.2.1; SPA-02 closes it with one shared width token, and Phase 10 does the responsive sweep.
+ * The shell and the bottom navigation are both max-w-app, which is the --container-app token in globals.css.
+ * v1.2.1 wrote 448 px here and 430 px there, so above the md breakpoint the bar was narrower than the thing it
+ * belongs to (SPA-02). Phase 10 still owns the responsive sweep; this is only the one width they agree on.
  */
 
 import type { ReactElement } from 'react';
@@ -24,7 +24,7 @@ import { TitleBar } from '@renderer/features/shell';
 import BottomNav from './BottomNav';
 
 const SHELL_CLASS =
-    'relative flex h-screen w-full flex-col overflow-hidden max-w-md mx-auto shadow-2xl font-display ' +
+    'relative flex h-screen w-full flex-col overflow-hidden max-w-app mx-auto shadow-2xl font-display ' +
     'bg-background-light dark:bg-background-dark text-slate-900 dark:text-white';
 
 const CONTENT_CLASS = 'flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';

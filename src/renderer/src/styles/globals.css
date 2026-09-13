@@ -51,6 +51,13 @@
     --font-display: "Inter Variable", "Inter", sans-serif;
 
     /*
+     * The one width the app is laid out at. v1.2.1 capped the shell at Tailwind's md (448px) and the bottom
+     * navigation at 430px, so above the md breakpoint the bar was 18px narrower than the thing it belongs to.
+     * Both read this token now (SPA-02); --container-* is the namespace Tailwind builds max-w-app out of.
+     */
+    --container-app: 28rem;
+
+    /*
      * Motion. v1.2.1 injected a <style> element from shared.js for these; ARCH-05 makes a value Tailwind cannot
      * express a token rather than a loose rule. The curve and the 400px are v1.2.1's own.
      */

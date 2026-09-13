@@ -4,8 +4,8 @@
  * Carried over verbatim as content: the four items, their icons, their order, the class strings for the active and
  * inactive states, the "Go to <label>" accessible name, aria-current on the active item, the filled icon on the
  * active item, and the style block the imperative version injected for #bottomNav (the upward shadow, and above the
- * md breakpoint a centred bar capped at 430 px with rounded top corners), expressed here as utility classes instead
- * of an injected <style> element.
+ * md breakpoint a centred bar with rounded top corners), expressed here as utility classes instead of an injected
+ * <style> element.
  *
  * What disappears: the href column and the click handler. v1.2.1 asked the main process to load a different HTML
  * file; here each item is a NavLink to one of the paths in lib/routes.ts, and the active state comes from NavLink's
@@ -14,7 +14,8 @@
  * Each state's classes are written out in full rather than joined from fragments at render time: a class name that
  * only exists after a concatenation is a class name Tailwind's scanner never saw, and it emits no CSS for it (C3).
  *
- * The 430 px cap does not match AppShell's 448 px. See AppShell.tsx - that is SPA-02's and Phase 10's.
+ * The one thing not carried verbatim is the width: v1.2.1 capped this bar at 430 px while the shell above it was
+ * 448 px. Both are max-w-app now - one token, one width (SPA-02).
  */
 
 import type { ReactElement } from 'react';
@@ -37,7 +38,7 @@ const NAV_ITEMS: readonly NavItem[] = [
 const NAV_CLASS =
     'fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-surface-dark border-t border-slate-200 dark:border-slate-800 ' +
     'shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1),0_-2px_4px_-1px_rgba(0,0,0,0.06)] ' +
-    'md:left-1/2 md:-translate-x-1/2 md:max-w-[430px] md:rounded-t-[24px]';
+    'md:left-1/2 md:-translate-x-1/2 md:max-w-app md:rounded-t-[24px]';
 
 const LINK_CLASS: Record<'active' | 'inactive', string> = {
     active: 'flex items-end justify-center text-center mx-auto px-4 pt-2 w-full transition-colors duration-200 text-primary',
@@ -60,7 +61,7 @@ const stateOf = (isActive: boolean): 'active' | 'inactive' => (isActive ? 'activ
 export default function BottomNav(): ReactElement {
     return (
         <nav className={NAV_CLASS}>
-            <div className="max-w-md mx-auto px-7">
+            <div className="max-w-app mx-auto px-7">
                 <div className="flex">
                     {NAV_ITEMS.map((item) => (
                         <div key={item.to} className="flex-1 group">
