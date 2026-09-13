@@ -22,6 +22,12 @@
     </head>
     <body>
         <div id="root"></div>
+        <!--
+            Where components/ui/Modal renders. After #root on purpose: v1.2.1 appended its bottom navigation and
+            then each modal to document.body, so a modal painted over the bar at the same z-index. DOM order settles
+            that here too, rather than a z-index race between two components that do not know about each other.
+        -->
+        <div id="modal-root"></div>
         <script type="module" src="/src/app/main.tsx"></script>
     </body>
 </html>

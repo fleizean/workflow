@@ -3,7 +3,9 @@
  * stack. v1.2.1 rebuilt all of it on every page load; here it mounts once and the route changes underneath it.
  *
  * AlertDialog is mounted here, once: it draws whatever useUiStore.openDialog was last asked for, so a screen
- * asks a question by calling the store rather than by building an overlay of its own (criterion 5).
+ * asks a question by calling the store rather than by building an overlay of its own (criterion 5). What it draws
+ * does not land here - Modal portals into #modal-root, outside this shell, so a dialog paints over the bottom
+ * navigation the way v1.2.1's did. The id below is what Modal marks inert while one is open (WR-05).
  *
  * The colour and font classes are the ones v1.2.1 put on <body>. src/renderer/index.html's body is left bare, so
  * the shell is where the dark background and the light text live.
@@ -31,7 +33,7 @@ const CONTENT_CLASS = 'flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit
 
 export default function AppShell(): ReactElement {
     return (
-        <div className={SHELL_CLASS}>
+        <div id="app-shell" className={SHELL_CLASS}>
             <TitleBar />
             <main className={CONTENT_CLASS}>
                 <Outlet />

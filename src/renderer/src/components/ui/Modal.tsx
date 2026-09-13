@@ -6,7 +6,28 @@
  */
 
 import { useCallback, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
+
+/*
+ * Where a dialog is drawn, and why it is not drawn where it was opened.
+ *
+ * v1.2.1 appended the bottom navigation to document.body at script load (legacy/renderer/bottom-nav.js:77) and every
+ * modal to document.body at open time (legacy/pages/work-history.html:277, 299, 396, 812, 869, 1093, 1200, 1265).
+ * Same z-50, appended later, so a modal painted over the bar. Rendered inside a screen instead, the overlay sits
+ * BEFORE <BottomNav/> in AppShell and loses the tie - the nav paints bright and undimmed over the panel, and can be
+ * clicked through it. The shared AlertDialog happened to win because it is mounted after the nav, so some dialogs
+ * were above the bar and some below: the inconsistency was the bug reporting itself.
+ *
+ * A portal restores v1.2.1's order for every caller at once, and it is an order rather than a z-index race between
+ * two components that do not know about each other. It also takes the panel out of AppShell's overflow-hidden and
+ * out of the content area's scroll box, which were constraining its height.
+ */
+const PORTAL_ID = 'modal-root';
+/** AppShell's root. Everything outside the dialog, which is what aria-modal below claims is inert. */
+const SHELL_ID = 'app-shell';
+/** Module-level: how many Modals are mounted, so the inner one closing does not wake the shell up. */
+let openModals = 0;
 
 const OVERLAY_CLASS = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6';
 /*
@@ -85,9 +106,28 @@ export default function Modal({ labelledBy, onDismiss, header, children }: Modal
             }
         };
 
+        /*
+         * WR-05 clause 3, which the Phase 7 verifier left open: aria-modal="true" claims everything outside this
+         * panel is inert, and until now only the keyboard was held to it. The shell really is inert while a dialog
+         * is open, which is also what stops the bottom navigation being clicked THROUGH the overlay and changing
+         * route with the dialog still mounted - a page-opened form vanished with its screen, silently, taking
+         * whatever had been typed into it.
+         *
+         * Counted rather than flagged, so a dialog opened over a dialog does not un-inert the shell when the inner
+         * one closes; and StrictMode's mount/unmount/mount in development nets out at one.
+         */
+        const shell = document.getElementById(SHELL_ID);
+        openModals += 1;
+        shell?.setAttribute('inert', '');
+
         document.addEventListener('keydown', onKeyDown);
         return () => {
             document.removeEventListener('keydown', onKeyDown);
+            openModals -= 1;
+            if (openModals === 0) {
+                // Before the focus below: focus cannot land inside an inert subtree.
+                shell?.removeAttribute('inert');
+            }
             opener?.focus();
         };
     }, [onDismiss, focusable]);
@@ -100,7 +140,7 @@ export default function Modal({ labelledBy, onDismiss, header, children }: Modal
         }
     };
 
-    return (
+    return createPortal(
         <div className={OVERLAY_CLASS} onMouseDown={onBackdrop}>
             <div
                 ref={panel}
@@ -112,6 +152,8 @@ export default function Modal({ labelledBy, onDismiss, header, children }: Modal
                 {header === undefined ? null : <div className="shrink-0">{header}</div>}
                 <div className={BODY_CLASS}>{children}</div>
             </div>
-        </div>
+        </div>,
+        // The container is declared in index.html after #root, so DOM order settles the tie with no z-index to tune.
+        document.getElementById(PORTAL_ID) ?? document.body
     );
 }

@@ -504,6 +504,53 @@ describe('criterion 5: one Modal, one Toast, one alert, one width', () => {
         expect(offenders, 'a native dialog blocks the renderer and looks nothing like the app').toEqual([]);
     });
 
+    /*
+     * Stacking, decided by DOM order rather than by a z-index race.
+     *
+     * BottomNav is `fixed bottom-0 z-50` and the overlay is `fixed inset-0 z-50`, so at equal z-index the later
+     * element in the document wins. A modal rendered inside a screen sits before <BottomNav/> in AppShell and
+     * loses: the bar paints bright and undimmed over the panel, and can be CLICKED THROUGH it, changing route with
+     * the dialog still mounted and taking an unsaved form with it. The shared AlertDialog happened to win because
+     * it is mounted after the nav - some dialogs above the bar, some below.
+     *
+     * v1.2.1 appended the nav to document.body and then each modal to document.body, so every modal painted over
+     * the bar. The portal is that order, restored once for every caller.
+     */
+    it('renders the overlay into the document root, not into the screen that opened it', () => {
+        expect(codeOf(MODAL), MODAL + ' no longer portals, so a screen-opened dialog is back under the nav bar')
+            .toContain('createPortal');
+
+        const BOOTSTRAP = path.posix.join(SRC, 'app/main.tsx');
+        const others = rendererSources()
+            .filter((file) => file !== MODAL && file !== BOOTSTRAP)
+            .filter((file) => /\bcreatePortal\b/.test(codeOf(file)) ||
+                literalsOf(file).some((value) => /^react-dom(\/|$)/.test(value)));
+        expect(
+            others,
+            'a second portal is a second stacking context nobody has ordered against the first (criterion 5)'
+        ).toEqual([]);
+    });
+
+    it('declares the portal container after #root, so DOM order settles the tie', () => {
+        const entry = read(ENTRY);
+        const root = entry.indexOf('id="root"');
+        const portal = entry.indexOf('id="modal-root"');
+        expect(portal, ENTRY + ' has no #modal-root for Modal to render into').toBeGreaterThan(-1);
+        expect(portal, 'the portal container is declared before #root, so the app paints over its own dialogs')
+            .toBeGreaterThan(root);
+    });
+
+    /*
+     * WR-05 clause 3, left open by the Phase 7 verifier: aria-modal="true" was a claim about the document that
+     * only the keyboard was held to. The shell is inert while a dialog is open, which is also what stops the click
+     * through the overlay onto the navigation.
+     */
+    it('marks the shell inert while a dialog is open, so aria-modal is true of more than the keyboard', () => {
+        expect(literalsOf(SHELL), 'AppShell no longer carries the id Modal marks inert').toContain('app-shell');
+        expect(literalsOf(MODAL), MODAL + ' no longer names the shell it makes inert').toContain('app-shell');
+        expect(literalsOf(MODAL), MODAL + ' no longer sets inert on anything').toContain('inert');
+    });
+
     it('bounds that modal by the window and lets it scroll inside it (SPA-03)', () => {
         const classes = literalsOf(MODAL).join(' ');
         expect(classes, 'a dialog taller than the window puts its own buttons out of reach').toContain('max-h-full');
