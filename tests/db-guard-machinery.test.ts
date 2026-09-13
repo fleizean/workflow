@@ -214,7 +214,8 @@ describe('D-25: the six negative controls', () => {
 describe('D-20: the rest of the forbidden list is rejected statically', () => {
     it.each([
         ['CREATE VIEW', 'CREATE VIEW recent AS SELECT * FROM work_sessions'],
-        ['ALTER ... DROP COLUMN', 'ALTER TABLE companies DROP COLUMN note_column'],
+        // note_required, not note_column: the two sheets columns are the one exception, proven below.
+        ['ALTER ... DROP COLUMN', 'ALTER TABLE companies DROP COLUMN note_required'],
         ['UPDATE of a v1.2.1 table', "UPDATE settings SET value = '1' WHERE key = 'daily_target'"],
         ['DELETE of a v1.2.1 table', 'DELETE FROM work_sessions WHERE id = 1'],
         ['INSERT into a v1.2.1 table', "INSERT INTO settings (key, value) VALUES ('a', 'b')"]
@@ -260,6 +261,107 @@ describe('D-20: the allowed shapes are not over-rejected', () => {
     it('classifies a new CREATE TABLE by name and refuses one that already exists', () => {
         expect(classifyStatement('CREATE TABLE app_state (key TEXT)', ctx).allowed).toBe(true);
         expect(classifyStatement('CREATE TABLE companies (id INTEGER)', ctx).allowed).toBe(false);
+    });
+});
+
+// A v1.2.1 database whose sheets columns and settings rows are filled in, as a real user's would be.
+function v121WithSheetsData(tag: string): string {
+    const dbPath = v121Database(tag);
+    const db = openDatabase(dbPath);
+    try {
+        db.prepare("INSERT INTO companies (name, excel_column, note_column, note_required) VALUES ('Acme', 'B', 'C', 1)")
+            .run();
+        db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('script_url', 'https://example.invalid/exec')")
+            .run();
+    } finally {
+        closeDatabase(db);
+    }
+    return dbPath;
+}
+
+const DROPS = [
+    'ALTER TABLE companies DROP COLUMN excel_column',
+    'ALTER TABLE companies DROP COLUMN note_column'
+];
+
+const DELETES = [
+    "DELETE FROM settings WHERE key = 'export_half_hour_precision'",
+    "DELETE FROM settings WHERE key = 'script_url'"
+];
+
+describe('V2-SCHEMA-01: the retirement exception is exactly as wide as the four names it spells', () => {
+    it.each([...DROPS, ...DELETES])('allows %s', (sql) => {
+        expect(staticViolations(sql)).toEqual([]);
+    });
+
+    it('allows the same drops written the way drizzle-kit emits them, and without the COLUMN keyword', () => {
+        expect(staticViolations('ALTER TABLE `companies` DROP COLUMN `excel_column`;')).toEqual([]);
+        expect(staticViolations('ALTER TABLE companies DROP excel_column')).toEqual([]);
+    });
+
+    it.each([
+        ['another column on the same table', 'ALTER TABLE companies DROP COLUMN note_required'],
+        ['the primary key of the same table', 'ALTER TABLE companies DROP COLUMN id'],
+        ['a same-named column on another table', 'ALTER TABLE work_sessions DROP COLUMN excel_column'],
+        ['a table', 'DROP TABLE companies'],
+        ['an index', 'DROP INDEX work_sessions_date_idx'],
+        ['a whole column list', 'ALTER TABLE companies DROP COLUMN excel_column, note_column'],
+        ['a drop with anything after it', 'ALTER TABLE companies DROP COLUMN excel_column RESTRICT'],
+        ['a drop with anything before it', 'ALTER TABLE main.companies DROP COLUMN excel_column']
+    ])('still refuses dropping %s', (_label, sql) => {
+        expect(staticViolations(sql).length, sql).toBeGreaterThan(0);
+    });
+
+    it.each([
+        ['another settings row', "DELETE FROM settings WHERE key = 'daily_target'"],
+        ['every settings row', 'DELETE FROM settings'],
+        ['rows of another table', "DELETE FROM work_sessions WHERE name = 'x'"],
+        ['a retired key by a list', "DELETE FROM settings WHERE key IN ('script_url')"],
+        ['a retired key by a pattern', "DELETE FROM settings WHERE key LIKE 'script_url'"],
+        ['a retired key beside another', "DELETE FROM settings WHERE key = 'script_url' OR key = 'daily_target'"],
+        ['a retired key by a different column', "DELETE FROM settings WHERE value = 'script_url'"]
+    ])('still refuses deleting %s', (_label, sql) => {
+        expect(staticViolations(sql).length, sql).toBeGreaterThan(0);
+    });
+
+    it('takes each retirement statement as an additive delta over a database that holds the data', () => {
+        const dbPath = v121WithSheetsData('retire');
+        for (const sql of [...DROPS, ...DELETES]) {
+            expect(applyOne(dbPath, sql), sql).toEqual({ violations: [], threw: null });
+        }
+    });
+
+    it('refuses a drop of a column the retirement does not name, in the delta as well as statically', () => {
+        const applied = applyOne(v121WithSheetsData('drop-other'), 'ALTER TABLE companies DROP COLUMN note_required');
+        expect(applied.threw, 'SQLite accepted the ALTER, so the delta is the layer under test').toBeNull();
+        expect(applied.violations.length).toBeGreaterThan(0);
+    });
+
+    it('refuses a delete of a settings row the retirement does not name, in the delta as well', () => {
+        const applied = applyOne(v121WithSheetsData('delete-other'), "DELETE FROM settings WHERE key = 'daily_target'");
+        expect(applied.threw).toBeNull();
+        expect(applied.violations).toContain('the content of a v1.2.1 table changed');
+    });
+
+    it('refuses a retirement that also changes a row it leaves behind', () => {
+        const violations = applyAll(v121WithSheetsData('retire-plus'), [
+            ...DROPS,
+            "UPDATE companies SET name = 'Renamed' WHERE name = 'Acme'"
+        ]);
+        expect(violations, 'the surviving columns must still be compared across the drop')
+            .toContain('the content of a v1.2.1 table changed');
+    });
+
+    it('refuses a rebuild that removes the retired columns by recreating the table', () => {
+        const violations = applyAll(v121WithSheetsData('retire-rebuild'), [
+            'CREATE TABLE __new_companies (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, ' +
+                'created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, ' +
+                'note_required INTEGER DEFAULT 0)',
+            'INSERT INTO __new_companies SELECT id, name, created_at, updated_at, note_required FROM companies',
+            'DROP TABLE companies',
+            'ALTER TABLE __new_companies RENAME TO companies'
+        ]);
+        expect(violations.length, 'the retirement is a DROP COLUMN, never a table rebuild').toBeGreaterThan(0);
     });
 });
 

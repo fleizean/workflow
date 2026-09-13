@@ -8,6 +8,20 @@ import { V121_INIT } from './v121-sql';
 
 export const V121_TABLES: readonly string[] = ['companies', 'work_sessions', 'settings', 'pomodoro_sessions'];
 
+/*
+ * V2-SCHEMA-01: the single exception to D-20, spelled by name rather than by shape. The Google Sheets export left
+ * the app on 2026-09-11, and migration 0002 takes its four remnants out of the database. Nothing else widens with
+ * it: every other DROP - of a column, a table or an index - is refused as before, and so is a DELETE of any row
+ * but these two keys.
+ */
+export const RETIRED_COLUMNS: readonly string[] = ['companies.excel_column', 'companies.note_column'];
+export const RETIRED_SETTINGS: readonly string[] = ['export_half_hour_precision', 'script_url'];
+
+const SETTINGS_TABLE = 'settings';
+
+const isRetiredColumn = (table: string, column: string): boolean =>
+    RETIRED_COLUMNS.includes(table.toLowerCase() + '.' + column.toLowerCase());
+
 export interface GuardContext {
     readonly v121Tables: readonly string[];
     readonly milestoneTables: readonly string[];
@@ -132,7 +146,57 @@ const sameName = (a: string, b: string): boolean => a.toLowerCase() === b.toLowe
 const inList = (list: readonly string[], name: string | null): boolean =>
     name !== null && list.some((entry) => sameName(entry, name));
 
-export type StatementKind = 'create-table' | 'create-index' | 'add-column' | 'insert' | 'other';
+// Tokens that carry meaning: a trailing statement terminator is not one.
+const significant = (tokens: readonly Token[]): Token[] =>
+    tokens.filter((token) => !(token.kind === 'punct' && token.value === ';'));
+
+// The text of a name, however it was written: `companies`, "companies" and companies all read the same.
+const nameOf = (token: Token | undefined): string | null => {
+    if (token === undefined) return null;
+    if (token.kind === 'ident') return token.value;
+    return token.kind === 'word' ? token.raw : null;
+};
+
+/*
+ * ALTER TABLE <table> DROP [COLUMN] <column>, and nothing else at all: exactly five or six name tokens, no
+ * punctuation, both names on RETIRED_COLUMNS. Anything longer, or carrying a comma, a predicate or a second
+ * column, falls through to the DROP refusal below.
+ */
+function retiredColumnDrop(tokens: readonly Token[]): string | null {
+    const rest = significant(tokens);
+    if (rest.some((token) => token.kind !== 'word' && token.kind !== 'ident')) return null;
+    const spelledColumn = rest[4]?.kind === 'word' && rest[4].value === 'COLUMN';
+    if (rest.length !== (spelledColumn ? 6 : 5)) return null;
+    if (rest[0]?.value !== 'ALTER' || rest[1]?.value !== 'TABLE' || rest[3]?.value !== 'DROP') return null;
+    if (rest[0].kind !== 'word' || rest[1].kind !== 'word' || rest[3].kind !== 'word') return null;
+    const table = nameOf(rest[2]);
+    const column = nameOf(rest[spelledColumn ? 5 : 4]);
+    if (table === null || column === null || !isRetiredColumn(table, column)) return null;
+    return table.toLowerCase() + '.' + column.toLowerCase();
+}
+
+/*
+ * DELETE FROM settings WHERE key = '<retired key>', one key per statement: exactly seven tokens, the table and
+ * the column fixed, the predicate a single equality against a literal on RETIRED_SETTINGS. An IN list, an OR, a
+ * LIKE or any other table does not match, and DELETE has no other allowed form.
+ */
+function retiredSettingDelete(tokens: readonly Token[]): string | null {
+    const rest = significant(tokens);
+    if (rest.length !== 7) return null;
+    const word = (token: Token | undefined, value: string): boolean => token?.kind === 'word' && token.value === value;
+    if (!word(rest[0], 'DELETE') || !word(rest[1], 'FROM') || !word(rest[3], 'WHERE')) return null;
+    if (nameOf(rest[2])?.toLowerCase() !== SETTINGS_TABLE) return null;
+    if (nameOf(rest[4])?.toLowerCase() !== 'key') return null;
+    if (!(rest[5]?.kind === 'punct' && rest[5].value === '=')) return null;
+    const literal = rest[6];
+    if (literal?.kind !== 'string' || !RETIRED_SETTINGS.includes(literal.value)) return null;
+    return literal.value;
+}
+
+export type StatementKind =
+    | 'create-table' | 'create-index' | 'add-column' | 'insert'
+    | 'drop-retired-column' | 'delete-retired-setting'
+    | 'other';
 
 export interface Classification {
     readonly allowed: boolean;
@@ -154,6 +218,17 @@ export function classifyStatement(sql: string, ctx: GuardContext): Classificatio
 
     if (tokens.length === 0) {
         return reject('other', 'an empty statement');
+    }
+
+    // V2-SCHEMA-01, before the refusals below: the two named drops and the two named deletes, and only in the
+    // exact shapes above. Everything the matchers do not recognise reaches the same rules it always did.
+    const droppedColumn = retiredColumnDrop(tokens);
+    if (droppedColumn !== null) {
+        return accept('drop-retired-column', droppedColumn);
+    }
+    const deletedSetting = retiredSettingDelete(tokens);
+    if (deletedSetting !== null) {
+        return accept('delete-retired-setting', deletedSetting);
     }
 
     // A forbidden word as a KEYWORD only: the tokenizer already dropped comments and kept strings and
@@ -318,6 +393,21 @@ export interface SchemaSnapshot {
     readonly columns: Readonly<Record<string, readonly ColumnInfo[]>>;
     readonly indexes: Readonly<Record<string, readonly IndexInfo[]>>;
     readonly digests: Readonly<Record<string, string>>;
+    /** The same digest over the projection the sheets retirement leaves behind, so what survives it is comparable. */
+    readonly retirementDigests: Readonly<Record<string, string>>;
+    /** What RETIRED_COLUMNS and RETIRED_SETTINGS name that this table still holds: columns for one, keys for the other. */
+    readonly retired: Readonly<Record<string, readonly string[]>>;
+}
+
+// A row with everything the retirement removes taken out; null when the row IS one of the retired settings.
+function retirementProjection(table: string, row: Record<string, unknown>): Record<string, unknown> | null {
+    if (table === SETTINGS_TABLE && typeof row.key === 'string' && RETIRED_SETTINGS.includes(row.key)) return null;
+    const kept: Record<string, unknown> = {};
+    for (const [column, value] of Object.entries(row)) {
+        if (isRetiredColumn(table, column)) continue;
+        kept[column] = value;
+    }
+    return kept;
 }
 
 export function snapshotSchema(db: DatabaseType.Database): SchemaSnapshot {
@@ -338,21 +428,37 @@ export function snapshotSchema(db: DatabaseType.Database): SchemaSnapshot {
     }
 
     const digests: Record<string, string> = {};
+    const retirementDigests: Record<string, string> = {};
+    const retired: Record<string, string[]> = {};
     for (const table of V121_TABLES) {
+        const stillThere: string[] = [];
+        retired[table] = stillThere;
         if (!tables.includes(table)) {
             digests[table] = 'absent';
+            retirementDigests[table] = 'absent';
             continue;
         }
-        const hash = createHash('sha256');
+        for (const column of columns[table] ?? []) {
+            if (isRetiredColumn(table, column.name)) stillThere.push(column.name);
+        }
+        const whole = createHash('sha256');
+        const surviving = createHash('sha256');
         // `table` is one of V121_TABLES, a module constant, never caller input (T-01-35).
         const rows = db.prepare<[], Record<string, unknown>>('SELECT * FROM "' + table + '" ORDER BY rowid').iterate();
         for (const row of rows) {
-            hash.update(JSON.stringify(row));
+            whole.update(JSON.stringify(row));
+            const kept = retirementProjection(table, row);
+            if (kept === null) {
+                stillThere.push(String(row.key));
+                continue;
+            }
+            surviving.update(JSON.stringify(kept));
         }
-        digests[table] = hash.digest('hex');
+        digests[table] = whole.digest('hex');
+        retirementDigests[table] = surviving.digest('hex');
     }
 
-    return { objects, columns, indexes, digests };
+    return { objects, columns, indexes, digests, retirementDigests, retired };
 }
 
 export interface DeltaViolation {
@@ -365,6 +471,32 @@ function tableOfIndex(snapshot: SchemaSnapshot, indexName: string): string | nul
         if (list.some((entry) => entry.name === indexName)) return table;
     }
     return null;
+}
+
+const sameColumn = (a: ColumnInfo, b: ColumnInfo | undefined): boolean =>
+    b !== undefined && a.name === b.name && a.type === b.type && a.notnull === b.notnull &&
+    a.dflt_value === b.dflt_value && a.pk === b.pk;
+
+// V2-SCHEMA-01: true only when a table lost columns RETIRED_COLUMNS names and every survivor kept its place, its
+// type, its nullability, its default and its key role. A rebuild that also retyped or reordered a column fails here.
+function onlyRetiredColumnsRemoved(before: SchemaSnapshot, after: SchemaSnapshot, table: string): boolean {
+    const had = before.columns[table];
+    const has = after.columns[table];
+    if (had === undefined || has === undefined) return false;
+    const gone = had.filter((column) => !has.some((kept) => kept.name === column.name));
+    if (gone.length === 0 || !gone.every((column) => isRetiredColumn(table, column.name))) return false;
+    const survivors = had.filter((column) => !gone.includes(column));
+    return survivors.length === has.length && survivors.every((column, index) => sameColumn(column, has[index]));
+}
+
+// V2-SCHEMA-01: the content moved, and the retirement is the whole of why. It must have taken something it names
+// out - so a table that lost nothing retired cannot use this door - taken nothing it does not name, and left every
+// row and column that survives its projection byte-identical.
+function retirementExplains(before: SchemaSnapshot, after: SchemaSnapshot, table: string): boolean {
+    if (before.retirementDigests[table] !== after.retirementDigests[table]) return false;
+    const had = before.retired[table] ?? [];
+    const left = after.retired[table] ?? [];
+    return had.length > left.length && left.every((name) => had.includes(name));
 }
 
 // Accepts only D-20's deltas, so a rebuild is caught however it is spelled (the sql or the rootpage moves).
@@ -383,7 +515,7 @@ export function checkAllowedDelta(
             violations.push({ rule: 'an object disappeared', object: name });
             continue;
         }
-        if (now.sql !== object.sql) {
+        if (now.sql !== object.sql && !onlyRetiredColumnsRemoved(before, after, name)) {
             violations.push({ rule: 'an object definition changed', object: name });
         }
         if (now.rootpage !== object.rootpage) {
@@ -426,9 +558,9 @@ export function checkAllowedDelta(
     }
 
     for (const table of ctx.v121Tables) {
-        if (before.digests[table] !== after.digests[table]) {
-            violations.push({ rule: 'the content of a v1.2.1 table changed', object: table });
-        }
+        if (before.digests[table] === after.digests[table]) continue;
+        if (retirementExplains(before, after, table)) continue;
+        violations.push({ rule: 'the content of a v1.2.1 table changed', object: table });
     }
 
     return violations;
