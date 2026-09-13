@@ -1,11 +1,13 @@
-// ARCH-02/ARCH-03/ARCH-05 and SPA-01, read off the renderer tree itself. The lint rules that enforce the same
-// directions arrive with slice F; these are the shape assertions, which lint cannot make.
+// ARCH-02/ARCH-03/ARCH-05 and SPA-01, read off the renderer tree itself. Lint enforces the same directions on any
+// file that could be written (tests/lint-coverage.test.ts); these are the claims about the tree as it stands, which
+// lint has no way to make - that a route table exists, that something calls the facade, that a specifier resolves
+// inside the feature that wrote it.
 
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { read, repoRoot, stripCommentsAndStrings } from './helpers/ts-imports';
+import { read, readAliases, repoRoot, resolveModuleFile, stripCommentsAndStrings } from './helpers/ts-imports';
 
 const RENDERER = 'src/renderer';
 const SRC = 'src/renderer/src';
@@ -136,23 +138,39 @@ describe('ARCH-03: one direction of flow, asserted on the source', () => {
         ).toEqual([]);
     });
 
-    it('imports another feature only through its index.ts', () => {
+    /*
+     * Resolved, not matched. Lint refuses `@renderer/features/<other>/...`, which is how a cross-feature import is
+     * actually written - but from inside features/shell/api the same file is `../../timer/state/timer.store`, and
+     * no import-path pattern can see that one. Resolving each specifier to a repository path closes the gap that
+     * lint structurally cannot.
+     */
+    it('imports another feature only through its index.ts, whatever the specifier looks like', () => {
+        const aliases = readAliases('electron.vite.config.ts', ['renderer', 'resolve', 'alias']);
+        const featureOf = (file: string): string | undefined =>
+            /^src\/renderer\/src\/features\/([^/]+)/.exec(file)?.[1];
+
         const offenders: string[] = [];
+        let resolved = 0;
         for (const file of rendererSources()) {
-            const own = /^features\/([^/]+)/.exec(areaOf(file))?.[1];
+            const own = featureOf(file);
             for (const value of literalsOf(file)) {
-                const match = /^@renderer\/features\/(.+)$/.exec(value);
-                if (match === null) {
+                const target = resolveModuleFile(file, value, aliases);
+                if (target === undefined) {
                     continue;
                 }
-                const target = match[1] ?? '';
-                const feature = target.split('/')[0] ?? '';
-                if (feature !== own && target !== feature) {
-                    offenders.push(file + ' -> @renderer/features/' + target);
+                resolved += 1;
+                const targetFeature = featureOf(target);
+                if (targetFeature === undefined || targetFeature === own) {
+                    continue;
+                }
+                const surface = 'src/renderer/src/features/' + targetFeature + '/index.ts';
+                if (target !== surface) {
+                    offenders.push(file + ' -> ' + target);
                 }
             }
         }
-        expect(offenders, 'a feature is reached past its public surface').toEqual([]);
+        expect(resolved, 'no specifier resolved to a file, so this scan proves nothing').toBeGreaterThan(10);
+        expect(offenders, 'a feature is reached past its public surface (ARCH-03)').toEqual([]);
     });
 
     it('imports nothing from the retired v1.2.1 tree', () => {

@@ -931,6 +931,163 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
     }, 60_000);
 });
 
+/*
+ * ARCH-03 / criterion 7: the renderer's direction of flow, probed as code.
+ *
+ * tests/renderer-structure.test.ts asserts the same directions against the tree, and that is not duplication - it
+ * is the difference between "no file does this today" and "a file that does this fails". The tree scan cannot say
+ * anything about a file nobody has written yet; lint can, and lint is what the criterion asks for.
+ *
+ * Every ban below is probed twice over: refused where ARCH-03 refuses it, and allowed in the one area ARCH-03
+ * makes its home. An allowlist checked in only one direction is how a rule ends up applying nowhere.
+ */
+describe('ARCH-03: lint proves the direction of the renderer', () => {
+    const COMPONENT_FILE = 'src/renderer/src/components/ui/Modal.tsx';
+    const API_FILE = 'src/renderer/src/features/history/api/useSessions.ts';
+    const PROVIDER_FILE = 'src/renderer/src/app/providers/DataSyncProvider.tsx';
+    const STORE_FILE = 'src/renderer/src/store/ui.store.ts';
+    const FEATURE_STATE_FILE = 'src/renderer/src/features/timer/state/timer.store.ts';
+    const FACADE_FILE = 'src/renderer/src/lib/ipc.ts';
+
+    // Two bans the renderer already carried before ARCH-03; a lift must not take them with it (D-11).
+    const ZOD_TYPE_ONLY_TEXT = 'zod is value-imported only in src/shared/schemas';
+    const DRIZZLE_TOOLING_TEXT = 'drizzle-kit and the drizzle migrators are authoring tooling';
+
+    const FACADE_TAG = 'lib/ipc.ts and called from features/<domain>/api or app/providers';
+    const QUERY_TAG = 'Server state lives in a features/<domain>/api hook';
+    const STORE_TAG = 'A Zustand store is either global UI state';
+    const FEATURE_TAG = 'Import a feature through its index.ts';
+    const STORAGE_TAG = 'Anything durable is a row in the database (ARCH-03).';
+    const BRIDGE_TAG = 'Reach the preload bridge through invoke() or subscribe()';
+
+    const says = (fragment: string) => (m: Linter.LintMessage): boolean => m.message.includes(fragment);
+
+    const FACADE_IMPORTS = [
+        'import { invoke } from \'@renderer/lib/ipc\';',
+        'import { subscribe } from \'../../lib/ipc\';',
+        'import { API_BRIDGE_KEY } from \'@shared/constants/bridge\';'
+    ];
+    const QUERY_IMPORTS = [
+        'import { useQuery } from \'@tanstack/react-query\';',
+        'import { QueryClient } from \'@tanstack/react-query/build/modern/queryClient\';'
+    ];
+    const STORE_IMPORTS = ['import { create } from \'zustand\';'];
+    const DEEP_FEATURE_IMPORTS = [
+        'import { useSessions } from \'@renderer/features/history/api/useSessions\';',
+        'import { useTimerStore } from \'../../features/timer/state/timer.store\';'
+    ];
+    const PUBLIC_IMPORTS = [
+        'import { useSessions } from \'@renderer/features/history\';',
+        'import { routes } from \'@renderer/lib/routes\';'
+    ];
+
+    it('refuses the IPC facade outside features/<domain>/api and app/providers', async () => {
+        const { missed } = await probe(COMPONENT_FILE, [], FACADE_IMPORTS, [], says(FACADE_TAG));
+        expect(missed, 'a component reached the bridge without going through a hook').toEqual([]);
+
+        for (const file of [API_FILE, PROVIDER_FILE]) {
+            // The bridge key stays refused even here: only the facade itself may name it.
+            const { flagged } = await probe(file, [], [], FACADE_IMPORTS.slice(0, 2), says(FACADE_TAG));
+            expect(flagged, file + ' may call the facade and was refused').toEqual([]);
+        }
+
+        const facade = await probe(FACADE_FILE, [], [], [FACADE_IMPORTS[2] ?? ''], says(FACADE_TAG));
+        expect(facade.flagged, FACADE_FILE + ' is the facade; it is the one file that may name the bridge key')
+            .toEqual([]);
+    }, 60_000);
+
+    it('refuses web storage anywhere in the renderer', async () => {
+        const banned = [
+            'void localStorage.getItem(\'timer\');',
+            'void sessionStorage;',
+            'void window.localStorage;',
+            'void globalThis.sessionStorage;',
+            'void self.localStorage;'
+        ];
+        const { missed } = await probe(COMPONENT_FILE, [], banned, [], says(STORAGE_TAG));
+        expect(missed, 'renderer code reached a web store, which main cannot read').toEqual([]);
+    }, 60_000);
+
+    it('refuses naming the bridge on the global object', async () => {
+        const banned = ['void window.api;', 'void globalThis[\'api\'];', 'void self.api;'];
+        const { missed } = await probe(COMPONENT_FILE, [], banned, [], says(BRIDGE_TAG));
+        expect(missed, 'a file reached window.api directly instead of through the facade').toEqual([]);
+    }, 60_000);
+
+    it('refuses reaching past a feature index.ts, from every area including the ones with lifts', async () => {
+        for (const file of [COMPONENT_FILE, API_FILE, PROVIDER_FILE, STORE_FILE, FACADE_FILE]) {
+            const { missed, flagged } = await probe(file, [], DEEP_FEATURE_IMPORTS, PUBLIC_IMPORTS, says(FEATURE_TAG));
+            expect(missed, file + ' reached inside another feature').toEqual([]);
+            expect(flagged, file + ': importing a feature index was refused').toEqual([]);
+        }
+    }, 60_000);
+
+    it('keeps server state in api/ and app/providers, and out of everything else', async () => {
+        for (const file of [COMPONENT_FILE, STORE_FILE, FEATURE_STATE_FILE]) {
+            const { missed } = await probe(file, [], QUERY_IMPORTS, [], says(QUERY_TAG));
+            expect(missed, file + ' holds server state').toEqual([]);
+        }
+        // A type import is not a subscription; a page may still name UseQueryResult.
+        const { flagged } = await probe(
+            COMPONENT_FILE, [], [], ['import type { UseQueryResult } from \'@tanstack/react-query\';'], says(QUERY_TAG)
+        );
+        expect(flagged, 'a type-only import of the query types was refused').toEqual([]);
+
+        for (const file of [API_FILE, PROVIDER_FILE, ...['src/renderer/src/lib/query-client.ts',
+            'src/renderer/src/lib/data-sync.ts']]) {
+            const allowed = await probe(file, [], [], [QUERY_IMPORTS[0] ?? ''], says(QUERY_TAG));
+            expect(allowed.flagged, file + ' may hold a query and was refused').toEqual([]);
+        }
+    }, 60_000);
+
+    it('keeps a Zustand store in store/ or in a feature state/ folder', async () => {
+        for (const file of [COMPONENT_FILE, API_FILE, PROVIDER_FILE, FACADE_FILE]) {
+            const { missed } = await probe(file, [], STORE_IMPORTS, [], says(STORE_TAG));
+            expect(missed, file + ' declares a store outside the two places state may live').toEqual([]);
+        }
+        for (const file of [STORE_FILE, FEATURE_STATE_FILE]) {
+            const { flagged } = await probe(file, [], [], STORE_IMPORTS, says(STORE_TAG));
+            expect(flagged, file + ' is a home for state and was refused').toEqual([]);
+        }
+    }, 60_000);
+
+    it('keeps every ban that is not being lifted, in each area that lifts one', async () => {
+        const RULE = '@typescript-eslint/no-restricted-imports';
+        const cases: [string, string[]][] = [
+            // file, the tags that must still be present after its lift
+            [FACADE_FILE, [QUERY_TAG, STORE_TAG, FEATURE_TAG]],
+            [API_FILE, [STORE_TAG, FEATURE_TAG]],
+            [PROVIDER_FILE, [STORE_TAG, FEATURE_TAG]],
+            [STORE_FILE, [FACADE_TAG, QUERY_TAG, FEATURE_TAG]],
+            [FEATURE_STATE_FILE, [FACADE_TAG, QUERY_TAG, FEATURE_TAG]],
+            [COMPONENT_FILE, [FACADE_TAG, QUERY_TAG, STORE_TAG, FEATURE_TAG]]
+        ];
+        for (const [file, tags] of cases) {
+            const entry = JSON.stringify(await ruleEntry(file, RULE));
+            for (const tag of [...tags, ZOD_TYPE_ONLY_TEXT, DRIZZLE_TOOLING_TEXT]) {
+                expect(entry.includes(tag), file + ' dropped a ban it does not lift: ' + tag).toBe(true);
+            }
+        }
+    }, 60_000);
+
+    it('applies the ARCH-03 bans to every renderer source file', async () => {
+        const renderer = repositoryFiles()
+            .filter((file) => isUnder(file, 'src/renderer/src') && SOURCE_EXTENSIONS.includes(extensionOf(file)));
+        expect(renderer.length, 'no renderer source files, so this scan proves nothing').toBeGreaterThan(5);
+
+        const offenders: string[] = [];
+        for (const file of renderer) {
+            const entry = JSON.stringify(await ruleEntry(file, '@typescript-eslint/no-restricted-imports'));
+            if (!entry.includes(FEATURE_TAG)) offenders.push(file + ': no cross-feature ban');
+            const syntax = JSON.stringify(await ruleEntry(file, 'no-restricted-syntax'));
+            if (!syntax.includes(BRIDGE_TAG)) offenders.push(file + ': no bridge-access ban');
+            const globals = JSON.stringify(await ruleEntry(file, 'no-restricted-globals'));
+            if (!globals.includes(STORAGE_TAG)) offenders.push(file + ': no web-storage ban');
+        }
+        expect(offenders, 'these renderer files are outside the ARCH-03 blocks in eslint.config.js').toEqual([]);
+    }, 60_000);
+});
+
 describe('known syntactic gaps', () => {
     it.each(KNOWN_GAPS)('inventories $code', async (gap) => {
         const { flagged } = await probe(gap.file, gap.header, [], [gap.code], gap.matches);

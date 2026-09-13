@@ -182,6 +182,86 @@ const CLASS_QUERY_BANS = [
     "CallExpression[callee.property.name='getElementsByClassName']"
 ].map((selector) => ({ selector, message: CLASS_QUERY_MESSAGE }));
 
+/*
+ * ARCH-03, criterion 7: the renderer's direction of flow, as lint rather than as a convention.
+ *
+ * Phase 7 slice A asserted these directions against the source tree, which catches them only where a test thought
+ * to look. Here each one is a rule the linter applies to every renderer file, and each is lifted in exactly the
+ * places ARCH-03 names - so the allowlist is the architecture, written once.
+ */
+const RENDERER_FACADE_MESSAGE = 'The preload bridge is opened in lib/ipc.ts and called from features/<domain>/api or app/providers; everywhere else takes the data from a hook (ARCH-03).';
+const RENDERER_FACADE_PATHS = [{ name: '@shared/constants/bridge', message: RENDERER_FACADE_MESSAGE }];
+const RENDERER_FACADE_PATTERNS = [
+    { regex: '(^|/)lib/ipc$', message: RENDERER_FACADE_MESSAGE },
+    // A sibling inside lib/ reaching the facade directly.
+    { regex: '^\\./ipc$', message: RENDERER_FACADE_MESSAGE }
+];
+
+const RENDERER_QUERY_MESSAGE = 'Server state lives in a features/<domain>/api hook or in app/providers; a component reads it through the feature, never off the client (ARCH-03).';
+const RENDERER_QUERY_PATHS = [
+    { name: '@tanstack/react-query', message: RENDERER_QUERY_MESSAGE, allowTypeImports: true }
+];
+const RENDERER_QUERY_PATTERNS = [
+    { group: ['@tanstack/react-query/*'], message: RENDERER_QUERY_MESSAGE, allowTypeImports: true }
+];
+
+const RENDERER_STORE_MESSAGE = 'A Zustand store is either global UI state in store/ or one feature\'s own state in features/<domain>/state - the four kinds of state stay apart (ARCH-03).';
+const RENDERER_STORE_PATHS = [{ name: 'zustand', message: RENDERER_STORE_MESSAGE }];
+const RENDERER_STORE_PATTERNS = [{ group: ['zustand/*'], message: RENDERER_STORE_MESSAGE }];
+
+// Never lifted: no file, in any area, may reach past a feature's index.ts.
+const RENDERER_FEATURE_MESSAGE = 'Import a feature through its index.ts; reaching past it makes every file inside that feature public (ARCH-03).';
+const RENDERER_FEATURE_PATTERNS = [
+    { regex: '^@renderer/features/[^/]+/.+', message: RENDERER_FEATURE_MESSAGE },
+    { regex: '^(\\.\\./)+features/[^/]+/.+', message: RENDERER_FEATURE_MESSAGE }
+];
+
+const WEB_STORAGE_MESSAGE = 'v1.2.1 kept the running timer and the goal date in localStorage, which main cannot read and a cleared profile forgets. Anything durable is a row in the database (ARCH-03).';
+const WEB_STORAGE_GLOBALS = ['localStorage', 'sessionStorage']
+    .map((name) => ({ name, message: WEB_STORAGE_MESSAGE }));
+const WEB_STORAGE_PROPERTIES = ['window', 'globalThis', 'self']
+    .flatMap((object) => ['localStorage', 'sessionStorage']
+        .map((property) => ({ object, property, message: WEB_STORAGE_MESSAGE })));
+
+const BRIDGE_ACCESS_MESSAGE = 'Reach the preload bridge through invoke() or subscribe() in lib/ipc.ts, which is the one place that knows it is there (ARCH-03).';
+const BRIDGE_ACCESS_BANS = [
+    'MemberExpression[object.name=/^(window|globalThis|self)$/][property.name=\'api\']',
+    'MemberExpression[object.name=/^(window|globalThis|self)$/][computed=true][property.value=\'api\']'
+].map((selector) => ({ selector, message: BRIDGE_ACCESS_MESSAGE }));
+
+/**
+ * One composer for every renderer block, so an override restates what it does not lift (D-11) without repeating
+ * the list. `lifted` names the bans this area is allowed to break, and nothing else changes.
+ */
+const rendererImports = (...lifted) => {
+    const lift = new Set(lifted);
+    const paths = [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS];
+    const patterns = [
+        ...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS, ...DRIZZLE_VALUE_PATTERNS,
+        ...RENDERER_FEATURE_PATTERNS
+    ];
+    if (!lift.has('facade')) {
+        paths.push(...RENDERER_FACADE_PATHS);
+        patterns.push(...RENDERER_FACADE_PATTERNS);
+    }
+    if (!lift.has('query')) {
+        paths.push(...RENDERER_QUERY_PATHS);
+        patterns.push(...RENDERER_QUERY_PATTERNS);
+    }
+    if (!lift.has('store')) {
+        paths.push(...RENDERER_STORE_PATHS);
+        patterns.push(...RENDERER_STORE_PATTERNS);
+    }
+    return ['error', { paths, patterns }];
+};
+
+// The areas ARCH-03 names, each lifting exactly what it is the home of.
+const RENDERER_FACADE_FILE = 'src/renderer/src/lib/ipc.ts';
+const RENDERER_API_AREAS = ['src/renderer/src/features/*/api/**', 'src/renderer/src/app/providers/**'];
+// The client itself and what invalidates it: infrastructure the api hooks and the provider are built out of.
+const RENDERER_QUERY_FILES = ['src/renderer/src/lib/query-client.ts', 'src/renderer/src/lib/data-sync.ts'];
+const RENDERER_STORE_AREAS = ['src/renderer/src/store/**', 'src/renderer/src/features/*/state/**'];
+
 const SHARED_LAYER_MESSAGE = 'src/shared is the bottom layer: no main/lib/preload/renderer, no node builtins, no electron, no database driver (D-15).';
 const SHARED_LAYER_PATHS = [
     ...ELECTRON_PATHS,
@@ -434,16 +514,37 @@ module.exports = [
     {
         files: ['src/renderer/src/**'],
         rules: {
-            '@typescript-eslint/no-restricted-imports': ['error', {
-                paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS],
-                patterns: [...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS, ...DRIZZLE_VALUE_PATTERNS]
-            }],
-            // Criterion 3, as lint. Everything src/** already bans is restated, because a flat config replaces a
-            // rule's options wholesale (D-11).
+            '@typescript-eslint/no-restricted-imports': rendererImports(),
+            // Criteria 3 and 7, as lint. Everything src/** already bans is restated, because a flat config replaces
+            // a rule's options wholesale (D-11).
             'no-restricted-syntax': [
-                'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS, ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS
+                'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS,
+                ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS, ...BRIDGE_ACCESS_BANS
+            ],
+            'no-restricted-globals': ['error', ...WEB_STORAGE_GLOBALS],
+            'no-restricted-properties': [
+                'error', ...CUSTODY_02, PROCESS_ENV, PROCESS_ARGV, ...WEB_STORAGE_PROPERTIES
             ],
             ...TYPE_IMPORT_RULES
         }
+    },
+    // The facade itself: the one file that may name the bridge key.
+    {
+        files: [RENDERER_FACADE_FILE],
+        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('facade') }
+    },
+    // Where a call to main and a query may live (ARCH-03).
+    {
+        files: RENDERER_API_AREAS,
+        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('facade', 'query') }
+    },
+    {
+        files: RENDERER_QUERY_FILES,
+        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('query') }
+    },
+    // Where a Zustand store may live: global UI state, or one feature's own.
+    {
+        files: RENDERER_STORE_AREAS,
+        rules: { '@typescript-eslint/no-restricted-imports': rendererImports('store') }
     }
 ];
