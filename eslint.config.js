@@ -141,6 +141,47 @@ const SQL_BANS = [
 // BUILD-06's packaged proof, which writes and reads one row in a brand-new injected database.
 const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts', 'src/main/smoke.ts'];
 
+/*
+ * SPA-11 (trap C3): a class name that exists only after a concatenation is a class name the build never saw.
+ * v1.2.1 got away with `bg-${color}-100` at fourteen sites because the Tailwind Play CDN generates CSS by watching
+ * the live DOM; build-time Tailwind reads the SOURCE instead, so those names emit no CSS at all and the element
+ * renders uncoloured. Nothing else catches it - it typechecks, it renders, and only the pixels are wrong.
+ *
+ * A safelist would silence this rule and keep the bug. The sanctioned shape is a typed lookup map whose values are
+ * whole class strings, which is what src/renderer/src/components/ui/AlertDialog.tsx does.
+ */
+const CLASS_BUILD_MESSAGE = 'Write class names out in full and select between them with a typed lookup map; a name assembled at run time gets no CSS from a build-time Tailwind (SPA-11, C3).';
+const CLASS_ATTRIBUTES = 'JSXAttribute[name.name=/^(className|class)$/] ';
+const CLASS_BUILD_BANS = [
+    CLASS_ATTRIBUTES + 'TemplateLiteral[expressions.length>0]',
+    CLASS_ATTRIBUTES + "BinaryExpression[operator='+']",
+    // The imperative spellings, which is how the v1.2.1 renderer wrote them.
+    "AssignmentExpression[left.property.name='className'][right.type='TemplateLiteral'][right.expressions.length>0]",
+    "AssignmentExpression[left.property.name='className'][right.type='BinaryExpression'][right.operator='+']",
+    "CallExpression[callee.object.property.name='classList'] > TemplateLiteral[expressions.length>0]",
+    "CallExpression[callee.object.property.name='classList'] > BinaryExpression[operator='+']",
+    "CallExpression[callee.object.name='classList'] > TemplateLiteral[expressions.length>0]",
+    "CallExpression[callee.object.name='classList'] > BinaryExpression[operator='+']"
+].map((selector) => ({ selector, message: CLASS_BUILD_MESSAGE }));
+
+/*
+ * SPA-13 (Y2). legacy/pages/settings.html:659 reached the DELETE-ALL-DATA button with
+ * document.querySelector('.mt-8.mb-8 button') - a spacing tweak detaches it, and the failure is a button that
+ * silently stops working. The ban is on any class selector, not on a list of Tailwind-looking ones: ARCH-05 leaves
+ * no other kind of class in this renderer, so a dot in a selector string is a utility class by construction. An
+ * attribute or id selector carries no dot and is left alone; so is a dynamic selector, which is banned outright
+ * because nothing can tell what it will contain.
+ */
+const CLASS_QUERY_MESSAGE = 'Reach an element with a ref, an id or a data attribute - never by its utility classes, which are layout that moves (SPA-13, Y2).';
+const CLASS_QUERY_METHODS = '[callee.property.name=/^(querySelector|querySelectorAll|closest|matches)$/]';
+const CLASS_QUERY_BANS = [
+    'CallExpression' + CLASS_QUERY_METHODS + '[arguments.0.value=/\\./]',
+    'CallExpression' + CLASS_QUERY_METHODS + ' > TemplateLiteral[expressions.length>0]',
+    'CallExpression[callee.name=/^(querySelector|querySelectorAll)$/][arguments.0.value=/\\./]',
+    // No selector at all: the argument is the class list itself.
+    "CallExpression[callee.property.name='getElementsByClassName']"
+].map((selector) => ({ selector, message: CLASS_QUERY_MESSAGE }));
+
 const SHARED_LAYER_MESSAGE = 'src/shared is the bottom layer: no main/lib/preload/renderer, no node builtins, no electron, no database driver (D-15).';
 const SHARED_LAYER_PATHS = [
     ...ELECTRON_PATHS,
@@ -397,6 +438,11 @@ module.exports = [
                 paths: [ZOD_TYPE_ONLY_PATH, ...DRIZZLE_TOOLING_PATHS, ...DRIZZLE_VALUE_PATHS],
                 patterns: [...ZOD_BEARING_SHARED_PATTERNS, ...DRIZZLE_TOOLING_PATTERNS, ...DRIZZLE_VALUE_PATTERNS]
             }],
+            // Criterion 3, as lint. Everything src/** already bans is restated, because a flat config replaces a
+            // rule's options wholesale (D-11).
+            'no-restricted-syntax': [
+                'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS, ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS
+            ],
             ...TYPE_IMPORT_RULES
         }
     }

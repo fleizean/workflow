@@ -832,6 +832,105 @@ describe('ARCH-01: lint proves the direction of the main process', () => {
     });
 });
 
+/*
+ * Criterion 3's lint half (SPA-11, SPA-13), probed as code rather than read off the config.
+ *
+ * Both rules are here because this repository has already been bitten twice by a rule that existed only as a
+ * comment - that is the whole reason lint-coverage.test.ts exists - and these two guard failures that are
+ * invisible at every other gate. A concatenated class name typechecks, renders, and is simply the wrong colour
+ * (C3). A querySelector written against utility classes typechecks, renders, and silently stops finding the
+ * delete-all-data button the day someone changes its margin (Y2, legacy/pages/settings.html:659).
+ */
+describe('SPA-11 / SPA-13: lint refuses a built class name and a query written against one', () => {
+    const RENDERER_PROBE_FILE = 'src/renderer/src/components/ui/AlertDialog.tsx';
+    const CLASS_BUILD_TAG = '(SPA-11, C3).';
+    const CLASS_QUERY_TAG = '(SPA-13, Y2).';
+
+    const header = [
+        'declare const tone: string;',
+        'declare const on: boolean;',
+        'declare const el: HTMLElement;',
+        'declare const CIRCLE: Record<string, string>;',
+        'declare const A: string;',
+        'declare const B: string;',
+        'declare const chosen: string;'
+    ];
+
+    const endsWith = (tag: string) => (m: Linter.LintMessage): boolean =>
+        m.ruleId === 'no-restricted-syntax' && m.message.endsWith(tag);
+
+    it('refuses a class name assembled at run time, in every spelling v1.2.1 used', async () => {
+        const banned = [
+            'export const p1 = <div className={`bg-${tone}-100`} />;',
+            'export const p2 = <div className={\'bg-\' + tone + \'-100\'} />;',
+            // Hidden one level down, which is where a conditional class usually is.
+            'export const p3 = <div className={on ? `x-${tone}` : A} />;',
+            'export const p4 = <span class={`y-${tone}`} />;',
+            'el.className = \'bg-\' + tone;',
+            'el.className = `bg-${tone}`;',
+            'el.classList.add(`bg-${tone}-100`);',
+            'el.classList.toggle(\'bg-\' + tone);'
+        ];
+        // The sanctioned shapes: a literal, a typed lookup, and a choice between two whole class strings.
+        const allowed = [
+            'export const q1 = <div className="bg-blue-100" />;',
+            'export const q2 = <div className={CIRCLE[tone]} />;',
+            'export const q3 = <div className={on ? A : B} />;',
+            'el.classList.add(\'bg-blue-100\');'
+        ];
+        const { missed, flagged } = await probe(
+            RENDERER_PROBE_FILE, header, banned, allowed, endsWith(CLASS_BUILD_TAG)
+        );
+        expect(missed, 'lint let a class name be built from parts').toEqual([]);
+        expect(flagged, 'lint refused a class name that is written out in full').toEqual([]);
+    }, 60_000);
+
+    it('refuses a DOM query written against classes, and leaves ids and attributes alone', async () => {
+        const banned = [
+            'document.querySelector(\'.mt-8.mb-8 button\');',
+            'document.querySelectorAll(\'.flex\');',
+            'el.closest(\'.card-dark\');',
+            'el.matches(\'.active\');',
+            // Unknowable at lint time, so refused outright.
+            'document.querySelector(`.${chosen}`);',
+            'document.getElementsByClassName(\'flex\');'
+        ];
+        const allowed = [
+            'document.querySelector(\'#root\');',
+            'document.querySelector(\'[data-testid="save"]\');',
+            'el.closest(\'button\');'
+        ];
+        const { missed, flagged } = await probe(
+            RENDERER_PROBE_FILE, header, banned, allowed, endsWith(CLASS_QUERY_TAG)
+        );
+        expect(missed, 'lint let an element be selected by its utility classes').toEqual([]);
+        expect(flagged, 'lint refused a query that names an id or an attribute').toEqual([]);
+    }, 60_000);
+
+    it('applies both rules to every renderer source file, not just the one probed', async () => {
+        const renderer = repositoryFiles()
+            .filter((file) => isUnder(file, 'src/renderer/src') && SOURCE_EXTENSIONS.includes(extensionOf(file)));
+        expect(renderer.length, 'no renderer source files, so this scan proves nothing').toBeGreaterThan(5);
+
+        const offenders: string[] = [];
+        for (const file of renderer) {
+            const entry = JSON.stringify(await ruleEntry(file, 'no-restricted-syntax'));
+            for (const tag of [CLASS_BUILD_TAG, CLASS_QUERY_TAG]) {
+                if (!entry.includes(tag)) offenders.push(file + ' is missing ' + tag);
+            }
+        }
+        expect(offenders, 'the renderer block in eslint.config.js no longer covers these files').toEqual([]);
+    }, 60_000);
+
+    // D-11: the renderer block restates every ban it does not lift, so adding these two cannot drop the others.
+    it('keeps the bans src/** already carried', async () => {
+        const entry = JSON.stringify(await ruleEntry(RENDERER_PROBE_FILE, 'no-restricted-syntax'));
+        expect(entry, 'the renderer block dropped CUSTODY-03').toContain(CUSTODY_03_TEXT);
+        expect(entry, 'the renderer block dropped the date bans').toContain(DATE_MESSAGE);
+        expect(entry, 'the renderer block dropped the SQL bans').toContain(SQL_MESSAGE);
+    }, 60_000);
+});
+
 describe('known syntactic gaps', () => {
     it.each(KNOWN_GAPS)('inventories $code', async (gap) => {
         const { flagged } = await probe(gap.file, gap.header, [], [gap.code], gap.matches);
