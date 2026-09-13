@@ -65,9 +65,12 @@ export function createDispatch(input: DispatchInput): Dispatch {
             // The map is keyed by C, so the handler and the parsed input belong together; the generic index cannot
             // say so on its own. Everything inside the cast has already been validated by the line above.
             const handler = handlers()[channel] as (value: unknown) => IpcOutput<C> | Promise<IpcOutput<C>>;
-            const data = checked(channel, await handler(parsed.data));
+            const answer = await handler(parsed.data);
+            // WR-07: the write has committed by here, whatever shape its answer turns out to be. checked() runs
+            // the contract's output schema in dev, and running it first made a row that IS on disk arrive as
+            // { ok: false } with nothing announced - training the developer that the write had failed.
             announceChange(channel);
-            return { ok: true, data };
+            return { ok: true, data: checked(channel, answer) };
         } catch (error) {
             // The renderer is told a code; the reason stays here, where a log file is not a wire.
             log('ipc: ' + channel + ' failed - ' + describe(error));

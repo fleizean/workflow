@@ -9,6 +9,7 @@ import { companiesQuery } from '@renderer/features/companies/api/useCompanies';
 import { sessionsQuery } from '@renderer/features/history/api/useSessions';
 import { settingsQuery } from '@renderer/features/settings/api/useSettings';
 import { timerSnapshotQuery } from '@renderer/features/timer/api/useTimerSnapshot';
+import { useUiStore } from '@renderer/store/ui.store';
 import { API_BRIDGE_KEY } from '@shared/constants/bridge';
 import { DATA_DOMAINS, ipcWrites } from '@shared/ipc/contract';
 import { createDispatch } from '@main/ipc/dispatch';
@@ -256,6 +257,54 @@ describe('SPA-07: a change made in main refreshes the views that show it', () =>
             'the write landed; failing the call over an undelivered event would make the renderer re-ask for ' +
             'something that already happened'
         ).toBe(true);
+    });
+
+    /*
+     * WR-07. checked() runs the contract's output schema whenever checkOutput is on, which register.ts sets for
+     * every electron-vite dev run. It ran BEFORE the announcement, so a write that had committed but answered
+     * something the contract does not describe fell into the catch: { ok: false }, no announcement, an error on
+     * screen - and the row on disk. Under npm run dev that trains the developer that the write failed.
+     */
+    it('announces a write that committed even when its answer fails the output check', async () => {
+        const dispatch = createDispatch({
+            handlers: () => ({ 'sessions:create': () => ({ id: 'not-a-number' }) }) as unknown as IpcHandlers,
+            announce: (domains) => { announced.push(domains); },
+            log: () => undefined,
+            checkOutput: true
+        });
+
+        const result = await dispatch('sessions:create', {
+            name: 'x', durationSeconds: 60, date: SOME_DAY, companyId: null, note: null
+        });
+
+        expect(result.ok, 'an answer the contract does not describe is still a bug in main').toBe(false);
+        expect(
+            announced,
+            'the row is on disk and nothing was told about it, so the renderer shows an error over a write that ' +
+            'landed and never refetches'
+        ).toEqual([ipcWrites['sessions:create']]);
+    });
+
+    /*
+     * WR-05. The file's header says a failed call is surfaced once, from one place. Only a QueryCache was
+     * supplied, so a failed MUTATION raised nothing at all - and the mutations are sessions:create,
+     * sessions:update and timer:stopAndSave, which is the Core Value path.
+     */
+    it('raises a failed write from the cache, not only a failed read', async () => {
+        installBridge({ 'sessions:create': () => { throw new Error('disk full'); } });
+        const before = useUiStore.getState().toasts.length;
+
+        await client.getMutationCache().build(client, {
+            mutationFn: () => invoke('sessions:create', {
+                name: 'x', durationSeconds: 60, date: SOME_DAY, companyId: null, note: null
+            })
+        }).execute(undefined).catch(() => undefined);
+
+        const raised = useUiStore.getState().toasts.slice(before);
+        expect(raised.length, 'a failed write raised nothing, from anywhere').toBeGreaterThan(0);
+        expect(raised.map((toast) => toast.tone)).toContain('error');
+        // The handler's own reason stays in main's log (T-01-37); what crosses is the contract's message.
+        expect(raised.map((toast) => toast.message).join(' ')).toContain('was not completed');
     });
 
     it('keys every query the features export by one of the declared keys', () => {
