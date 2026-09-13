@@ -39,19 +39,37 @@ export interface ChosenBounds {
 const overlap = (aStart: number, aLength: number, bStart: number, bLength: number): number =>
     Math.max(0, Math.min(aStart + aLength, bStart + bLength) - Math.max(aStart, bStart));
 
-/** The largest rectangle the window shares with any one display. Two half-overlaps do not add up to a usable window. */
-export function visibleArea(bounds: WindowBounds, displays: readonly DisplayArea[]): WindowSize {
+interface Landing {
+    readonly display: DisplayArea | undefined;
+    readonly size: WindowSize;
+}
+
+/** The one display the window shares the most with. Two half-overlaps do not add up to a usable window. */
+function largestOverlap(bounds: WindowBounds, displays: readonly DisplayArea[]): Landing {
+    let display: DisplayArea | undefined;
     let width = 0;
     let height = 0;
-    for (const { workArea } of displays) {
-        const w = overlap(bounds.x, bounds.width, workArea.x, workArea.width);
-        const h = overlap(bounds.y, bounds.height, workArea.y, workArea.height);
+    for (const area of displays) {
+        const w = overlap(bounds.x, bounds.width, area.workArea.x, area.workArea.width);
+        const h = overlap(bounds.y, bounds.height, area.workArea.y, area.workArea.height);
         if (w * h > width * height) {
+            display = area;
             width = w;
             height = h;
         }
     }
-    return { width, height };
+    return { display, size: { width, height } };
+}
+
+/** The largest rectangle the window shares with any one display. */
+export function visibleArea(bounds: WindowBounds, displays: readonly DisplayArea[]): WindowSize {
+    return largestOverlap(bounds, displays).size;
+}
+
+/** The display a window would be restored onto, or undefined when not enough of it would land on any. */
+export function displayUnder(bounds: WindowBounds, displays: readonly DisplayArea[]): DisplayArea | undefined {
+    const { display, size } = largestOverlap(bounds, displays);
+    return size.width >= MIN_VISIBLE_WIDTH && size.height >= MIN_VISIBLE_HEIGHT ? display : undefined;
 }
 
 /** Whether enough of the window would land on a display that currently exists. */
@@ -65,6 +83,35 @@ export function atLeastMinimum(size: WindowSize, minimum: WindowSize): WindowSiz
     return {
         width: Math.max(minimum.width, Math.round(size.width)),
         height: Math.max(minimum.height, Math.round(size.height))
+    };
+}
+
+/*
+ * WR-04: a size no larger than the display it is coming back onto. persistBoundsOn saves a maximised window's
+ * rectangle, so a user who maximised on a 3840x2160 monitor and relaunched on a 1920x1080 laptop got a frameless
+ * window bigger than the screen: both resize edges off it, and no title bar to double-click. The minimum still wins
+ * over the display - a screen too small for the minimum is one the app cannot be used on either way - and the
+ * position is left where the user put it unless shrinking the window took it off the screen.
+ */
+export function withinWorkArea(
+    bounds: WindowBounds,
+    workArea: WindowBounds,
+    minimum: WindowSize,
+    displays: readonly DisplayArea[]
+): WindowBounds {
+    const width = Math.max(minimum.width, Math.min(bounds.width, workArea.width));
+    const height = Math.max(minimum.height, Math.min(bounds.height, workArea.height));
+    const shrunk = { x: bounds.x, y: bounds.y, width, height };
+    if (isOnAnyDisplay(shrunk, displays)) {
+        return shrunk;
+    }
+    // Back onto the display it landed on, but never past that display's own origin: a window wider than the work
+    // area, because the minimum is wider, stays at the top-left rather than being pushed off the other side.
+    return {
+        width,
+        height,
+        x: Math.min(Math.max(bounds.x, workArea.x), Math.max(workArea.x, workArea.x + workArea.width - width)),
+        y: Math.min(Math.max(bounds.y, workArea.y), Math.max(workArea.y, workArea.y + workArea.height - height))
     };
 }
 
@@ -92,7 +139,14 @@ export function chooseWindowBounds(
         return fallback('default-no-saved-bounds');
     }
     const sized = { ...saved, ...atLeastMinimum(saved, minimum) };
-    return isOnAnyDisplay(sized, displays)
-        ? { size: { width: sized.width, height: sized.height }, position: { x: sized.x, y: sized.y }, origin: 'restored' }
-        : fallback('default-off-screen');
+    const landing = displayUnder(sized, displays);
+    if (landing === undefined) {
+        return fallback('default-off-screen');
+    }
+    const fitted = withinWorkArea(sized, landing.workArea, minimum, displays);
+    return {
+        size: { width: fitted.width, height: fitted.height },
+        position: { x: fitted.x, y: fitted.y },
+        origin: 'restored'
+    };
 }

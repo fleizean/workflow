@@ -79,6 +79,41 @@ describe('criterion 9: a saved position is restored only onto a display that exi
         expect(chooseWindowBounds(at(200, 100), [], DEFAULT_SIZE, MINIMUM).origin).toBe('default-off-screen');
     });
 
+    /*
+     * WR-04. chooseWindowBounds raised a stored size to the minimum and never capped it, and persistBoundsOn skips
+     * only a hidden or minimised window - a maximised one is visible, so its rectangle is what gets saved. Maximise
+     * on a 3840x2160 monitor, close, unplug, relaunch on a 1920x1080 laptop: the overlap test was satisfied and the
+     * window came back frameless at 3840x2160, with both resize edges off the screen and no title bar to grab.
+     */
+    it('caps a size saved on a larger monitor to the display it comes back on', () => {
+        const chosen = chooseWindowBounds({ x: 0, y: 0, width: 3840, height: 2160 }, [LAPTOP], DEFAULT_SIZE, MINIMUM);
+        expect(chosen.origin).toBe('restored');
+        expect(chosen.size, 'the window came back larger than the screen').toEqual({ width: 1920, height: 1040 });
+        expect(chosen.position).toEqual({ x: 0, y: 0 });
+    });
+
+    it('pulls the window back onto the display when the cap took it off the screen', () => {
+        // Mostly on a monitor to the left that has been unplugged: 190 px of it lands on the laptop, which is enough
+        // to restore - but capping the width to the laptop leaves only 110, which is not.
+        const chosen = chooseWindowBounds({ x: -1810, y: 10, width: 2000, height: 900 }, [LAPTOP], DEFAULT_SIZE, MINIMUM);
+        expect(chosen.origin).toBe('restored');
+        expect(chosen.size).toEqual({ width: 1920, height: 900 });
+        expect(chosen.position).toEqual({ x: 0, y: 10 });
+    });
+
+    it('leaves a window the user parked half off an edge exactly where it was', () => {
+        // The cap changes nothing here, so neither does the position: this is criterion 9's "where the user left it".
+        expect(chooseWindowBounds(at(1700, 10), [LAPTOP], DEFAULT_SIZE, MINIMUM))
+            .toEqual({ size: { width: 430, height: 932 }, position: { x: 1700, y: 10 }, origin: 'restored' });
+    });
+
+    it('keeps the minimum even on a display too small for it', () => {
+        const tiny = display(0, 0, 300, 400);
+        const chosen = chooseWindowBounds({ x: 0, y: 0, width: 900, height: 900 }, [tiny], DEFAULT_SIZE, MINIMUM);
+        expect(chosen.size, 'a screen too small for the minimum is one the app cannot be used on either way')
+            .toEqual(MINIMUM);
+    });
+
     it('does not add two half-overlaps into one usable window', () => {
         // A gap between two monitors: the window straddles it and is mostly in the void.
         const left = display(0, 0, 1000, 1000);
