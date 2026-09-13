@@ -272,6 +272,10 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             if (status === 'running' && !gated) {
                 credit(clock.monotonicNow());
             }
+            // WR-07: the repeat is about to go, so 'running' would be a snapshot insisting on a clock that has
+            // stopped - and start() early-returns on a running timer, which left it unable to be re-armed.
+            // Everything is credited and flushed below, so 'paused' is the truthful word for what is left.
+            status = status === 'running' ? 'paused' : status;
             try {
                 // Flushed before the repeat is stopped, and retried once: the connection closes next, so a failure
                 // here cannot be made good later. Said out loud rather than reported as a clean quit (WR-02).

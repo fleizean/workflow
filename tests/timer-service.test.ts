@@ -497,6 +497,28 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
         expect(h.counters.cancelled, 'dispose left the repeat running').toBe(2);
     });
 
+    /*
+     * WR-07. dispose() cancelled the repeat and left status 'running', so the snapshot insisted the clock was
+     * counting while nothing was scheduled - and start() early-returns on a running timer, so it could never be
+     * re-armed. Today the only caller drops the container immediately afterwards; nothing enforces that.
+     */
+    it('leaves a disposed timer paused, and starting it again really does count', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(4);
+        h.service.dispose();
+
+        expect(h.service.snapshot(), 'a stopped clock reported itself as running')
+            .toMatchObject({ status: 'paused', elapsedSeconds: 4 });
+
+        const scheduledBefore = h.counters.scheduled;
+        h.service.start();
+        expect(h.counters.scheduled, 'start() never re-armed the tick').toBe(scheduledBefore + 1);
+
+        h.drive(3);
+        expect(h.service.snapshot().elapsedSeconds, 'the clock was stopped for good').toBe(7);
+    });
+
     it('reports a failed write and keeps counting, because the value is still in memory', () => {
         const h = harness({
             store: {
