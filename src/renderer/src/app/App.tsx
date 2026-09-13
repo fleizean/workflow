@@ -10,15 +10,17 @@
 
 import type { ReactElement } from 'react';
 import { HashRouter } from 'react-router-dom';
-import { QueryProvider } from './providers';
+import { QueryProvider, SoundProvider } from './providers';
 import AppRoutes from './router';
 
 export default function App(): ReactElement {
     return (
         <QueryProvider>
-            <HashRouter>
-                <AppRoutes />
-            </HashRouter>
+            <SoundProvider>
+                <HashRouter>
+                    <AppRoutes />
+                </HashRouter>
+            </SoundProvider>
         </QueryProvider>
     );
 }

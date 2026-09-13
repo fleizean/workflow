@@ -10,8 +10,9 @@ import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
     PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT,
-    SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
-    SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, mainConfig
+    SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS, SMOKE_ICON_FONT_SIZE_PX,
+    SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID,
+    SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -73,6 +74,9 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             'creates a new database, so it can never touch an existing one');
     }
     lines.push('SMOKE_DB=' + dbPath);
+
+    // SPA-08: networking off before the first document loads, so nothing below could have been fetched remotely.
+    const remoteRequests = goOffline(lines);
 
     // D-37: seed this temp profile's localStorage and stop. Only reachable under --smoke, and only after the
     // refusals above have proved userData is not the production directory (T-04-48).
@@ -150,6 +154,11 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         if (bridgeFailure !== null) {
             return fail(bridgeFailure);
         }
+        const soundFailure = await checkSound(win, container, lines);
+        if (soundFailure !== null) {
+            return fail(soundFailure);
+        }
+        lines.push('SMOKE_OFFLINE_REQUESTS=' + String(remoteRequests()));
         // Last, because it ends by telling the app it is quitting - which is the state being proved.
         const shellFailure = await checkShell(lines);
         if (shellFailure !== null) {
@@ -323,6 +332,34 @@ const READ_TICKS_SCRIPT = `({
 
 const DISPOSE_SCRIPT = 'window.__smokeBridge.dispose(); window.__smokeBridge.dispose(); true';
 
+// SPA-10: which src the renderer actually asked to play, and whether the file behind it decoded.
+const WATCH_AUDIO_SCRIPT = `(() => {
+    window.__smokeAudio = { count: 0, last: null, errors: [] };
+    const realPlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function () {
+        window.__smokeAudio.count += 1;
+        window.__smokeAudio.last = this;
+        const started = realPlay.call(this);
+        if (started && typeof started.catch === 'function') {
+            started.catch((error) => { window.__smokeAudio.errors.push(String(error && error.name)); });
+        }
+        return started;
+    };
+    return true;
+})()`;
+
+const READ_AUDIO_SCRIPT = `(() => {
+    const watched = window.__smokeAudio;
+    const element = watched.last;
+    return {
+        count: watched.count,
+        src: element ? (element.currentSrc || element.src) : '',
+        duration: element && Number.isFinite(element.duration) ? element.duration : 0,
+        errorCode: element && element.error ? element.error.code : 0,
+        errors: watched.errors.join(',')
+    };
+})()`;
+
 /*
  * Criterion 8 in the packaged app: one tray icon however often it is asked for, a close that hides the window while
  * the app is running, and a close that lets it go once the app is quitting. The quitting flag is set at the very end
@@ -428,8 +465,133 @@ async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<strin
         if (routing !== null) {
             return routing;
         }
+
+        const assets = await probeAssets(win, lines);
+        if (assets !== null) {
+            return assets;
+        }
     } catch (error) {
         return 'renderer: ' + describeError(error);
+    }
+    return null;
+}
+
+/*
+ * SPA-08: networking off for the whole launch, and every remote request counted.
+ *
+ * enableNetworkEmulation is the switch; the webRequest filter is the witness. Together they answer the question
+ * criterion 2 actually asks - not "does it look right online" but "did anything try to leave the machine". file://
+ * never matches the filter, so the app's own documents and assets are untouched by it.
+ */
+function goOffline(lines: string[]): () => number {
+    let attempts = 0;
+    const ses = session.defaultSession;
+    ses.enableNetworkEmulation({ offline: true });
+    ses.webRequest.onBeforeRequest(
+        { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] },
+        (details, callback) => {
+            attempts += 1;
+            lines.push('SMOKE_OFFLINE_REQUEST=' + details.url);
+            callback({ cancel: true });
+        }
+    );
+    return () => attempts;
+}
+
+/*
+ * SPA-08/SPA-09 inside the packaged app, with networking already off.
+ *
+ * The measurement is the one that separates a working icon font from the failure C4 describes: a
+ * .material-symbols-outlined span holding an icon name renders as ONE glyph roughly as wide as the font size, while
+ * the same name without the icon font renders as the literal words and is several times wider. A control span with
+ * the same text at the same size is measured beside it, so the assertion is a comparison rather than a magic number.
+ *
+ * The FILL reading is the other half. The bottom navigation marks its active tab with a Tailwind
+ * arbitrary-property utility, and a utility whose CSS was never emitted leaves the computed value empty - which is
+ * how C3 shows up. Reading it off the live element is how that gets noticed here instead of by eye in Phase 8.
+ */
+async function probeAssets(win: BrowserWindow, lines: string[]): Promise<string | null> {
+    try {
+        const measured = asRecord(await win.webContents.executeJavaScript(assetProbeScript()));
+        lines.push('SMOKE_ICON_WIDTH=' + text(measured.iconWidth));
+        lines.push('SMOKE_ICON_TEXT_WIDTH=' + text(measured.textWidth));
+        lines.push('SMOKE_ICON_FILL=' + text(measured.fill));
+        lines.push('SMOKE_FONTS_LOADED=' + text(measured.fonts));
+
+        const loaded = String(measured.fonts);
+        const missing = SMOKE_BUNDLED_FONTS.filter((family) => !loaded.includes(family));
+        if (missing.length > 0) {
+            return 'these font families never loaded with networking off: ' + missing.join(', ');
+        }
+        if (typeof measured.iconWidth !== 'number' || typeof measured.textWidth !== 'number') {
+            return 'the icon probe measured nothing: ' + text(measured);
+        }
+    } catch (error) {
+        return 'assets: ' + describeError(error);
+    }
+    return null;
+}
+
+/** The icon name and the size are configuration, so the script that uses them is built from the constants. */
+function assetProbeScript(): string {
+    const size = String(SMOKE_ICON_FONT_SIZE_PX);
+    const name = JSON.stringify(SMOKE_ICON_NAME);
+    return [
+        '(async () => {',
+        '    await document.fonts.ready;',
+        '    const host = document.createElement("div");',
+        '    host.style.cssText = "position:absolute;left:-9999px;top:0";',
+        '    const icon = document.createElement("span");',
+        '    icon.className = "material-symbols-outlined";',
+        '    icon.style.fontSize = "' + size + 'px";',
+        '    icon.textContent = ' + name + ';',
+        '    const control = document.createElement("span");',
+        '    control.style.fontSize = "' + size + 'px";',
+        '    control.textContent = ' + name + ';',
+        '    host.appendChild(icon);',
+        '    host.appendChild(control);',
+        '    document.body.appendChild(host);',
+        '    const active = document.querySelector(' + JSON.stringify('[aria-current="page"] .material-symbols-outlined') + ');',
+        '    const measured = {',
+        '        iconWidth: icon.offsetWidth,',
+        '        textWidth: control.offsetWidth,',
+        '        fill: active ? getComputedStyle(active).fontVariationSettings : "",',
+        '        fonts: Array.from(document.fonts)',
+        '            .filter((face) => face.status === "loaded").map((face) => face.family).join("|")',
+        '    };',
+        '    host.remove();',
+        '    return measured;',
+        '})()'
+    ].join('\n');
+}
+
+/*
+ * SPA-10 end to end: main decides a sound is due, the renderer plays one, and what it plays is a file inside the
+ * app. HTMLMediaElement.play is wrapped before the event is raised, because the element the renderer creates is
+ * private to it - the wrapper is how the page reports which src was asked for and whether the bytes decoded.
+ */
+async function checkSound(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
+    try {
+        await win.webContents.executeJavaScript(WATCH_AUDIO_SCRIPT);
+        container.ports.sound.play(SMOKE_SOUND_ID);
+        await new Promise((done) => setTimeout(done, SMOKE_TICK_WAIT_MS));
+        const played = asRecord(await win.webContents.executeJavaScript(READ_AUDIO_SCRIPT));
+
+        lines.push('SMOKE_SOUND_PLAYS=' + text(played.count));
+        lines.push('SMOKE_SOUND_SRC=' + text(played.src));
+        lines.push('SMOKE_SOUND_DURATION=' + text(played.duration));
+        lines.push('SMOKE_SOUND_ERROR=' + text(played.errorCode));
+        lines.push('SMOKE_SOUND_REJECTIONS=' + text(played.errors));
+
+        if (typeof played.count !== 'number' || played.count < 1) {
+            return 'main asked for a sound and the renderer played none';
+        }
+        const src = typeof played.src === 'string' ? played.src : '';
+        if (!src.startsWith('file:')) {
+            return 'the sound was played from ' + src + ', which is not a file inside the app';
+        }
+    } catch (error) {
+        return 'sound: ' + describeError(error);
     }
     return null;
 }

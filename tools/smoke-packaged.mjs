@@ -27,6 +27,13 @@ export const RENDERER_MARKER_TEXT = 'Home';
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
 
+/** src/main/config.ts's icon probe and font list; tests/smoke-harness.test.ts holds the two equal (SPA-08/SPA-09). */
+export const EXPECTED_ICON_MAX_WIDTH_PX = 32;
+export const EXPECTED_ICON_TEXT_MIN_WIDTH_PX = 100;
+export const EXPECTED_BUNDLED_FONTS = Object.freeze(['Material Symbols Outlined', 'Inter Variable']);
+/** How Chromium spells a resolved FILL axis in getComputedStyle().fontVariationSettings. */
+export const FILL_ON = '"FILL" 1';
+
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
 export const BACKUP_DIR = 'backups';
@@ -196,6 +203,33 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         f.SMOKE_ROUTE_DOCUMENT_LOADS === '0' && Number(f.SMOKE_ROUTE_IN_PAGE) >= 1,
         'documentLoads=' + JSON.stringify(f.SMOKE_ROUTE_DOCUMENT_LOADS) +
         ' inPage=' + JSON.stringify(f.SMOKE_ROUTE_IN_PAGE));
+
+    // SPA-08/SPA-09/SPA-10, all of it with networking emulated off for the whole launch.
+    check('the app attempted no remote request with networking off',
+        f.SMOKE_OFFLINE_REQUESTS === '0',
+        'attempted ' + JSON.stringify(f.SMOKE_OFFLINE_REQUESTS) +
+        (f.SMOKE_OFFLINE_REQUEST === undefined ? '' : ' - first was ' + f.SMOKE_OFFLINE_REQUEST));
+    check('both bundled font families loaded from inside the app',
+        EXPECTED_BUNDLED_FONTS.every((family) => String(f.SMOKE_FONTS_LOADED ?? '').includes(family)),
+        'loaded ' + JSON.stringify(f.SMOKE_FONTS_LOADED));
+    // C4: without the icon font, .material-symbols-outlined renders the literal name, several times wider.
+    check('an icon renders as a glyph, not as its own name',
+        Number(f.SMOKE_ICON_WIDTH) > 0 && Number(f.SMOKE_ICON_WIDTH) <= EXPECTED_ICON_MAX_WIDTH_PX &&
+        Number(f.SMOKE_ICON_TEXT_WIDTH) >= EXPECTED_ICON_TEXT_MIN_WIDTH_PX,
+        'glyph=' + JSON.stringify(f.SMOKE_ICON_WIDTH) + 'px vs the same name as text=' +
+        JSON.stringify(f.SMOKE_ICON_TEXT_WIDTH) + 'px');
+    // C3: an arbitrary-property utility whose CSS was never emitted leaves the computed value empty.
+    check('the active tab asks the variable font for FILL 1',
+        String(f.SMOKE_ICON_FILL ?? '').includes(FILL_ON),
+        'computed ' + JSON.stringify(f.SMOKE_ICON_FILL));
+    check('a sound main asked for was played from a file inside the app',
+        Number(f.SMOKE_SOUND_PLAYS) >= 1 && String(f.SMOKE_SOUND_SRC ?? '').startsWith('file:') &&
+        String(f.SMOKE_SOUND_SRC ?? '').endsWith('.mp3'),
+        'plays=' + JSON.stringify(f.SMOKE_SOUND_PLAYS) + ' src=' + JSON.stringify(f.SMOKE_SOUND_SRC));
+    check('the bundled sound decoded, so the bytes are really there',
+        f.SMOKE_SOUND_ERROR === '0' && Number(f.SMOKE_SOUND_DURATION) > 0,
+        'mediaError=' + JSON.stringify(f.SMOKE_SOUND_ERROR) + ' duration=' +
+        JSON.stringify(f.SMOKE_SOUND_DURATION) + ' rejections=' + JSON.stringify(f.SMOKE_SOUND_REJECTIONS));
 
     // WR-01: the page must not be able to leave its own CSP-bearing document.
     check('window.open from the page was refused and opened no window',

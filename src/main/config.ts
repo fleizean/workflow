@@ -21,6 +21,21 @@ export const SMOKE_ESCAPE_URL = 'https://example.invalid/';
 export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 // Long enough for at least one main-process tick to cross the bus, the preload and the page (IPC-06 smoke check).
 export const SMOKE_TICK_WAIT_MS = 1_500;
+
+/*
+ * SPA-08/SPA-09 smoke probe. The icon is rendered at this size and must measure about this wide as a GLYPH; the
+ * same name as literal text is several times wider, which is exactly the failure self-hosting only the woff2
+ * produces. SMOKE_ICON_MAX_WIDTH_PX leaves room for hinting; SMOKE_ICON_TEXT_MIN_WIDTH_PX is the width below which
+ * the control would not prove the two are distinguishable.
+ */
+export const SMOKE_ICON_NAME = 'local_fire_department';
+export const SMOKE_ICON_FONT_SIZE_PX = 24;
+export const SMOKE_ICON_MAX_WIDTH_PX = 32;
+export const SMOKE_ICON_TEXT_MIN_WIDTH_PX = 100;
+/** The two families that must come from inside the bundle, spelled as their @font-face declares them (S4). */
+export const SMOKE_BUNDLED_FONTS = Object.freeze(['Material Symbols Outlined', 'Inter Variable']);
+/** The sound main asks the renderer to play in the smoke; it must resolve to a file inside the app (SPA-10). */
+export const SMOKE_SOUND_ID = 'goalReached';
 // flushStorageData is asynchronous; app.exit must not race it (D-37 seed mode).
 export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 

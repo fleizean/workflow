@@ -43,6 +43,8 @@ const BUILD_SCRIPT = 'npm run build';
 const REQUIRE_BUILD_ENV = 'WORKFLOW_REQUIRE_BUILD_OUTPUT';
 const SOURCE_ENTRY = 'src/renderer/index.html';
 const BUILT_DIR = 'out/renderer';
+// The whole build, not just the renderer: criterion 10 is about what ships, and main and preload ship too.
+const BUILT_ROOT = 'out';
 const BUILT_ENTRY = 'out/renderer/index.html';
 
 // Every remote host the v1.2.1 renderer fetched from at runtime.
@@ -226,6 +228,52 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
                 return V121_REMOTE_HOSTS.filter((host) => text.includes(host)).map((host) => file + ': ' + host);
             });
         expect(offenders, 'The bundle still references a v1.2.1 remote host.').toEqual([]);
+    });
+
+    /*
+     * Criterion 10, said in the two shapes the criterion itself names. The scans above already forbid a remote
+     * url() or @import in emitted CSS and the four v1.2.1 hosts in emitted code; these two are the same ban
+     * widened to the WHOLE build and narrowed to the exact spellings that were in the shipped app, so a reader
+     * checking the criterion against the suite finds it stated rather than implied.
+     */
+    it('no file anywhere in ' + BUILT_ROOT + ' names cdn.tailwindcss.com', () => {
+        const offenders = walk(path.join(repoRoot, BUILT_ROOT))
+            .filter((file) => /\.(?:m?js|css|html|json|map)$/i.test(file))
+            .filter((file) => read(file).toLowerCase().includes('cdn.tailwindcss.com'));
+        expect(
+            offenders,
+            'The Tailwind Play CDN is back in the build. It needs the network at runtime, and admitting its ' +
+            'origin to script-src is what makes a meaningful CSP impossible (S3).'
+        ).toEqual([]);
+    });
+
+    it('no emitted stylesheet carries an @import of an http(s) address', () => {
+        const offenders = walk(path.join(repoRoot, BUILT_ROOT))
+            .filter((file) => file.toLowerCase().endsWith('.css'))
+            .flatMap((file) => cssImportTargets(stripCssComments(read(file)))
+                .filter((target) => isRemoteTarget(target) && !target.trim().startsWith('data:'))
+                .map((target) => file + ': ' + target));
+        expect(
+            offenders,
+            "legacy/styles/common.css opened with two @import url('https://fonts.googleapis.com/...') lines. " +
+            'Offline, each one silently loaded nothing and every Material Symbol rendered as its own name (S4).'
+        ).toEqual([]);
+    });
+
+    it('SPA-10: the notification sound is emitted into the bundle and referenced from it', () => {
+        const sounds = emittedWith('.mp3');
+        expect(sounds.length, 'no .mp3 under ' + BUILT_DIR + ' - the notification sound is not in the bundle')
+            .toBeGreaterThan(0);
+        const names = sounds.map((file) => path.posix.basename(file));
+        const referenced = emittedWith('.js').some((file) => {
+            const code = read(file);
+            return names.some((name) => code.includes(name));
+        });
+        expect(
+            referenced,
+            'the sound was emitted but nothing in the bundle names it, so the import that fingerprints it is gone ' +
+            'and whatever plays it is back on a relative path (B3).'
+        ).toBe(true);
     });
 
     it('the fonts are bundled: woff2 assets are emitted', () => {

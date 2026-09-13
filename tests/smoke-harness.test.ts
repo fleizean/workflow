@@ -2,10 +2,13 @@
 // milliseconds rather than only inside a 90-second Electron launch. The launches themselves supply the inputs.
 
 import { describe, expect, it } from 'vitest';
-import { EXIT_CODES } from '../src/main/config';
+import {
+    EXIT_CODES, SMOKE_BUNDLED_FONTS, SMOKE_ICON_MAX_WIDTH_PX, SMOKE_ICON_TEXT_MIN_WIDTH_PX
+} from '../src/main/config';
 import { IPC_CHANNELS } from '../src/shared/ipc/channels';
 import {
-    EXPECTED_EXIT_CODES, EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, evaluateRefusalCase, evaluateTimerCase,
+    EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX, EXPECTED_ICON_TEXT_MIN_WIDTH_PX,
+    EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, evaluateRefusalCase, evaluateTimerCase,
     evaluateWalFlushed
 } from '../tools/smoke-packaged.mjs';
 import type { SmokeCheck, SmokeReport } from '../tools/smoke-packaged.mjs';
@@ -111,5 +114,12 @@ describe('T-04-50: the harness and the app cannot drift apart on exit codes', ()
     // The same seven names tests/container.test.ts reads off the real container, so neither can move alone.
     it('EXPECTED_SERVICES restates what the container composes', () => {
         expect(EXPECTED_SERVICES).toBe('companies,goal,pomodoro,sessions,settings,stats,timer');
+    });
+
+    // SPA-08/SPA-09: the app measures, the harness judges. A bound loosened on one side alone would pass both.
+    it('the icon-width bounds and the font list restate src/main/config.ts', () => {
+        expect(EXPECTED_ICON_MAX_WIDTH_PX).toBe(SMOKE_ICON_MAX_WIDTH_PX);
+        expect(EXPECTED_ICON_TEXT_MIN_WIDTH_PX).toBe(SMOKE_ICON_TEXT_MIN_WIDTH_PX);
+        expect([...EXPECTED_BUNDLED_FONTS]).toEqual([...SMOKE_BUNDLED_FONTS]);
     });
 });
