@@ -26,6 +26,9 @@ const SMALL_FIELD_CLASS = 'w-full px-4 py-3 bg-[#27272a] border border-transpare
     '[color-scheme:dark]';
 const CHECK_ROW_CLASS = 'flex items-center gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 cursor-pointer ' +
     'transition-colors border border-white/5';
+// The inner company list scrolls too, and legacy/styles/common.css hid its scrollbar along with every other one.
+const COMPANY_LIST_CLASS = 'grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-2 ' +
+    '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 const CHECKBOX_CLASS = 'w-4 h-4 rounded-sm border-gray-600 text-primary focus:ring-primary/50 focus:ring-2 ' +
     'bg-[#27272a]';
 const APPLY_CLASS = 'py-4 bg-linear-to-br/srgb from-purple-500 to-purple-600 hover:from-purple-400 ' +
@@ -88,19 +91,23 @@ export default function FilterPanel(props: FilterPanelProps): ReactElement {
     };
 
     return (
-        <Modal labelledBy={titleId} onDismiss={onDismiss}>
-            <div className={TITLE_BLOCK_CLASS}>
-                <div className={BADGE_CLASS}>
-                    <span className="material-symbols-outlined text-primary text-3xl">filter_alt</span>
+        <Modal
+            labelledBy={titleId}
+            onDismiss={onDismiss}
+            header={(
+                <div className={TITLE_BLOCK_CLASS}>
+                    <div className={BADGE_CLASS}>
+                        <span className="material-symbols-outlined text-primary text-3xl">filter_alt</span>
+                    </div>
+                    <h2 id={titleId} className={TITLE_CLASS}>Advanced Filters</h2>
+                    <p className={LEAD_CLASS}>Filter and sort your work sessions.</p>
                 </div>
-                <h2 id={titleId} className={TITLE_CLASS}>Advanced Filters</h2>
-                <p className={LEAD_CLASS}>Filter and sort your work sessions.</p>
-            </div>
-
+            )}
+        >
             {companies.length === 0 ? null : (
                 <div className="mb-6">
                     <p className={GROUP_LABEL_CLASS}>Companies</p>
-                    <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto pr-2">
+                    <div className={COMPANY_LIST_CLASS}>
                         {companies.map((company) => (
                             <label key={company.id} className={CHECK_ROW_CLASS}>
                                 <input

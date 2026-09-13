@@ -352,6 +352,56 @@ describe('SPA-12: the renamed utility scales are swept, and stay swept', () => {
  * tests/renderer-structure.test.ts against the tree. This one is about what is INSIDE the one stylesheet: a
  * per-component class rule there is the same thing as a second stylesheet, only harder to find.
  */
+/*
+ * The category of regression the deleted global stylesheet left behind.
+ *
+ * legacy/styles/common.css:8-15 hid scrollbars for the WHOLE document: `::-webkit-scrollbar { display: none }` plus
+ * `* { -ms-overflow-style: none; scrollbar-width: none }`. Nothing in v1.2.1 ever drew one, so no page had to ask.
+ * ARCH-05 deleted that file and the cutover replaced it in exactly one place - AppShell's content area - which left
+ * every dialog in the app drawing a raw Windows scrollbar down a dark panel, and the filter panel's inner company
+ * list doing the same inside it. Two of the three scroll containers in the renderer, from one deleted rule.
+ *
+ * So the replacement is not "remember to add the pair": it is this, which fails on the next scroll container that
+ * forgets. Class strings in this renderer are built by concatenating adjacent literals, so the joins are collapsed
+ * first - otherwise a constant split across two lines would read as two unrelated class lists.
+ */
+describe('ARCH-05: a scroll container hides its scrollbar, as the deleted global rule did', () => {
+    const SCROLLS = /(?:^|\s)overflow(?:-[xy])?-(?:auto|scroll)(?:\s|$)/;
+    const HIDES = ['[scrollbar-width:none]', '[&::-webkit-scrollbar]:hidden'];
+    /** `'a ' + 'b'` is one class list written on two lines; the source says so and the scanner reads it that way. */
+    const CLASS_JOIN = /'\s*\+\s*'/g;
+
+    const classListsOf = (file: string): string[] =>
+        stripCommentsAndStrings(file, read(file).replace(CLASS_JOIN, '')).strings.map((token) => token.value);
+
+    it('leaves no scroll container in the renderer without both hiding utilities', () => {
+        const offenders: string[] = [];
+        let containers = 0;
+        for (const file of rendererSources()) {
+            for (const classes of classListsOf(file)) {
+                if (!SCROLLS.test(classes)) continue;
+                containers += 1;
+                const missing = HIDES.filter((utility) => !classes.includes(utility));
+                if (missing.length > 0) offenders.push(file + ': ' + classes.trim() + ' (missing ' + missing.join(' ') + ')');
+            }
+        }
+        expect(containers, 'no scroll container was found at all, so this scan proves nothing').toBeGreaterThan(2);
+        expect(
+            offenders,
+            'v1.2.1 hid every scrollbar from one global rule in legacy/styles/common.css. ARCH-05 deleted that ' +
+            'file, so each scroll container carries the pair itself - or the user gets a bright native scrollbar ' +
+            'down a dark panel.'
+        ).toEqual([]);
+    });
+
+    it('would see one that forgot, so the scan is not passing on a pattern that never matches', () => {
+        expect(SCROLLS.test('max-h-40 overflow-y-auto pr-2')).toBe(true);
+        expect(SCROLLS.test('flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden')).toBe(true);
+        expect(SCROLLS.test('overflow-hidden flex flex-col'), 'overflow-hidden does not scroll').toBe(false);
+        expect(SCROLLS.test('truncate overflow-ellipsis')).toBe(false);
+    });
+});
+
 describe('ARCH-05: globals.css declares tokens, not components', () => {
     /** The file with comments removed, so a rule quoted in prose is not read as a rule. */
     const css = (): string => read(GLOBALS).replace(/\/\*[\s\S]*?\*\//g, '');

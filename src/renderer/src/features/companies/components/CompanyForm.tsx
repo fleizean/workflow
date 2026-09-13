@@ -70,14 +70,19 @@ export default function CompanyForm({ mode, initial, busy, onSubmit, onDismiss }
     };
 
     return (
-        <Modal labelledBy={titleId} onDismiss={onDismiss}>
-            <div className={TITLE_BLOCK_CLASS}>
-                <div className={BADGE_CLASS}>
-                    <span className="material-symbols-outlined text-primary text-3xl">{words.icon}</span>
+        <Modal
+            labelledBy={titleId}
+            onDismiss={onDismiss}
+            header={(
+                <div className={TITLE_BLOCK_CLASS}>
+                    <div className={BADGE_CLASS}>
+                        <span className="material-symbols-outlined text-primary text-3xl">{words.icon}</span>
+                    </div>
+                    <h2 id={titleId} className={TITLE_CLASS}>{words.title}</h2>
+                    <p className={LEAD_CLASS}>{words.lead}</p>
                 </div>
-                <h2 id={titleId} className={TITLE_CLASS}>{words.title}</h2>
-                <p className={LEAD_CLASS}>{words.lead}</p>
-            </div>
+            )}
+        >
             <form onSubmit={submit}>
                 <div className="mb-4">
                     <label htmlFor={nameId} className={LABEL_CLASS}>Company Name</label>
