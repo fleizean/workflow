@@ -540,6 +540,32 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
         expect(h.logs.at(-1), 'the run total was not accumulated').toContain('(5 s this run)');
     });
 
+    /*
+     * IN-05. RendererBusPort documents delivery as best effort, and the adapter catches webContents.send - but the
+     * destructure ahead of that catch is outside it, so a throw would escape emit() into the setInterval callback
+     * as an uncaught main-process exception. The credit and the persist both happen first, so nothing would be
+     * lost; the contract still says this cannot fail, and now it cannot.
+     */
+    it('keeps a throwing bus from escaping the tick, and goes on counting', () => {
+        const logs: string[] = [];
+        const clock: ClockPort = { now: () => 1_757_000_000_000, monotonicNow: () => mono };
+        let mono = 1000;
+        let run: (() => void) | undefined;
+        const service = createTimerService({
+            clock,
+            scheduler: { every: (_ms, callback) => { run = callback; return { cancel: () => undefined }; } },
+            bus: { emit: () => { throw new Error('the window went away'); } },
+            store: { read: () => ({ accumulatedSeconds: 0, mode: 'work' }), write: () => undefined },
+            log: (line) => logs.push(line)
+        });
+
+        expect(() => service.start()).not.toThrow();
+        for (let i = 0; i < 3; i += 1) { mono += TICK_MS; expect(() => run?.()).not.toThrow(); }
+
+        expect(service.snapshot().elapsedSeconds, 'a bus that throws stopped the clock').toBe(3);
+        expect(logs.join(' ')).toContain('a tick could not be published');
+    });
+
     it('says nothing about a tick inside the clamp', () => {
         const h = harness();
         h.service.start();

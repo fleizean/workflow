@@ -130,12 +130,21 @@ export function createTimerService(input: TimerServiceInput): TimerService {
 
     const emit = (): void => {
         const state = snapshot();
-        bus.emit('timer:tick', state);
         try {
-            // After the push and inside a catch: an observer that throws must not stop the clock the user is watching.
+            /*
+             * IN-05: the bus is inside the catch too. RendererBusPort documents delivery as best effort - "an event
+             * nobody can receive is not an error the service that raised it has to handle" - and the adapter catches
+             * webContents.send, but the destructure ahead of that catch is outside it. A throw from there would
+             * escape into the setInterval callback as an uncaught main-process exception. Nothing would be lost -
+             * the credit and the persist both happen before this - but the contract says it cannot fail, and now
+             * the code makes that true rather than relying on mainWindows() filtering destroyed windows.
+             *
+             * And after both: an observer that throws must not stop the clock the user is watching.
+             */
+            bus.emit('timer:tick', state);
             onSnapshot?.(state, counted());
         } catch (error) {
-            log('timer: a tick observer failed - ' + (error instanceof Error ? error.message : 'unknown'));
+            log('timer: a tick could not be published - ' + (error instanceof Error ? error.message : 'unknown'));
         }
     };
 
