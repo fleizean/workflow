@@ -20,7 +20,8 @@ const CHANNELS = [
     'sessions:list', 'sessions:listByDateRange', 'sessions:listByDateAndCompany', 'sessions:create', 'sessions:update',
     'sessions:delete', 'sessions:deleteAll', 'companies:list', 'companies:get', 'companies:create', 'companies:update',
     'companies:delete', 'settings:get', 'settings:update', 'timer:getSnapshot', 'timer:start', 'timer:pause',
-    'timer:reset', 'timer:setMode', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause', 'pomodoro:abort',
+    'timer:reset', 'timer:setMode', 'timer:stopAndSave', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause',
+    'pomodoro:abort',
     'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress',
     'window:minimize', 'window:close'
 ];
@@ -467,6 +468,7 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'timer:pause': reject,
         'timer:reset': reject,
         'timer:setMode': reject,
+        'timer:stopAndSave': reject,
         'pomodoro:getSnapshot': reject,
         'pomodoro:start': reject,
         'pomodoro:pause': reject,

@@ -19,14 +19,14 @@ import type { GoalNotificationStore, GoalService } from './services/goal.service
 import { createPomodoroService } from './services/pomodoro.service';
 import type { PomodoroCompletion, PomodoroService, PomodoroStateStore } from './services/pomodoro.service';
 import { createSessionsService } from './services/sessions.service';
-import type { SessionsService } from './services/sessions.service';
+import type { SessionValues, SessionsService } from './services/sessions.service';
 import { createSettingsService } from './services/settings.service';
 import type { SettingsService } from './services/settings.service';
 import { createStatsService } from './services/stats.service';
 import type { StatsService } from './services/stats.service';
 import { createTimerService } from './services/timer.service';
 import type { CountedDay, TimerService, TimerStateStore } from './services/timer.service';
-import type { PomodoroSnapshot, TimerSnapshot } from '@shared/types';
+import type { PomodoroSnapshot, TimerSnapshot, WorkSession } from '@shared/types';
 import type {
     CompaniesRepository, PomodoroRepository, RepositoryOptions, SessionsRepository, SettingsRepository, SkippedRowReport
 } from '../lib/db';
@@ -38,12 +38,23 @@ export interface Repositories {
     readonly pomodoro: PomodoroRepository;
 }
 
+/**
+ * WR-06: the one composition the renderer cannot build for itself. Stopping the timer to record work was two
+ * independent invokes - `sessions:create` then `timer:reset` - and two invokes cannot be atomic. Killed between
+ * them, create-then-reset leaves the session on disk *and* the seconds in the accumulator, which G3/G4 then offers
+ * the user to save again (invented time); reset-then-create zeroes the accumulator with nothing written (destroyed
+ * time). Both are the Core Value, so the pairing belongs below IPC, in one transaction.
+ */
+export interface TimerCommands extends TimerService {
+    stopAndSave(values: SessionValues): WorkSession;
+}
+
 export interface Services {
     readonly sessions: SessionsService;
     readonly companies: CompaniesService;
     readonly settings: SettingsService;
     readonly stats: StatsService;
-    readonly timer: TimerService;
+    readonly timer: TimerCommands;
     readonly pomodoro: PomodoroService;
     readonly goal: GoalService;
 }
@@ -354,6 +365,23 @@ export function createContainer(input: ContainerInput): AppContainer {
         pomodoro: (): PomodoroSnapshot => { timer.pause(); return pomodoro.start(); }
     };
 
+    /*
+     * WR-06: the insert and the discard as one transaction, in that order. The discard writes before it forgets
+     * (timer.resetPersisted), so every way this can fail leaves the session unwritten and the seconds still counted
+     * - never a session on disk beside an accumulator the user is asked to save a second time, and never an
+     * accumulator zeroed with nothing written. A crash mid-transaction is SQLite's rollback and the same answer.
+     */
+    function stopAndSave(values: SessionValues): WorkSession {
+        const written = transaction(() => {
+            const session = sessions.create(values);
+            timer.resetPersisted();
+            return session;
+        });
+        // After the commit, so the day is measured against what is now on disk (services WR-01).
+        announceGoalIfReached(null);
+        return written;
+    }
+
     return {
         ports,
         repositories,
@@ -372,7 +400,7 @@ export function createContainer(input: ContainerInput): AppContainer {
             }),
             settings,
             stats,
-            timer: { ...timer, start: exclusive.timer },
+            timer: { ...timer, start: exclusive.timer, stopAndSave },
             pomodoro: { ...pomodoro, start: exclusive.pomodoro },
             goal
         },

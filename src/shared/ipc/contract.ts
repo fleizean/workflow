@@ -93,6 +93,13 @@ export const ipcContract = {
     'timer:pause': { input: z.void(), output: TimerSnapshotSchema },
     'timer:reset': { input: z.void(), output: TimerSnapshotSchema },
     'timer:setMode': { input: z.strictObject({ mode: TimerModeSchema }), output: TimerSnapshotSchema },
+    /*
+     * WR-06: stopping the timer to record work is one call, because two cannot be atomic. `sessions:create` then
+     * `timer:reset` leaves the session on disk and the seconds still counted if the process dies between them, and
+     * G3/G4 then offers the same work to be saved again; the other order zeroes the accumulator with nothing
+     * written. The session that comes back is the one that was written.
+     */
+    'timer:stopAndSave': { input: z.strictObject(sessionFields), output: WorkSessionSchema },
     'pomodoro:getSnapshot': { input: z.void(), output: PomodoroSnapshotSchema },
     'pomodoro:start': { input: z.void(), output: PomodoroSnapshotSchema },
     'pomodoro:pause': { input: z.void(), output: PomodoroSnapshotSchema },

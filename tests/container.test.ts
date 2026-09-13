@@ -701,6 +701,80 @@ describe('the services the container composes', () => {
     });
 
     /*
+     * WR-06. Stopping the timer to record work was two invokes the renderer had to sequence, and two invokes cannot
+     * be atomic. Both orders are lossy - one leaves the session on disk with the seconds still counted, so G3/G4
+     * offers the same work to be saved again; the other zeroes the accumulator with nothing written.
+     */
+    describe('stop-and-save is one transaction', () => {
+        const values = {
+            name: 'Sprint', durationSeconds: 1800, date: ld('2026-01-05'), companyId: null, note: null
+        };
+
+        it('writes the session and clears the accumulator together', async () => {
+            const dbPath = makeCleanFixture();
+            const { container, driver, connection } = await driven(dbPath);
+            const before = rawCount(dbPath, 'work_sessions');
+
+            container.services.timer.start();
+            driver.tick(1800);
+
+            const written = container.services.timer.stopAndSave(values);
+
+            expect(written.durationSeconds).toBe(1800);
+            expect(rawCount(dbPath, 'work_sessions')).toBe(before + 1);
+            expect(container.services.timer.snapshot())
+                .toMatchObject({ status: 'idle', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+            // The discard reached the disk, so the next launch does not offer the same half-hour again.
+            expect(realLayer.readTimerState(connection).accumulatedSeconds).toBe(0);
+        });
+
+        it('keeps the counted seconds when the session cannot be written', async () => {
+            const dbPath = makeCleanFixture();
+            const { container, driver, connection } = await driven(dbPath);
+            container.services.timer.start();
+            driver.tick(1800);
+
+            const company = container.services.companies.create({ name: 'Fabrikam', noteRequired: true });
+            expect(() => container.services.timer.stopAndSave({ ...values, companyId: company.id }))
+                .toThrow(/requires a note/);
+
+            expect(container.services.timer.snapshot().elapsedSeconds, 'a refused save destroyed the time').toBe(1800);
+            expect(realLayer.readTimerState(connection).accumulatedSeconds).toBe(1800);
+        });
+
+        /*
+         * The half that makes the ordering matter: the discard writes before it forgets, so a disk that refuses the
+         * app_state write rolls the session back AND leaves every second counted. Neither duplicated nor destroyed.
+         */
+        it('rolls the session back and keeps the seconds when the discard cannot be written', async () => {
+            const dbPath = makeCleanFixture();
+            const driver = drivenPorts();
+            const connection = await migratedConnection(dbPath);
+            let refuseDiscard = false;
+            const layer: DatabaseLayer = {
+                ...guardedLayer(),
+                writeTimerState: (db, state, now) => {
+                    if (refuseDiscard && state.accumulatedSeconds === 0) throw new Error('database or disk is full');
+                    realLayer.writeTimerState(db, state, now);
+                }
+            };
+            const container = createContainer({ layer, connection, log: () => undefined, ports: driver.ports });
+            const before = rawCount(dbPath, 'work_sessions');
+
+            container.services.timer.start();
+            driver.tick(1800);
+            refuseDiscard = true;
+
+            expect(() => container.services.timer.stopAndSave(values)).toThrow(/disk is full/);
+
+            expect(rawCount(dbPath, 'work_sessions'), 'a session was written for time the timer still holds')
+                .toBe(before);
+            expect(container.services.timer.snapshot().elapsedSeconds, 'half an hour of real work was destroyed')
+                .toBe(1800);
+        });
+    });
+
+    /*
      * WR-03, driven through the real composition root over a real migrated fixture. The user is 49 minutes into a
      * 50-minute interval when Windows restarts. Before this, the next launch started that interval from zero.
      */

@@ -86,6 +86,8 @@ function spyingServices(): Spy {
             pause: answer('timer.pause', TIMER),
             reset: answer('timer.reset', TIMER),
             setMode: answer('timer.setMode', TIMER),
+            resetPersisted: answer('timer.resetPersisted', undefined),
+            stopAndSave: answer('timer.stopAndSave', SESSION),
             suspend: answer('timer.suspend', undefined),
             resume: answer('timer.resume', undefined),
             persistNow: answer('timer.persistNow', true),
@@ -156,6 +158,10 @@ const WELL_FORMED: Readonly<Record<IpcChannel, { input?: unknown; reaches: strin
     'timer:pause': { reaches: 'timer.pause' },
     'timer:reset': { reaches: 'timer.reset' },
     'timer:setMode': { input: { mode: 'pomodoro' }, reaches: 'timer.setMode' },
+    'timer:stopAndSave': {
+        input: { name: 'Sprint', durationSeconds: 1800, date: DAY, companyId: null, note: null },
+        reaches: 'timer.stopAndSave'
+    },
     'pomodoro:getSnapshot': { reaches: 'pomodoro.snapshot' },
     'pomodoro:start': { reaches: 'pomodoro.start' },
     'pomodoro:pause': { reaches: 'pomodoro.pause' },

@@ -8,7 +8,7 @@ import type { PomodoroService } from '../services/pomodoro.service';
 import type { SessionsService } from '../services/sessions.service';
 import type { SettingsService } from '../services/settings.service';
 import type { StatsService } from '../services/stats.service';
-import type { TimerService } from '../services/timer.service';
+import type { TimerCommands } from '../container';
 
 /** The window the titlebar drives. v1.2.1 hid on both, and the tray is where the window went (IPC-05). */
 export interface WindowControls {
@@ -20,7 +20,8 @@ export interface HandlerContext {
     readonly sessions: SessionsService;
     readonly companies: CompaniesService;
     readonly settings: SettingsService;
-    readonly timer: TimerService;
+    /** The composition root's timer: TimerService plus the one pairing the renderer cannot do atomically (WR-06). */
+    readonly timer: TimerCommands;
     readonly pomodoro: PomodoroService;
     readonly stats: StatsService;
     readonly window: WindowControls;
@@ -52,6 +53,7 @@ export function createHandlers(context: HandlerContext): IpcHandlers {
         'timer:pause': () => timer.pause(),
         'timer:reset': () => timer.reset(),
         'timer:setMode': (input) => timer.setMode(input.mode),
+        'timer:stopAndSave': (input) => timer.stopAndSave(input),
 
         'pomodoro:getSnapshot': () => pomodoro.snapshot(),
         'pomodoro:start': () => pomodoro.start(),

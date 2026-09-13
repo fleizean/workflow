@@ -69,6 +69,9 @@ const NEW_IN_V2: Readonly<Record<string, string>> = {
     'timer:pause': 'the clock moved into main',
     'timer:reset': 'the clock moved into main',
     'timer:setMode': 'CORE-14: changing the mode no longer resets what was counted (CB-1)',
+    'timer:stopAndSave':
+        'WR-06: saving a session and clearing the accumulator is one transaction, because two invokes cannot be ' +
+        'atomic - one order duplicates the work on the next launch, the other destroys it',
     'pomodoro:getSnapshot': 'the cycle is a main-process state machine, not renderer variables (CORE-11)',
     'pomodoro:start': 'the cycle is a main-process state machine',
     'pomodoro:pause': 'the cycle is a main-process state machine',

@@ -21,6 +21,7 @@ export const IPC_CHANNELS = [
     'timer:pause',
     'timer:reset',
     'timer:setMode',
+    'timer:stopAndSave',
     'pomodoro:getSnapshot',
     'pomodoro:start',
     'pomodoro:pause',

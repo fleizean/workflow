@@ -70,6 +70,12 @@ export interface TimerService {
     pause(): TimerSnapshot;
     /** The only path that discards what was counted. Nothing else may zero it (CORE-14). */
     reset(): TimerSnapshot;
+    /**
+     * The same discard, refusing to happen unless it reached the disk: the write comes first, so a throw leaves
+     * every counted second exactly where it was. That is what lets a caller put this and a session insert in one
+     * transaction and have neither duplication nor loss on either side of a crash (WR-06).
+     */
+    resetPersisted(): void;
     /** Changes the mode and nothing else - not the status, and above all not the accumulated time (CORE-14, CB-1). */
     setMode(mode: TimerMode): TimerSnapshot;
     /** powerMonitor suspend, handed over by the lifecycle module: nothing is credited until resume (CORE-06). */
@@ -187,6 +193,18 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         emit();
     }
 
+    /** Everything reset() and resetPersisted() agree on: the day counted is discarded with the seconds (CORE-14). */
+    function clearCounted(): void {
+        stopRepeat();
+        accumulatedMs = 0;
+        countedDay = null;
+        countedDayMs = 0;
+        status = 'idle';
+        restoredFromPreviousLaunch = false;
+        gated = false;
+        gatedTicks = 0;
+    }
+
     function startRepeat(): void {
         repeat ??= scheduler.every(TICK_MS, onTick);
     }
@@ -229,18 +247,22 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         },
 
         reset() {
-            stopRepeat();
-            accumulatedMs = 0;
-            // The only path that discards what was counted, so the day it was counted on is discarded with it.
-            countedDay = null;
-            countedDayMs = 0;
-            status = 'idle';
-            restoredFromPreviousLaunch = false;
-            gated = false;
-            gatedTicks = 0;
+            clearCounted();
             persistNow();
             emit();
             return snapshot();
+        },
+
+        resetPersisted() {
+            // The write before the forgetting, and deliberately unguarded: a discard that did not reach the disk
+            // would be restored as unsaved time on the next launch, and the session it was just saved as would make
+            // that a duplicate. A throw here leaves the accumulation untouched, which is the point.
+            store.write({ accumulatedSeconds: 0, mode });
+            writtenSeconds = 0;
+            writtenMode = mode;
+            persistFailing = false;
+            clearCounted();
+            emit();
         },
 
         setMode(next) {
