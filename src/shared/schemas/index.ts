@@ -83,7 +83,13 @@ export const TimerSnapshotSchema = z.strictObject({
     mode: TimerModeSchema,
     elapsedSeconds: DurationSecondsSchema,
     // G3/G4: time carried over from a previous launch is offered for saving or discarding, never auto-resumed.
-    restoredFromPreviousLaunch: z.boolean()
+    restoredFromPreviousLaunch: z.boolean(),
+    /*
+     * WR-04: the last attempt to write the counted seconds did not land. The clock keeps running - the value is
+     * still in memory and stopping would be worse - but a reboot now costs everything since the first failure, so
+     * the user has to be able to see that they should write the time down somewhere.
+     */
+    persistFailing: z.boolean()
 });
 
 // The pomodoro cycle's vocabulary. The interval names are the state machine's, and completedToday is read from the

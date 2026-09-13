@@ -248,7 +248,7 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
 
     it('carries the timer snapshot with no start timestamp on it (CORE-07)', () => {
         const tick = ipcEvents['timer:tick'];
-        const snapshot = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false };
+        const snapshot = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false, persistFailing: false };
         expect(tick.safeParse(snapshot).success).toBe(true);
         expect(tick.safeParse({ ...snapshot, startTime: 1757000000000 }).success,
             'CORE-07: a start timestamp reached the wire, which is how B12 and B13 were computed').toBe(false);

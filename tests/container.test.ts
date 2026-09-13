@@ -17,7 +17,7 @@ import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
 import { closeDatabaseNow } from '../src/main/lifecycle';
 import {
-    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME
+    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, TIMER_NOT_SAVED_NOTIFICATION
 } from '../src/main/notifications';
 import { instantFromEpochMs } from '../src/shared/utils/date';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
@@ -204,7 +204,7 @@ describe('the container hands out repositories over the connection startup opene
         expect(Object.keys(container.services).sort())
             .toEqual(['companies', 'goal', 'pomodoro', 'sessions', 'settings', 'stats', 'timer']);
         expect(container.services.timer.snapshot())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
 
         // The store writes through app-state.ts, not through a repository and not through raw SQL.
         container.services.timer.setMode('pomodoro');
@@ -666,6 +666,41 @@ describe('the services the container composes', () => {
     });
 
     /*
+     * WR-04. The clock keeps running on a write failure, which is right - the value is still in memory. But nothing
+     * else happened: no notification, no bus event, no degraded state. A disk that fills at 09:10 then costs the
+     * user everything up to the next reboot, and they were never told.
+     */
+    it('tells the user once when the counted time stops reaching the disk, and re-arms on a success', async () => {
+        const driver = drivenPorts();
+        const connection = await migratedConnection(makeCleanFixture());
+        let failing = true;
+        const layer: DatabaseLayer = {
+            ...guardedLayer(),
+            writeTimerState: (db, state, now) => {
+                if (failing) throw new Error('database or disk is full');
+                realLayer.writeTimerState(db, state, now);
+            }
+        };
+        const container = createContainer({ layer, connection, log: () => undefined, ports: driver.ports });
+
+        container.services.timer.start();
+        driver.tick(30);
+
+        expect(driver.notifications, 'a disk that stopped taking writes was never mentioned to the user')
+            .toEqual([TIMER_NOT_SAVED_NOTIFICATION]);
+        expect(container.services.timer.snapshot().elapsedSeconds, 'the clock stopped on a write failure').toBe(30);
+
+        failing = false;
+        driver.tick(30);
+        expect(container.services.timer.snapshot().persistFailing).toBe(false);
+
+        // Re-armed rather than remembered: a second run of failures is worth telling the user about again.
+        failing = true;
+        driver.tick(30);
+        expect(driver.notifications).toHaveLength(2);
+    });
+
+    /*
      * WR-03, driven through the real composition root over a real migrated fixture. The user is 49 minutes into a
      * 50-minute interval when Windows restarts. Before this, the next launch started that interval from zero.
      */
@@ -762,7 +797,7 @@ describe('CORE-13: the goal is a fact about the local day, not about the timer',
         container.services.settings.update({ dailyTargetSeconds: savedToday + 3600, goalNotification: true });
 
         expect(container.services.timer.snapshot(), 'G3/G4: the carry-over is offered, paused')
-            .toEqual({ status: 'paused', mode: 'work', elapsedSeconds: 29000, restoredFromPreviousLaunch: true });
+            .toEqual({ status: 'paused', mode: 'work', elapsedSeconds: 29000, restoredFromPreviousLaunch: true, persistFailing: false });
 
         container.services.timer.start();
         driver.tick(60);

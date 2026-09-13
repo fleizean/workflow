@@ -32,7 +32,7 @@ vi.mock('electron', () => ({
 const { registerIpcHandlers, removeIpcHandlers } = await import('../src/main/ipc/register');
 
 const CONTRACT_CHANNELS = Object.keys(ipcContract).sort();
-const TIMER = { status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false } as const;
+const TIMER = { status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false } as const;
 
 let contextCalls = 0;
 

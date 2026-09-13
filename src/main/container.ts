@@ -7,7 +7,8 @@ import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
 import { describeError } from './errors';
 import {
-    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, notificationForCompletion
+    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, TIMER_NOT_SAVED_NOTIFICATION,
+    notificationForCompletion
 } from './notifications';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
 import type { AppPorts, ClockPort } from './ports';
@@ -179,6 +180,23 @@ export function createContainer(input: ContainerInput): AppContainer {
     // The second the goal was last measured at, so the sampler below compares rather than takes a residue.
     let lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
 
+    /*
+     * WR-04: a write failure was logged to a stdout no packaged user sees. The clock keeps running - the value is
+     * still in memory and stopping would be worse - but a reboot then costs everything since the first failure. Once
+     * per run of failures, so a full disk does not become a notification every second, and re-armed by a success.
+     */
+    let persistFailureAnnounced = false;
+    function watchPersistence(snapshot: TimerSnapshot): void {
+        if (!snapshot.persistFailing) {
+            persistFailureAnnounced = false;
+            return;
+        }
+        if (!persistFailureAnnounced) {
+            persistFailureAnnounced = true;
+            ports.notifier.notify(TIMER_NOT_SAVED_NOTIFICATION);
+        }
+    }
+
     /** The tick's way in: how often the question is worth its cost, and whose seconds count when it is asked. */
     function evaluateGoal(snapshot: TimerSnapshot, counted: CountedDay): void {
         // A reset rewinds elapsedSeconds, so the mark rewinds with it - otherwise the rest of the day would be spent
@@ -257,7 +275,7 @@ export function createContainer(input: ContainerInput): AppContainer {
         scheduler: ports.scheduler,
         bus: ports.bus,
         store: createTimerStateStore(layer, input.connection, ports.clock),
-        onSnapshot: evaluateGoal,
+        onSnapshot: (snapshot, counted) => { watchPersistence(snapshot); evaluateGoal(snapshot, counted); },
         log
     });
 

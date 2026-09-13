@@ -102,6 +102,9 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     let gatedTicks = 0;
     let writtenSeconds = initial.accumulatedSeconds;
     let writtenMode: TimerMode = initial.mode;
+    // WR-04: whether the last write landed. Logging alone left a user counting to 17:00 against a full disk with
+    // nothing on screen to say that a reboot would take the whole day with it.
+    let persistFailing = false;
 
     // Which local day the seconds below were counted on. A launch restores the accumulation but not the day it was
     // worked on, so a carry-over starts as counted on no day and no day is credited with it (CR-01).
@@ -112,7 +115,7 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     const elapsedSeconds = (): number => Math.floor(accumulatedMs / TICK_MS);
 
     const snapshot = (): TimerSnapshot => ({
-        status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch
+        status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch, persistFailing
     });
 
     const counted = (): CountedDay => ({ day: countedDay, seconds: Math.floor(countedDayMs / TICK_MS) });
@@ -131,14 +134,17 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     function persistNow(): boolean {
         const seconds = elapsedSeconds();
         if (seconds === writtenSeconds && mode === writtenMode) {
+            persistFailing = false;
             return true;
         }
         try {
             store.write({ accumulatedSeconds: seconds, mode });
             writtenSeconds = seconds;
             writtenMode = mode;
+            persistFailing = false;
             return true;
         } catch (error) {
+            persistFailing = true;
             log('timer: the elapsed time could not be saved - ' + (error instanceof Error ? error.message : 'unknown'));
             return false;
         }

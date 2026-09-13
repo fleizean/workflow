@@ -293,7 +293,7 @@ describe('CORE-05 / B12: time the app was closed for is never added', () => {
         const db = await migratedDatabase('fresh');
         const h = harness({ store: databaseStore(db, () => Date.now()) });
         expect(h.service.snapshot())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
     });
 });
 
@@ -413,7 +413,7 @@ describe('CORE-14 / CB-1: a mode change never resets accumulated time', () => {
         h.service.pause();
 
         expect(h.service.setMode('pomodoro'))
-            .toEqual({ status: 'paused', mode: 'pomodoro', elapsedSeconds: 30, restoredFromPreviousLaunch: false });
+            .toEqual({ status: 'paused', mode: 'pomodoro', elapsedSeconds: 30, restoredFromPreviousLaunch: false, persistFailing: false });
         expect(h.service.setMode('work').elapsedSeconds, 'switching back discarded what was counted').toBe(30);
     });
 
@@ -449,7 +449,7 @@ describe('CORE-14 / CB-1: a mode change never resets accumulated time', () => {
         h.drive(30);
 
         expect(h.service.reset())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
         expect(h.counters.cancelled, 'reset left the repeat running').toBe(1);
         expect(h.writes.at(-1)).toEqual({ accumulatedSeconds: 0, mode: 'work' });
     });
@@ -530,6 +530,31 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
         expect(() => { h.drive(12); }).not.toThrow();
         expect(h.elapsed()).toBe(12);
         expect(h.logs.some((line) => line.startsWith('timer: the elapsed time could not be saved'))).toBe(true);
+    });
+
+    /*
+     * WR-04. A user's disk fills at 09:10. Every flush from then on throws and is logged to a stdout no packaged
+     * user sees; the timer counts to 17:00 correctly on screen, the machine reboots overnight, and the next launch
+     * restores 09:10's value. Nearly eight hours gone, and nothing ever said anything was wrong.
+     */
+    it('says in the snapshot that the counted time is not reaching the disk, and stops saying it on the first success', () => {
+        let failing = true;
+        const h = harness({
+            store: {
+                read: () => ({ accumulatedSeconds: 0, mode: 'work' }),
+                write: () => { if (failing) throw new Error('database or disk is full'); }
+            }
+        });
+        h.service.start();
+        expect(h.service.snapshot().persistFailing, 'nothing had failed yet').toBe(false);
+
+        h.drive(6);
+        expect(h.service.snapshot().persistFailing, 'a run of failed writes was invisible to the renderer').toBe(true);
+        expect(h.emitted.at(-1)?.payload).toMatchObject({ persistFailing: true, elapsedSeconds: 6 });
+
+        failing = false;
+        h.drive(6);
+        expect(h.service.snapshot().persistFailing, 'the first write that landed did not clear it').toBe(false);
     });
 
     it('loses at most the debounce when the process is killed while running', async () => {
