@@ -53,15 +53,37 @@ const DRIZZLE_TOOLING_PATTERNS = [{
     message: DRIZZLE_TOOLING_MESSAGE
 }];
 
-// ARCH-01: a service must load with electron stubbed to throw, and must not know that IPC exists. Ports in, handlers
-// above: a service that imports ipc/ has inverted the layering even when nothing else notices.
-const SERVICE_LAYER_MESSAGE = 'src/main/services must stay Electron-free and must not import ipc/ - take a port from src/main/ports and let a handler call the service (ARCH-01).';
-const SERVICE_LAYER_PATHS = [{ name: 'electron', message: SERVICE_LAYER_MESSAGE }];
+/*
+ * ARCH-01: a service must load with electron stubbed to throw, must not know that IPC exists, and must not reach the
+ * database, the adapters or the composition root. Ports in, handlers above, repositories handed to it as arguments.
+ *
+ * WR-05: until this rule grew, only `electron` was ever flagged here - `better-sqlite3`, `@lib/db`, `../../lib/db`,
+ * `../adapters`, `../window` and `../container` were all accepted, while five service files carried a comment saying
+ * "nothing here imports src/lib/db". A rule five files quote and nothing checks is a comment.
+ *
+ * The ban covers the type position too. Every service states what it needs structurally on purpose - naming
+ * SessionsRepository is taking a dependency on the row layer's vocabulary - so there is no type import to exempt, and
+ * an exemption is how the value import comes back.
+ */
+const SERVICE_LAYER_MESSAGE = 'src/main/services must stay Electron-free, must not import ipc/, and must not reach the database, the adapters or the composition root - take a port from src/main/ports, state what you need structurally, and let the container hand it to you (ARCH-01).';
+const SERVICE_LAYER_PATHS = [
+    { name: 'electron', message: SERVICE_LAYER_MESSAGE },
+    { name: 'better-sqlite3', message: SERVICE_LAYER_MESSAGE }
+];
 const SERVICE_LAYER_PATTERNS = [
     { group: ['electron/*'], message: SERVICE_LAYER_MESSAGE },
     { regex: '^(\\.\\./)+ipc(/|$)', message: SERVICE_LAYER_MESSAGE },
     { regex: '^@main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE },
-    { regex: '(^|/)main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE }
+    { regex: '(^|/)main/ipc(/|$)', message: SERVICE_LAYER_MESSAGE },
+    // Everything under src/main that a service sits above, plus the database in either spelling. ports/ and the
+    // sibling services are deliberately absent: those are the only two neighbours a service may name.
+    {
+        regex: '^(\\.\\./)+(lib|adapters|window|tray|container|lifecycle|database-startup|legacy-storage|config)(/|$)',
+        message: SERVICE_LAYER_MESSAGE
+    },
+    { regex: '^@main/(adapters|window|tray|container|lifecycle|config)(/|$)', message: SERVICE_LAYER_MESSAGE },
+    { regex: '^@lib(/|$)', message: SERVICE_LAYER_MESSAGE },
+    { regex: '(^|/)lib/db(/|$)', message: SERVICE_LAYER_MESSAGE }
 ];
 
 // ARCH-01: a handler validates, calls one service and shapes the answer. It may name electron - ipcMain is how a

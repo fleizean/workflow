@@ -668,22 +668,41 @@ describe('ARCH-01: lint proves the direction of the main process', () => {
     const CONTAINER_FILE = 'src/main/container.ts';
     const DB_FILE = 'src/lib/db/handle.ts';
 
-    it('refuses electron and ipc/ in a service, and lets the ports and the shared contract through', async () => {
+    /*
+     * WR-05. This probe used to list `import type { SessionsRepository } from '@lib/db';` under `allowed` and assert
+     * it was not flagged. That read as coverage of the @lib/db boundary and proved nothing - the *value* import was
+     * not flagged either, and neither were better-sqlite3, ../../lib/db, ../adapters, ../window or ../container.
+     * Every one of them is a banned probe now, so deleting a line from SERVICE_LAYER_PATTERNS fails this test.
+     */
+    it('refuses electron, ipc/, the database and the composition root in a service', async () => {
         const banned = [
             'import { app } from \'electron\';',
             'import { Notification } from \'electron/main\';',
             'import { registerIpcHandlers } from \'../ipc\';',
             'import { registerIpcHandlers as fromAlias } from \'@main/ipc\';',
-            'import { handler } from \'../../main/ipc/session.ipc\';'
+            'import { handler } from \'../../main/ipc/session.ipc\';',
+            'import Database from \'better-sqlite3\';',
+            'import { createSessionsRepository } from \'@lib/db\';',
+            'import type { SessionsRepository } from \'@lib/db\';',
+            'import { createSessionsRepository } from \'../../lib/db\';',
+            'import { createElectronPorts } from \'../adapters\';',
+            'import { mainWindows } from \'../window\';',
+            'import { createTray } from \'../tray\';',
+            'import { activeContainer } from \'../container\';',
+            'import { closeDatabaseNow } from \'../lifecycle\';',
+            'import { appConfig } from \'../config\';',
+            'import { createDbHandle } from \'../../lib/db/handle\';'
         ];
+        // The two neighbours a service may name, plus the shared vocabulary every layer shares.
         const allowed = [
             'import type { ClockPort } from \'../ports\';',
+            'import { localDayOf } from \'../ports\';',
             'import type { WorkSession } from \'@shared/types\';',
-            'import type { SessionsRepository } from \'@lib/db\';'
+            'import { TICK_MS } from \'./timer.service\';'
         ];
         const { missed, flagged } = await probe(SERVICE_FILE, [], banned, allowed, byRule('no-restricted-imports'));
         expect(missed, 'imports a service was allowed to make').toEqual([]);
-        expect(flagged, 'the service ban refused a port, a domain type or a repository type').toEqual([]);
+        expect(flagged, 'the service ban refused a port, a sibling service or a domain type').toEqual([]);
     }, 60_000);
 
     it('still lets the adapters import electron, which is the whole reason they exist', async () => {
