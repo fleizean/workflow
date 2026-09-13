@@ -65,11 +65,23 @@ describe('IPC-01: registration', () => {
         expect(registrations, 'S1: navigate is not a channel this app answers on').not.toContain('navigate');
     });
 
-    it('registers once however often it is asked, so a second call cannot throw at ipcMain', () => {
+    /*
+     * WR-06: it used to return the shared disposer as though it had registered, dropping the second caller's context
+     * and log - so every channel kept resolving through the first caller's container, and the second caller's
+     * disposer took the first caller's registration with it.
+     */
+    it('refuses a second registration rather than dropping its context on the floor', () => {
         register();
         const count = registrations.length;
+        expect(() => register()).toThrow(/already registered/);
+        expect(registrations.length, 'ipcMain was touched again by a call that was refused').toBe(count);
+    });
+
+    it('registers again once the channels have been taken off, which is what the smoke does', () => {
+        const dispose = register();
+        dispose();
         expect(() => register()).not.toThrow();
-        expect(registrations.length).toBe(count);
+        expect([...registrations].sort()).toEqual([...CONTRACT_CHANNELS, ...CONTRACT_CHANNELS].sort());
     });
 
     it('removes every channel it registered, and removing twice is harmless', () => {

@@ -16,10 +16,16 @@ export interface RegisterIpcInput {
 
 let registered = false;
 
-/** Registers once; returns the disposer that takes the channels back off ipcMain. */
+/**
+ * Registers once; returns the disposer that takes the channels back off ipcMain. A second call refuses rather than
+ * pretending: its context and its log would be dropped on the floor, every channel would keep resolving through the
+ * first caller's container, and the disposer it got back would unregister the first caller's channels. There is one
+ * composition root, so a second call is a bug - and silently ignored is the one behaviour nobody can debug (WR-06).
+ */
 export function registerIpcHandlers(input: RegisterIpcInput): () => void {
     if (registered) {
-        return removeIpcHandlers;
+        throw new Error('src/main/ipc/register.ts: the IPC handlers are already registered; ' +
+            'call removeIpcHandlers() before registering a second context');
     }
     registered = true;
 
