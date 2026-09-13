@@ -3,14 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    EXIT_CODES, SMOKE_BUNDLED_FONTS, SMOKE_ICON_MAX_WIDTH_PX, SMOKE_ICON_TEXT_MIN_WIDTH_PX
+    EXIT_CODES, SMOKE_BUNDLED_FONTS, SMOKE_ICON_MAX_WIDTH_PX, SMOKE_ICON_TEXT_MIN_WIDTH_PX, SMOKE_WATCHDOG_MS
 } from '../src/main/config';
 import { IPC_CHANNELS } from '../src/shared/ipc/channels';
 import {
-    EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX, EXPECTED_ICON_TEXT_MIN_WIDTH_PX,
-    EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, evaluateRefusalCase, evaluateTimerCase,
-    evaluateWalFlushed
+    DEFAULT_TIMEOUT_MS, EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX,
+    EXPECTED_ICON_TEXT_MIN_WIDTH_PX, EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, EXPECTED_WATCHDOG_MS,
+    evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed
 } from '../tools/smoke-packaged.mjs';
+import { read } from './helpers/ts-imports';
 import type { SmokeCheck, SmokeReport } from '../tools/smoke-packaged.mjs';
 
 const NEWER_HASH = 'f'.repeat(64);
@@ -109,6 +110,25 @@ describe('T-04-50: the harness and the app cannot drift apart on exit codes', ()
 
     it('EXPECTED_IPC_CHANNELS restates the contract channel count, so a new channel is smoked too', () => {
         expect(EXPECTED_IPC_CHANNELS).toBe(IPC_CHANNELS.length);
+    });
+
+    /*
+     * A smoke launch shows no window and creates no tray, so a run that hangs is a process only Task Manager can
+     * end. The app gives itself a deadline; the harness's kill is the backstop behind it, and the order matters -
+     * the other way round, every hang is reported as an anonymous kill with nothing said about how far it got.
+     */
+    it('lets the app time itself out before the harness kills it', () => {
+        expect(EXPECTED_WATCHDOG_MS, 'the harness and the app disagree on the deadline').toBe(SMOKE_WATCHDOG_MS);
+        expect(SMOKE_WATCHDOG_MS, 'the harness would kill the launch before it could say why it stopped')
+            .toBeLessThan(DEFAULT_TIMEOUT_MS);
+    });
+
+    it('arms that deadline on every smoke launch and fails on it, rather than passing', () => {
+        const source = read('src/main/smoke.ts');
+        expect(source, 'nothing arms the watchdog').toContain('armWatchdog(lines)');
+        expect(source, 'a watchdog that exits ok would report a hang as a pass').toContain('EXIT_CODES.smokeStuck');
+        expect(source, 'the watchdog reports a pass').toMatch(/ok: false,\s+code: EXIT_CODES\.smokeStuck/);
+        expect(source, 'a finished run would still be killed by its own watchdog').toContain('clearTimeout(watchdog)');
     });
 
     // The same seven names tests/container.test.ts reads off the real container, so neither can move alone.

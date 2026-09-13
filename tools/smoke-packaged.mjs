@@ -51,8 +51,12 @@ export const EXPECTED_EXIT_CODES = Object.freeze({
     doorClosed: 3,
     refusedNewer: 4,
     refusedUnrecognized: 5,
-    databaseFailed: 6
+    databaseFailed: 6,
+    smokeStuck: 7
 });
+// The app's own deadline, restated: it must be shorter than DEFAULT_TIMEOUT_MS above, so a stuck launch reports why
+// it stopped instead of being killed anonymously. tests/smoke-harness.test.ts holds this equal to the app's.
+export const EXPECTED_WATCHDOG_MS = 60_000;
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const V121_FIXTURE = path.join(repoRoot, 'tests', 'fixtures', 'v121.sql');

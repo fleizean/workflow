@@ -16,6 +16,14 @@ export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
 export const SMOKE_EXIT_FALLBACK_MS = 3_000;
+/*
+ * The whole smoke launch's deadline. A smoke window is never shown and a smoke launch creates no tray, so a run that
+ * hangs is a process with nothing to click and no way out but Task Manager - the WR-03 shape, applied to the test
+ * harness instead of the app. Shorter than the harness's own 90 s kill (tools/smoke-packaged.mjs DEFAULT_TIMEOUT_MS),
+ * so a stuck run names its own reason rather than being killed anonymously; tests/smoke-harness.test.ts holds the
+ * two in that order.
+ */
+export const SMOKE_WATCHDOG_MS = 60_000;
 // WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
 export const SMOKE_ESCAPE_URL = 'https://example.invalid/';
 export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
@@ -54,7 +62,8 @@ export const EXIT_CODES = Object.freeze({
     doorClosed: 3,
     refusedNewer: 4,
     refusedUnrecognized: 5,
-    databaseFailed: 6
+    databaseFailed: 6,
+    smokeStuck: 7
 });
 
 // IPC-05: the width and height a new window opens at, and the size below which it cannot be resized. Phase 10's

@@ -9,10 +9,11 @@ import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
-    PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT,
-    SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS, SMOKE_ICON_FONT_SIZE_PX,
-    SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID,
-    SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, mainConfig
+    EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
+    RENDERER_SECOND_ROUTE_TEXT, SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
+    SMOKE_ICON_FONT_SIZE_PX, SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
+    SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
+    mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -42,6 +43,31 @@ function describeLegacyImport(status: LegacyImportStatus): string {
         : 'timerState=' + status.timerState + ' goalDate=' + status.goalDate;
 }
 
+let watchdog: NodeJS.Timeout | undefined;
+// The report so far, so a run killed by the watchdog still says how far it got rather than only that it stopped.
+let reportedSoFar: readonly string[] = [];
+
+/*
+ * A smoke launch has no window on screen and no tray icon, so a run that never finishes is a process only Task
+ * Manager can end - and on a developer's machine it is invisible until something else goes wrong. It ends itself
+ * instead, and it ends FAILING: a hang is a real failure, and a watchdog that exited 0 would hide one.
+ *
+ * unref'd, so the watchdog can never itself be the reason the process is still alive; Electron's app keeps the loop
+ * running, which is exactly the condition it exists to break.
+ */
+function armWatchdog(lines: readonly string[]): void {
+    reportedSoFar = lines;
+    watchdog = setTimeout(() => {
+        finishSmoke({
+            ok: false,
+            code: EXIT_CODES.smokeStuck,
+            lines: [...reportedSoFar,
+                'SMOKE_FAIL=watchdog: the launch did not finish within ' + String(SMOKE_WATCHDOG_MS) + ' ms']
+        });
+    }, SMOKE_WATCHDOG_MS);
+    watchdog.unref();
+}
+
 export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
     const appName = app.getName();
     const appData = app.getPath('appData');
@@ -54,6 +80,7 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         'SMOKE_APP_DATA=' + appData,
         'SMOKE_USER_DATA=' + userData
     ];
+    armWatchdog(lines);
     const fail = (reason: string): SmokeOutcome => ({ ok: false, lines: [...lines, 'SMOKE_FAIL=' + reason] });
 
     const dbPath = mainConfig.smokeDbPath;
@@ -744,6 +771,10 @@ async function probeContainment(win: BrowserWindow): Promise<{ windowOpenBlocked
 
 /** Writes the report and exits only once stdout has flushed it; pipes are asynchronous on macOS. */
 export function finishSmoke(outcome: SmokeOutcome): void {
+    if (watchdog !== undefined) {
+        clearTimeout(watchdog);
+        watchdog = undefined;
+    }
     const code = outcome.code ?? (outcome.ok ? 0 : 1);
     const fallback = setTimeout(() => app.exit(code), SMOKE_EXIT_FALLBACK_MS);
     process.stdout.write(outcome.lines.join('\n') + '\n', () => {
