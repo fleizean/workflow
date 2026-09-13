@@ -941,6 +941,39 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
         expect(flagged, 'lint refused a query that names an id or an attribute').toEqual([]);
     }, 60_000);
 
+    /*
+     * WR-04. Criterion 8 asks for a test that fails on "a second .css file under src/renderer, on a CSS module, or
+     * on a per-component class rule". The third clause was enforced only for rules written INSIDE globals.css, and
+     * a stylesheet does not have to be a file: the <style> element below is what legacy/renderer/shared.js:255-285
+     * did for the toast transition, and replacing it with @theme tokens is the change 07-E-SUMMARY.md presents as
+     * ARCH-05's whole point.
+     */
+    it('refuses a rule injected at run time and a style set on an element', async () => {
+        const banned = [
+            'export const s = <style>{\'.toast-row { transition: all .3s; }\'}</style>;',
+            'const tag = document.createElement(\'style\');',
+            'const sheet = document.createElement(\'link\');',
+            'el.style.background = \'red\';',
+            'el.style.setProperty(\'color\', \'red\');',
+            'el.setAttribute(\'style\', \'color: red\');',
+            'el.style.cssText = \'color: red\';',
+            'document.styleSheets[0]?.insertRule(\'.x { color: red }\');',
+            'void document.adoptedStyleSheets;',
+            'const made = new CSSStyleSheet();'
+        ];
+        // Reading a computed style is not writing one, and a class chosen from a typed map stays legal.
+        const allowed = [
+            'void getComputedStyle(el).color;',
+            'export const t = <div className={CIRCLE[tone]} />;'
+        ];
+        const isArch05 = (m: Linter.LintMessage): boolean =>
+            m.ruleId === 'no-restricted-syntax' && m.message.endsWith('(ARCH-05).');
+
+        const { missed, flagged } = await probe(RENDERER_PROBE_FILE, header, banned, allowed, isArch05);
+        expect(missed, 'a stylesheet came back into the renderer by another door').toEqual([]);
+        expect(flagged, 'reading a computed style, or picking a whole class string, was refused').toEqual([]);
+    }, 60_000);
+
     it('applies both rules to every renderer source file, not just the one probed', async () => {
         const renderer = repositoryFiles()
             .filter((file) => isUnder(file, 'src/renderer/src') && SOURCE_EXTENSIONS.includes(extensionOf(file)));

@@ -410,6 +410,24 @@ describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
         ).toEqual([GLOBALS]);
     });
 
+    /*
+     * WR-04: "exactly one .css file under src/renderer" says nothing about a stylesheet imported from a package.
+     * `import 'material-symbols/outlined.css'` in a component is a second stylesheet by every meaning ARCH-05
+     * has, and it passed. The one import that may exist is main.tsx's, which is what puts Tailwind's build-time
+     * output into the bundle at all.
+     */
+    it('imports a stylesheet from one file, and it is the bootstrap', () => {
+        const importers = rendererSources()
+            .filter((file) => literalsOf(file).some((value) => value.endsWith('.css')))
+            .sort();
+        expect(importers, 'a component reaching for a stylesheet is a second stylesheet, wherever it lives')
+            .toEqual([path.posix.join(SRC, 'app/main.tsx')]);
+        expect(
+            literalsOf(path.posix.join(SRC, 'app/main.tsx')).filter((value) => value.endsWith('.css')),
+            'the bootstrap imports something other than the one stylesheet'
+        ).toEqual(['../styles/globals.css']);
+    });
+
     it('has no CSS module', () => {
         expect(tracked(RENDERER).filter((file) => file.endsWith('.module.css'))).toEqual([]);
         const importers = rendererSources()

@@ -227,6 +227,30 @@ const CLASS_QUERY_BANS = [
 ].map((selector) => ({ selector, message: CLASS_QUERY_MESSAGE }));
 
 /*
+ * ARCH-05's third clause - "no per-component class rule" - reaches only rules written inside globals.css, and a
+ * stylesheet does not have to be a file. WR-04: a <style> element with a rule in it is exactly what
+ * legacy/renderer/shared.js:255-285 did for the toast transition, and replacing it with @theme tokens is the change
+ * 07-E-SUMMARY.md presents as ARCH-05's whole point. Nothing stopped it coming back, and the imperative routes to a
+ * per-element style were open too.
+ */
+const ARCH_05_MESSAGE = 'Styling is Tailwind utilities on components: one stylesheet, no rule injected at run time and no inline style. A value Tailwind cannot express is an @theme token (ARCH-05).';
+const STYLE_INJECTION_BANS = [
+    // The <style> element, in JSX and built by hand.
+    "JSXOpeningElement[name.name='style']",
+    "CallExpression[callee.property.name='createElement'][arguments.0.value='style']",
+    "CallExpression[callee.property.name='createElement'][arguments.0.value='link']",
+    // A rule pushed straight into a live sheet.
+    'CallExpression[callee.property.name=/^(insertRule|addRule)$/]',
+    "MemberExpression[property.name='adoptedStyleSheets']",
+    "NewExpression[callee.name='CSSStyleSheet']",
+    // The per-element style, which the JSX attribute ban already covers in its declarative spelling.
+    "AssignmentExpression[left.object.property.name='style']",
+    "CallExpression[callee.object.property.name='style'][callee.property.name=/^(setProperty|cssText)$/]",
+    "AssignmentExpression[left.property.name='cssText']",
+    "CallExpression[callee.property.name='setAttribute'][arguments.0.value='style']"
+].map((selector) => ({ selector, message: ARCH_05_MESSAGE }));
+
+/*
  * ARCH-03, criterion 7: the renderer's direction of flow, as lint rather than as a convention.
  *
  * Phase 7 slice A asserted these directions against the source tree, which catches them only where a test thought
@@ -322,7 +346,7 @@ const rendererDynamicImports = (lift) => {
 const rendererSyntax = (...lifted) => [
     'error', CUSTODY_03, ...DATE_BANS, ...SQL_BANS,
     ...CLASS_BUILD_BANS, ...CLASS_QUERY_BANS, ...BRIDGE_ACCESS_BANS, ...WEB_STORAGE_BANS,
-    ...rendererDynamicImports(new Set(lifted))
+    ...STYLE_INJECTION_BANS, ...rendererDynamicImports(new Set(lifted))
 ];
 
 /**
