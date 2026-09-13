@@ -2,9 +2,10 @@
 // thing it means. Where a hidden window goes - the tray, or the taskbar when there is no tray - is still main's
 // decision (IPC-05); the renderer only asks.
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { readTimerSnapshot } from '@renderer/features/timer';
 import { invoke } from '@renderer/lib/ipc';
+import { once } from '@renderer/lib/once';
 import { useUiStore } from '@renderer/store/ui.store';
 import { HIDE_NOTICE, quitDialogFor } from '../quit-dialog';
 
@@ -19,17 +20,22 @@ export function useShellControls(): ShellControls {
         useUiStore.getState().pushToast('error', message);
     }, []);
 
-    const hide = useCallback(() => {
-        void (async () => {
-            // Claimed before the window goes: a notice raised after it would be behind a window that is not there.
-            // A claim that fails is not a reason to refuse to get out of the way, so it counts as not due.
-            const claim = await invoke('window:claimHideNotice').catch(() => ({ due: false }));
-            if (claim.due) {
-                await useUiStore.getState().openDialog(HIDE_NOTICE);
-            }
-            await invoke('window:hide');
-        })().catch(report);
-    }, [report]);
+    /*
+     * WR-02: the sequence runs at most once at a time. A second click while the first round trip is in flight
+     * used to start a second one, whose claim answered "not due" and which hid the window at once - and the first
+     * then drew the notice behind a window that was no longer there, with the flag spent. It is a database row,
+     * so it never re-arms: the user who most needs the explanation is the one who never gets it.
+     */
+    const hideOnce = useMemo(() => once(async () => {
+        // Claimed before the window goes: a notice raised after it would be behind a window that is not there.
+        // A claim that fails is not a reason to refuse to get out of the way, so it counts as not due.
+        const claim = await invoke('window:claimHideNotice').catch(() => ({ due: false }));
+        if (claim.due) {
+            await useUiStore.getState().openDialog(HIDE_NOTICE);
+        }
+        await invoke('window:hide');
+    }), []);
+    const hide = useCallback(() => { void hideOnce().catch(report); }, [hideOnce, report]);
 
     const quit = useCallback(() => {
         void (async () => {

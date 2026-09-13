@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import { once } from '@renderer/lib/once';
 import { HIDE_NOTICE, quitDialogFor } from '../src/renderer/src/features/shell/quit-dialog';
 import { read, stripCommentsAndStrings } from './helpers/ts-imports';
 import type { TimerSnapshot } from '../src/shared/types';
@@ -101,6 +102,49 @@ describe('the hide notice', () => {
     });
 });
 
+/*
+ * WR-02. The claim is spent the instant it resolves, and hide() had no guard: a second click before the overlay
+ * mounted started a second round trip whose claim answered "not due" and which hid the window at once, while the
+ * first drew the notice behind a window that was no longer there. The flag is a database row, so it never
+ * re-arms - the user who most needs the explanation is the one who never gets it.
+ *
+ * once() is the guard, and it is a plain module so this runs it rather than reading it.
+ */
+describe('the hide button does not start a second round trip over the first', () => {
+    it('ignores a click while the previous one is still in flight, and allows the next one after it', async () => {
+        let starts = 0;
+        let release = (): void => undefined;
+        const guarded = once(() => {
+            starts += 1;
+            return new Promise<void>((resolve) => { release = resolve; });
+        });
+
+        const first = guarded();
+        void guarded();
+        void guarded();
+        expect(starts, 'a double-click started a second claim, which spends the one-time notice').toBe(1);
+
+        release();
+        await first;
+
+        void guarded();
+        expect(starts, 'the guard never reopened, so the window can never be hidden again').toBe(2);
+    });
+
+    it('reopens after a failure, so one refused hide does not disable the button', async () => {
+        let starts = 0;
+        const guarded = once(() => {
+            starts += 1;
+            return Promise.reject(new Error('the window did not respond.'));
+        });
+
+        await guarded().catch(() => undefined);
+        await guarded().catch(() => undefined);
+
+        expect(starts, 'a failed hide left the button permanently inert').toBe(2);
+    });
+});
+
 /** The wiring, read rather than run: the renderer has no DOM under vitest, so this is the available proof. */
 describe('what the two buttons ask for', () => {
     const codeOf = (file: string): string => stripCommentsAndStrings(file, read(file)).code;
@@ -132,6 +176,15 @@ describe('what the two buttons ask for', () => {
         expect(asked.indexOf('window:claimHideNotice'),
             'a notice raised after the hide is behind a window that is no longer on screen')
             .toBeLessThan(asked.indexOf('window:hide'));
+    });
+
+    it('guards the hide against a second click before the first has finished', () => {
+        const code = codeOf(CONTROLS);
+        expect(code, 'hide() is unguarded, so a double-click spends the one-time notice without showing it')
+            .toContain('once(');
+        expect(code, 'the guarded sequence is not the one the hide button runs').toContain('hideOnce()');
+        expect(literalsOf(CONTROLS), 'the guarded sequence no longer claims the notice')
+            .toContain('window:claimHideNotice');
     });
 
     it('ends the process only after the confirm says so', () => {
