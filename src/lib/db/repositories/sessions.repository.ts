@@ -119,6 +119,14 @@ export function createSessionsRepository(handle: DbHandle, options: RepositoryOp
             return mapRow(TABLE, handle.select().from(workSessions).where(eq(workSessions.id, id)).get(), toSession, options);
         },
 
+        /*
+         * IN-06: the write paths map outside mapRows, so a RowMappingError here is thrown rather than swallowed -
+         * the one place this layer's "a bad row is skipped, never thrown" rule is inverted, and it is deliberate.
+         * A read that drops an unreadable row loses nothing; a write that returned a WorkSession the mapper could
+         * not build would be inventing one, and swallowing it would report success with nothing to hand back. The
+         * INSERT has committed by then, so a caller who retries duplicates the session - which is why every field
+         * crossing sessions:create is bounded by the contract's schemas first, and why nothing can reach this today.
+         */
         create(input) {
             const inserted = handle.insert(workSessions).values(columnsOf(input)).returning().get();
             return toSession(inserted);

@@ -60,6 +60,9 @@ export function createCompaniesRepository(handle: DbHandle, options: RepositoryO
             return mapRow(TABLE, select().where(eq(companies.name, name)).get(), toCompany, options);
         },
 
+        // IN-06: mapped outside mapRows, so a RowMappingError is thrown rather than swallowed. Same reason as
+        // sessions.repository.ts: a write cannot both succeed and have nothing to return, and the INSERT has
+        // already committed - so the input is bounded at the IPC boundary before it ever gets here.
         create(input) {
             return toCompany(handle.insert(companies)
                 .values({ name: input.name, note_required: input.noteRequired ? 1 : 0 })
