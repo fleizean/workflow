@@ -36,8 +36,8 @@ const LIB_EXEMPT_DIR = 'src/lib/db/migrations/';
 // The byte-pinned replay the directory exemption exists for; a .sql is not reached by the TypeScript scan on its own.
 const MIGRATION_BASELINE = 'src/lib/db/migrations/0000_v121_baseline.sql';
 
-// Frozen until Phase 7 (D-01/D-04) and expected to keep every reference.
-const LEGACY_FILES = ['main.js', 'database/db.js', 'src/pages/settings.html', 'src/pages/companies.html'];
+// Frozen until SPA-14 (D-01/D-04) and expected to keep every reference.
+const LEGACY_FILES = ['main.js', 'database/db.js', 'legacy/pages/settings.html', 'legacy/pages/companies.html'];
 
 const COMPANY = { name: 'Northwind Fixture', excelColumn: 'D', noteColumn: 'E' };
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxRetained/exec';

@@ -27,7 +27,7 @@ const SCRIPT_NAME = 'tools/db/legacy-timer-proof.mjs';
 
 export const MODES = ['v121', 'new-build'];
 export const OWNER_TOKEN = 'continuity';
-/** v1.2.1's start control (src/pages/index.html:444) and the key its saveTimerState writes every second. */
+/** v1.2.1's start control (legacy/pages/index.html:444) and the key its saveTimerState writes every second. */
 export const START_SELECTOR = '#playPauseButton';
 export const TIMER_STATE_KEY = 'timerState';
 export const DEFAULT_TIMEOUT_MS = 90_000;

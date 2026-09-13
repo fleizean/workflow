@@ -131,7 +131,7 @@ describe('criterion 6: the v1.2.1 window.api surface has a counterpart in the ty
 });
 
 /*
- * The grep half of criterion 6, over the v2 tree only: main.js, database/db.js and src/pages/*.html are the v1.2.1
+ * The grep half of criterion 6, over the v2 tree only: main.js, database/db.js and legacy/pages/*.html are the v1.2.1
  * code this milestone replaces and Phase 7 deletes. What is asserted is stronger than "no channel is called
  * navigate" - no string literal anywhere in the new source says it, apart from Electron's own will-navigate event,
  * which is the guard that refuses navigation rather than a channel that performs it.

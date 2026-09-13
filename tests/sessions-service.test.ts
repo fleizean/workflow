@@ -1,5 +1,5 @@
 // COMP-04: a company that requires a note refuses a session without one, wherever the write comes from. v1.2.1
-// checked this in the renderer only (src/pages/index.html:1264), so the rule was one screen's opinion.
+// checked this in the renderer only (legacy/pages/index.html:1264), so the rule was one screen's opinion.
 
 import { describe, expect, it, vi } from 'vitest';
 import { createSessionsService } from '../src/main/services/sessions.service';

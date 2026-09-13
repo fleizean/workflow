@@ -7,7 +7,7 @@
  * src/renderer/src/styles/globals.css - the renderer's one stylesheet, compiled at build time.
  *
  * v1.2.1 fetched Tailwind from the Tailwind Play CDN and its two fonts from Google Fonts at runtime
- * (src/styles/common.css, src/pages/*.html). Offline, every Material Symbol rendered as a literal
+ * (legacy/styles/common.css, legacy/pages/*.html). Offline, every Material Symbol rendered as a literal
  * word and the layout collapsed (S4), and a remote script origin made any meaningful
  * Content-Security-Policy impossible (S3). Here Tailwind runs in the Vite build and both font
  * families come from installed packages: the imports above are resolved by the bundler, which
@@ -33,7 +33,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
- * Exactly the tokens src/renderer/tailwind-config.js declared. `static` makes Tailwind emit every
+ * Exactly the tokens legacy/renderer/tailwind-config.js declared. `static` makes Tailwind emit every
  * one of them even when no utility uses it yet: the palette is a contract carried over unchanged
  * from v1.2.1, not something to tree-shake while the routes are still stubs.
  *

@@ -4,7 +4,7 @@
 import type { NotificationRequest } from './ports';
 import type { PomodoroInterval } from '@shared/types';
 
-/** v1.2.1 wrote a completed pomodoro as a session called this (src/renderer/timer.js:520). */
+/** v1.2.1 wrote a completed pomodoro as a session called this (legacy/renderer/timer.js:520). */
 export const POMODORO_SESSION_NAME = 'Pomodoro';
 
 export const GOAL_NOTIFICATION: NotificationRequest = Object.freeze({

@@ -10,6 +10,7 @@
 | Captured at commit | `22fe9a0fef3db6d122888e94f7025bf8504e589c` (branch `v2-restructure`) |
 | Captured on | 2026-09-06 |
 | Source of truth | `src/**/*.{html,js}`, `preload.js`, `main.js` — source text only. No database was opened and the application was not launched. |
+| Moved 2026-09-13 | Phase 7 moved the v1.2.1 renderer from `src/pages/` and `src/renderer/*.js` to `legacy/pages/` and `legacy/renderer/`, and `src/styles/` to `legacy/styles/`. Every `src/…` citation below names the file as v1.2.1 shipped it; read it at its `legacy/…` path in this tree. The counts are unchanged — the four deleted page fragments contributed none of them. |
 
 | Count | Value | Artifact |
 |---|---|---|

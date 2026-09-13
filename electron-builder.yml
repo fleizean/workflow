@@ -21,8 +21,8 @@ directories:
 
 # An ALLOWLIST, not a deny list (BUILD-08, fix Y10). The old files: ["**/*"] shipped docs/,
 # assets/, baselines/, tools/ and three copies of a 1.8 MB PNG. Everything not named here stays
-# out by never being listed - including the whole legacy v1.2.1 tree (main.js, preload.js,
-# database/, src/pages/, src/renderer/*.js, src/styles/), which stays on disk until Phase 7.
+# out by never being listed - including the whole legacy v1.2.1 tree (main.js, preload.js, database/
+# and legacy/), which Phase 7 moved out of src/ and SPA-14 deletes once parity is signed off.
 # electron-builder adds package.json and the production node_modules (better-sqlite3) itself.
 files:
   - out/**

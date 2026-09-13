@@ -1,6 +1,6 @@
 // CORE-11/CORE-12: the pomodoro cycle as a state machine. It owns no clock and no counter - time comes from the
 // ClockPort the timer service reads, and how many pomodoros today has seen comes from the database on every question
-// that could have changed the answer. v1.2.1 kept the count in `pomodoroSessionCount` (src/renderer/timer.js:16),
+// that could have changed the answer. v1.2.1 kept the count in `pomodoroSessionCount` (legacy/renderer/timer.js:16),
 // which every restart and every toggle of the mode reset to zero (timer.js:114, 124).
 
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';

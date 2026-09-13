@@ -9,7 +9,7 @@ import { ESLint, type Linter } from 'eslint';
  * Why this file exists (BUILD-13, D-04).
  *
  * The failure it prevents is an entire file type dropping out of lint coverage without anyone
- * noticing. That is CB-7's root cause: the ~2,750 lines of inline <script> in src/pages/*.html
+ * noticing. That is CB-7's root cause: the ~2,750 lines of inline <script> in legacy/pages/*.html
  * matched no lint configuration, nothing ever examined them, and they accumulated the thirteen
  * defects RESTRUCTURE-BRIEF.md catalogues as B1-B13 - an undefined identifier, a call to an API
  * that does not exist - that a linter would have flagged on the day each was written.
@@ -70,7 +70,7 @@ const NON_SOURCE: Record<string, string> = {
     '.md': 'prose documentation; nothing executes it',
     '.json': 'data and configuration - package.json, the tsconfigs, the Phase 1 computed baselines, the vendor index',
     '.yml': 'CI workflows and electron-builder.yml; configuration, not JavaScript',
-    '.html': 'markup. src/pages/*.html inline scripts are the one expiring exclusion below; src/renderer/index.html carries only a module entry tag under a script-src \'self\' CSP; docs/ is the unrelated Pages site',
+    '.html': 'markup. legacy/pages/*.html inline scripts are the one expiring exclusion below; src/renderer/index.html carries only a module entry tag under a script-src \'self\' CSP; docs/ is the unrelated Pages site',
     '.css': 'stylesheets; not JavaScript',
     '.sql': 'DDL fixtures for the database tests; not JavaScript',
     '.sh': 'POSIX shell tooling under tools/baseline; not JavaScript',
@@ -99,9 +99,10 @@ interface ExpiringExclusion {
  */
 const EXPIRING_EXCLUSIONS: ExpiringExclusion[] = [
     {
-        dir: 'src/pages',
-        expires: 'Phase 7',
-        why: 'inline scripts whose defects are catalogued as B1-B13; deleted in the atomic cutover (D-01, D-04)'
+        dir: 'legacy',
+        expires: 'Phase 8',
+        why: 'the retired v1.2.1 renderer, whose inline-script defects are catalogued as B1-B13. Phase 7 moved it ' +
+            'out of src/ and out of the build; SPA-14 deletes it once the parity checklist is ticked (D-01, D-04)'
     }
 ];
 
@@ -181,10 +182,8 @@ interface DateExemption {
 // Rule-level exemptions from the date bans (D-13), kept apart from EXPIRING_EXCLUSIONS, which lists ignored code.
 const DATE_EXEMPTIONS: Record<string, DateExemption> = {
     'src/shared/utils/date.ts': { expires: 'permanent', why: 'the sanctioned home of the date constructs (D-05)' },
-    'main.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'database/db.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'src/renderer/shared.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'src/renderer/timer.js': { expires: 'Phase 7', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' }
+    'main.js': { expires: 'Phase 8', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
+    'database/db.js': { expires: 'Phase 8', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' }
 };
 
 const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, file);
@@ -378,13 +377,13 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
     it('has exactly one expiring exclusion', () => {
         expect(
             EXPIRING_EXCLUSIONS.map((ex) => ex.dir),
-            'The expiring-exclusion list must hold exactly one entry, src/pages. A second entry ' +
+            'The expiring-exclusion list must hold exactly one entry, legacy. A second entry ' +
             'is a second directory of repository code that lint does not read.'
-        ).toEqual(['src/pages']);
+        ).toEqual(['legacy']);
     });
 
     /*
-     * The tripwire. When Phase 7 deletes the legacy pages this goes red, and that is the whole
+     * The tripwire. When Phase 8 deletes the legacy tree this goes red, and that is the whole
      * point: it forces the ignore entry out of eslint.config.js in the same change, instead of
      * leaving it behind as a rule about nothing that the next directory of that name inherits.
      */
@@ -422,7 +421,7 @@ describe('the rules the rewrite must not lose', () => {
      * list that bans nothing still resolves at error. So the representative files are checked for
      * what the rules actually ban, on both halves of the tree.
      */
-    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/App.tsx', 'tools/baseline/archive-real-db.mjs', 'database/db.js'];
+    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/baseline/archive-real-db.mjs', 'database/db.js'];
 
     it.each(REPRESENTATIVE)('CUSTODY-02 and CUSTODY-03 resolve, with their bans intact, for %s', async (file) => {
         const properties = await ruleEntry(file, 'no-restricted-properties');

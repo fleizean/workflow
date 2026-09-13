@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 /*
  * Why these numbers are load-bearing.
  *
- * Phase 8 (SPA-14) deletes src/pages/*.html once the behaviour parity checklist in
+ * Phase 8 (SPA-14) deletes legacy/pages/*.html once the behaviour parity checklist in
  * baselines/v1.2.1/PARITY-CHECKLIST.md is fully ticked. That is a one-way door: after the
  * deletion, the record of what those 2,750 lines of inline script did is git archaeology.
  *
@@ -23,7 +23,9 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// Re-verified against this repository at commit 22fe9a0. Each number is the denominator some
+// Re-verified against this repository at commit 22fe9a0, and again after Phase 7 moved the v1.2.1 renderer
+// from src/ to legacy/: the counts are unchanged, because the four page fragments deleted in the same change
+// held no addEventListener and no window.api call at all. Each number is the denominator some
 // later phase divides by, so a silent drift here understates a workload rather than failing.
 const EXPECTED_HANDLER_SITES = 106;
 const EXPECTED_API_NAMES = 21;
@@ -37,7 +39,7 @@ const EXPECTED_API_CALL_SITES = 67;
 const EXPECTED_PRELOAD_APIS = 25;
 const EXPECTED_IPC_CHANNELS = 25;
 
-// Exposed by preload.js, referenced nowhere under src/. SPA-15 removes these rather than
+// Exposed by preload.js, referenced nowhere in the v1.2.1 renderer. SPA-15 removes these rather than
 // porting them. Asserted as a SET, not a count, so swapping one dead API for another is caught.
 const EXPECTED_DEAD_APIS = [
     'getSessionsByDateCompany',
@@ -53,6 +55,10 @@ const EXPECTED_UNEXPOSED_CALL = 'saveSetting';
 
 const WINDOW_API_PREFIX = 'window.api.';
 
+// Where Phase 7 put the v1.2.1 renderer. The inventory records what v1.2.1 did, so it follows that code rather
+// than staying pointed at src/, which now holds the v2 tree.
+const LEGACY_TREE = 'legacy';
+
 // Mirrors of the generator's greps.
 //   grep -o "addEventListener"
 //   grep -o "window\.api\.[A-Za-z0-9_]*"
@@ -63,7 +69,7 @@ const WINDOW_API_RE = /window\.api\.[A-Za-z0-9_]*/g;
 const PRELOAD_PROPERTY_RE = /^ {4}[A-Za-z0-9_]*:/gm;
 const IPC_CHANNEL_RE = /ipcMain\.(?:handle|on)\('([^']*)'/g;
 
-// grep -r --include=*.html --include=*.js src/
+// grep -r --include=*.html --include=*.js legacy/
 const collectSources = (dir: string): string[] => {
     const found: string[] = [];
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -84,7 +90,7 @@ const readRepoFile = (rel: string): string => fs.readFileSync(path.join(repoRoot
 const readArtifactLines = (rel: string): string[] =>
     readRepoFile(rel).split(/\r?\n/).filter((line) => line !== '');
 
-const rendererFiles = collectSources(path.join(repoRoot, 'src'));
+const rendererFiles = collectSources(path.join(repoRoot, LEGACY_TREE));
 const rendererText = rendererFiles.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const preloadSource = readRepoFile('preload.js');
 const mainSource = readRepoFile('main.js');
@@ -106,7 +112,7 @@ const ipcChannelNames: string[] = sortBytewise(
 );
 
 describe('CUSTODY-09: the v1.2.1 behavior inventory is complete and regenerable', () => {
-    it(`registers exactly ${EXPECTED_HANDLER_SITES} addEventListener sites under src/`, () => {
+    it(`registers exactly ${EXPECTED_HANDLER_SITES} addEventListener sites under legacy/`, () => {
         expect(countMatches(rendererText, HANDLER_RE)).toBe(EXPECTED_HANDLER_SITES);
     });
 

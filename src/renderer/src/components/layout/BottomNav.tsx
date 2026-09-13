@@ -1,6 +1,6 @@
 /*
  * src/renderer/src/components/layout/BottomNav.tsx - the bottom navigation, ported from
- * src/renderer/bottom-nav.js.
+ * legacy/renderer/bottom-nav.js.
  *
  * Carried over verbatim as content: the four items, their icons, their order, the class strings for
  * the active and inactive states, the "Go to <label>" accessible name, aria-current on the active

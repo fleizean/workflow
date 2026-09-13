@@ -4,7 +4,7 @@
 #
 # WHY THIS IS A SCRIPT AND NOT A HAND-WRITTEN LIST
 #
-# Phase 8 (REL-06, SPA-14) deletes src/pages/*.html on the strength of the parity
+# Phase 8 (REL-06, SPA-14) deletes legacy/pages/*.html on the strength of the parity
 # checklist next to these artifacts. That is a one-way door: once the four HTML pages
 # are gone, the record of what they did is git archaeology. A list produced by reading
 # and typing is stale the moment it is written. This script can be re-run against the
@@ -13,7 +13,10 @@
 #
 # WHAT IT READS
 #
-# Source text only: src/**/*.{html,js}, preload.js, main.js. It opens no database,
+# Source text only: legacy/**/*.{html,js}, preload.js, main.js. Phase 7 moved the v1.2.1
+# renderer out of src/ into legacy/ and the scan root moved with it; the counts are unchanged,
+# because the four page fragments deleted with it held no handler and no window.api call.
+# It opens no database,
 # launches no application and copies no user content. Safe to run at any point in the
 # milestone, including before the better-sqlite3 upgrade barrier (plan 01-07).
 #
@@ -59,13 +62,13 @@ reshape() {
 }
 
 # 1. Every event-handler registration site in the renderer.
-grep -rn "addEventListener" --include=*.html --include=*.js src/ \
+grep -rn "addEventListener" --include=*.html --include=*.js legacy/ \
     | reshape > "$OUT/handlers.tsv"
 
 # 2. Every window.api.<name> reference in the renderer. This is the demand side of the
 #    IPC contract; preload-surface.txt below is the supply side, and the two disagree
 #    (5 exposed-never-called, 1 called-never-exposed — see PARITY-CHECKLIST.md).
-grep -rn "window\.api\.[A-Za-z0-9_]*" --include=*.html --include=*.js src/ \
+grep -rn "window\.api\.[A-Za-z0-9_]*" --include=*.html --include=*.js legacy/ \
     | reshape > "$OUT/api-calls.tsv"
 
 # 3. The preload bridge surface — the contract Phase 6 (IPC-01) must reproduce.
@@ -82,7 +85,7 @@ grep -o "ipcMain\.\(handle\|on\)('[^']*'" main.js \
 
 handler_sites=$(wc -l < "$OUT/handlers.tsv")
 api_call_sites=$(wc -l < "$OUT/api-calls.tsv")
-api_names=$(grep -roh "window\.api\.[A-Za-z0-9_]*" --include=*.html --include=*.js src/ \
+api_names=$(grep -roh "window\.api\.[A-Za-z0-9_]*" --include=*.html --include=*.js legacy/ \
     | sed 's/window\.api\.//' | tr -d '\r' | LC_ALL=C sort -u | wc -l)
 preload_apis=$(wc -l < "$OUT/preload-surface.txt")
 ipc_channels=$(wc -l < "$OUT/ipc-channels.txt")

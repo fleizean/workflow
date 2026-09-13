@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
  * Why this file exists.
  *
  * baselines/v1.2.1/pixels/ and computed/ are the only record of what v1.2.1 looked like. Phase 8
- * (SPA-14) deletes src/pages/*.html once the parity checklist is ticked, and after that the app
+ * (SPA-14) deletes legacy/pages/*.html once the parity checklist is ticked, and after that the app
  * cannot be re-rendered at all: re-capturing would mean reverting better-sqlite3 and reinstalling
  * the pinned installer. So a capture that was partial, or that photographed an unstyled frame, is
  * not a recoverable mistake - it is a baseline that quietly lies for the rest of the project.

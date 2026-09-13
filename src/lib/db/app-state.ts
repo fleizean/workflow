@@ -190,7 +190,7 @@ export function writeTimerState(db: DatabaseType.Database, state: TimerStateInpu
  * The local day the daily-goal notification last fired on, or null if it never has. Like readTimerState it reads no
  * clock - the caller's clock names today, this only says which day is already spoken for. The v1.2.1 value is the
  * fallback, so upgrading at noon does not re-raise a notification the user saw that morning: it held the same local
- * YYYY-MM-DD getCurrentDate() produced (src/renderer/timer.js:246), and anything else counts as none.
+ * YYYY-MM-DD getCurrentDate() produced (legacy/renderer/timer.js:246), and anything else counts as none.
  */
 export function readGoalNotifiedDate(db: DatabaseType.Database): LocalDate | null {
     const persisted = recorded(db, APP_STATE_KEYS.goalNotifiedDate);

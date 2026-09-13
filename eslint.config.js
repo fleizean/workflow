@@ -37,7 +37,7 @@ const DATE_BANS = [
     'ObjectPattern > Property[key.name=/^(toISOString|toJSON|getUTCFullYear|getUTCMonth|getUTCDate|getUTCDay)$/]',
     "VariableDeclarator[init.name='Date'] > ObjectPattern > Property[key.name='parse']"
 ].map((selector) => ({ selector, message: DATE_MESSAGE }));
-const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js', 'src/renderer/shared.js', 'src/renderer/timer.js'];
+const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js'];
 
 const PROCESS_ENV = { object: 'process', property: 'env', message: 'Read configuration from src/main/config.ts (D-23).' };
 const PROCESS_ARGV = { object: 'process', property: 'argv', message: 'Read launch flags from src/main/config.ts (D-23).' };
@@ -179,8 +179,9 @@ module.exports = [
             '.claude/**', '.gsd/**', '.planning/**'
         ]
     },
-    // EXPIRES IN PHASE 7: the legacy inline scripts, deleted in the cutover (tests/lint-coverage.test.ts tripwires it).
-    { ignores: ['src/pages/**'] },
+    // EXPIRES IN PHASE 8: the retired v1.2.1 tree, kept until SPA-14 signs off parity and deletes it
+    // (tests/lint-coverage.test.ts tripwires it).
+    { ignores: ['legacy/**'] },
     { linterOptions: { reportUnusedDisableDirectives: 'error' } },
     js.configs.recommended,
     {
@@ -197,7 +198,6 @@ module.exports = [
         },
         rules: {
             semi: ['error', 'always'],
-            // avoidEscape tolerates src/renderer/bottom-nav.js:47; the legacy tree stays untouched until Phase 7.
             quotes: ['error', 'single', { avoidEscape: true }],
             'no-unused-vars': ['error'],
             'no-console': 'off'
@@ -273,19 +273,12 @@ module.exports = [
             'no-restricted-syntax': ['error', CUSTODY_03, ...SQL_BANS]
         }
     },
-    // Legacy entries expire in Phase 7 (Phase 2 D-01 forbids editing them). main.js and database/db.js are the
-    // v1.2.1 SQL this milestone is replacing, so they are outside the SQL bans too.
+    // The two v1.2.1 files still at the repository root: they hold the SQL this milestone replaces, so they sit
+    // outside the SQL bans too. Phase 8 retires them with the rest of the legacy tree.
     {
         files: LEGACY_DATE_EXEMPT,
         rules: {
             'no-restricted-syntax': ['error', CUSTODY_03]
-        }
-    },
-    // The two legacy files under src/ hold no SQL, so the block above lifting the date bans must not lift those too.
-    {
-        files: ['src/renderer/shared.js', 'src/renderer/timer.js'],
-        rules: {
-            'no-restricted-syntax': ['error', CUSTODY_03, ...SQL_BANS]
         }
     },
     {
