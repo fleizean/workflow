@@ -3,7 +3,7 @@
 
 import { app, dialog, powerMonitor } from 'electron';
 import { join } from 'node:path';
-import { PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
+import { DATABASE_RENAME_RELEASED, PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
 import { activeContainer, clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
@@ -177,6 +177,7 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
             productionDir: join(appData, app.getName()),
             isPackaged: app.isPackaged,
             doorOpen: PRODUCTION_DATA_DOOR_OPEN,
+            renameReleased: DATABASE_RENAME_RELEASED,
             now: new Date()
         },
         {

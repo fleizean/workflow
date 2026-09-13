@@ -9,7 +9,7 @@ import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
-    EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
+    DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
     RENDERER_SECOND_ROUTE_TEXT, SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
     SMOKE_ICON_FONT_SIZE_PX, SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
     SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
@@ -128,6 +128,7 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
             productionDir: productionUserData,
             isPackaged: app.isPackaged,
             doorOpen: PRODUCTION_DATA_DOOR_OPEN,
+            renameReleased: DATABASE_RENAME_RELEASED,
             now: new Date()
         },
         {

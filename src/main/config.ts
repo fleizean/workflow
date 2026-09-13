@@ -54,6 +54,15 @@ export const USER_DATA_DIR_SWITCH = 'user-data-dir';
 // D-36: while false, a packaged non-smoke launch refuses the production krono.db. Only Phase 10 (REL-04) flips it.
 export const PRODUCTION_DATA_DOOR_OPEN = false;
 
+/*
+ * V2-SCHEMA-02: while false, the app opens krono.db and adopts nothing, exactly as every shipped version has.
+ * Flipping it is a one-way door for the user who takes that release: startup moves krono.db to workflow.db, and
+ * v1.2.1 reinstalled afterwards finds no database and shows an empty app. The data is intact under the new name
+ * and comes back by renaming the file, but the downgrade safety Phase 4 preserved ends here. Flipped once, with
+ * PRODUCTION_DATA_DOOR_OPEN, at the release (REL-04/REL-05).
+ */
+export const DATABASE_RENAME_RELEASED = false;
+
 // D-33: the legacy localStorage read is best effort, so it never blocks startup past this deadline.
 export const LEGACY_STORAGE_TIMEOUT_MS = 5_000;
 

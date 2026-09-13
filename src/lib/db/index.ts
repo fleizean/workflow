@@ -10,6 +10,9 @@ export type { DbClass, ObservedDatabase, V1xTable } from './classify';
 export { probeDatabase } from './probe';
 export type { ProbeOptions, ProbeResult } from './probe';
 
+export { adoptLegacyDatabase } from './adopt';
+export type { AdoptionHooks, AdoptionOutcome, AdoptionSkip } from './adopt';
+
 export { MigrationFailedError, migrateDatabase, splitStatements } from './runner';
 export type { AnomalyCounts, MigrationOptions, MigrationReport, MigrationStep, RunnerHooks } from './runner';
 

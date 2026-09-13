@@ -11,11 +11,14 @@ import ts from 'typescript';
 import { instantFromEpochMs } from '@shared/utils/date';
 import * as realLayer from '../src/lib/db';
 import { backupDatabase } from '../src/lib/db/backup';
-import { EXIT_CODES } from '../src/main/config';
-import { startDatabase } from '../src/main/database-startup';
+import { DATABASE_RENAME_RELEASED, EXIT_CODES } from '../src/main/config';
+import {
+    LEGACY_DATABASE_FILE, RENAMED_DATABASE_FILE, startDatabase
+} from '../src/main/database-startup';
 import type {
     DatabaseLayer, ReportKind, StartedDatabase, StartupEnvironment, StartupPorts
 } from '../src/main/database-startup';
+import { cleanupFixtures, copyFixture, makeWalFixture } from './fixtures/seed';
 import { closeDatabaseNow, registerDatabaseCloser, shouldQuitOnAllClosed } from '../src/main/lifecycle';
 import type { LegacyStorageRead, LegacyStorageSession } from '../src/main/legacy-storage';
 import { hasCreatedMainWindow, mainWindows } from '../src/main/window';
@@ -40,6 +43,7 @@ afterAll(() => {
     for (const started of openHandles) {
         started.close();
     }
+    cleanupFixtures();
     for (const root of tempRoots) {
         fs.rmSync(root, { recursive: true, force: true });
     }
@@ -250,6 +254,7 @@ function harness(tag: string, options: HarnessOptions = {}): Harness {
             productionDir: path.join(root, 'production'),
             isPackaged: false,
             doorOpen: false,
+            renameReleased: false,
             now: NOW,
             ...options.env
         },
@@ -1028,5 +1033,141 @@ describe('DATA-05: a fresh install initializes its own directory', () => {
         expect(h.recorder.calls).toContain('openMainWindow');
         expect(h.recorder.reports).toEqual([]);
         expect(h.recorder.exits).toEqual([]);
+    });
+});
+
+/*
+ * V2-SCHEMA-02. The five rows of 3600 s that seed-child.cjs checkpoints and the forty of 100 s it leaves in the
+ * -wal, restated: a startup that renamed the database alone would open on 5 sessions and 18000 seconds.
+ */
+const WAL_FIXTURE_SESSIONS = 45;
+const WAL_FIXTURE_SECONDS = 5 * 3600 + 40 * 100;
+
+const namesIn = (dir: string): string[] => fs.readdirSync(dir).sort();
+
+function sessionTotals(dbPath: string): { rows: number; seconds: number } {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        return {
+            rows: db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM work_sessions').get()?.n ?? -1,
+            seconds: db.prepare<[], { n: number }>(
+                'SELECT COALESCE(SUM(duration), 0) AS n FROM work_sessions'
+            ).get()?.n ?? -1
+        };
+    } finally {
+        db.close();
+    }
+}
+
+describe('V2-SCHEMA-02: krono.db becomes workflow.db, behind a switch the release flips', () => {
+    it('ships with the switch off, so this build opens krono.db and creates no workflow.db', async () => {
+        expect(DATABASE_RENAME_RELEASED,
+            'V2-SCHEMA-02: the rename shipped before the release that was meant to turn it on').toBe(false);
+
+        const h = harness('rename-off');
+        writeLegacyDatabase(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started?.report.dbClass).toBe('legacy');
+        expect(path.basename(h.dbPath)).toBe(LEGACY_DATABASE_FILE);
+        expect(namesIn(h.userDataDir), 'the switch is off, so nothing may appear under the new name')
+            .not.toContain(RENAMED_DATABASE_FILE);
+    });
+
+    it('leaves a workflow.db beside krono.db completely alone while the switch is off', async () => {
+        const h = harness('rename-off-both');
+        writeLegacyDatabase(h.dbPath);
+        const target = path.join(h.userDataDir, RENAMED_DATABASE_FILE);
+        fs.writeFileSync(target, 'not a database, and nothing here may read or write it');
+        const before = fs.readFileSync(target);
+
+        const started = await run(h);
+
+        expect(started?.report.dbClass).toBe('legacy');
+        expect(fs.readFileSync(target).equals(before), 'the switch is off and the new name was touched anyway')
+            .toBe(true);
+    });
+
+    it('adopts a krono.db whose rows live in its -wal, then migrates it under the new name', async () => {
+        // The fixture directory IS the userData directory, so startup meets the triple exactly as a user's would be.
+        const userDataDir = path.dirname(copyFixture(await makeWalFixture()));
+        const h = harness('rename-wal', { userDataDir, env: { renameReleased: true } });
+        const legacyPath = path.join(userDataDir, LEGACY_DATABASE_FILE);
+        const targetPath = path.join(userDataDir, RENAMED_DATABASE_FILE);
+        expect(fs.statSync(legacyPath + '-wal').size,
+            'the fixture must hold uncheckpointed frames, or this proves nothing').toBeGreaterThan(0);
+
+        const started = await run(h);
+
+        expect(started, 'startup returned no connection for an adopted database').not.toBeNull();
+        expect(started?.report.dbClass).toBe('legacy');
+        expect(started?.report.toVersion).toBe(realLayer.LATEST);
+        expect(h.recorder.reports).toEqual([]);
+        expect(h.recorder.exits).toEqual([]);
+
+        expect(fs.existsSync(legacyPath), 'the move left the old name behind').toBe(false);
+        expect(fs.existsSync(legacyPath + '-wal'), 'the orphaned sidecar is the bug this exists to prevent')
+            .toBe(false);
+        expect(sessionTotals(targetPath), 'V2-SCHEMA-02: tracked time was lost in the move')
+            .toEqual({ rows: WAL_FIXTURE_SESSIONS, seconds: WAL_FIXTURE_SECONDS });
+        expect(h.recorder.logs.join('\n')).toContain('adopted ' + LEGACY_DATABASE_FILE);
+    });
+
+    it('adopts before it probes, so the probe never sees the name it is about to replace', async () => {
+        const userDataDir = path.dirname(copyFixture(await makeWalFixture()));
+        const h = harness('rename-order', { userDataDir, env: { renameReleased: true } });
+
+        await run(h);
+
+        // 'probe' is recorded by the harness layer; the adoption logs before the first one.
+        const firstProbe = h.recorder.calls.indexOf('probe');
+        expect(firstProbe, 'the probe never ran').toBeGreaterThanOrEqual(0);
+        expect(h.recorder.logs.some((line) => line.startsWith('database: adopted')),
+            'the adoption did not run at all').toBe(true);
+        expect(h.recorder.calls.slice(0, firstProbe), 'something opened the database before the adoption')
+            .not.toContain('open');
+    });
+
+    it('creates workflow.db fresh when there is no krono.db to adopt', async () => {
+        const h = harness('rename-fresh', { userDataSubdir: 'userdata', env: { renameReleased: true } });
+
+        const started = await run(h);
+
+        expect(started?.report.dbClass).toBe('fresh');
+        expect(namesIn(h.userDataDir).filter((name) => name.endsWith('.db'))).toEqual([RENAMED_DATABASE_FILE]);
+    });
+
+    it('uses an existing workflow.db and leaves a krono.db beside it exactly where it is', async () => {
+        const h = harness('rename-both', { env: { renameReleased: true } });
+        const targetPath = path.join(h.userDataDir, RENAMED_DATABASE_FILE);
+        writeLegacyDatabase(targetPath);
+        writeLegacyDatabase(h.dbPath);
+        const legacyBefore = sha256(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started?.report.dbClass).toBe('legacy');
+        expect(userVersionOf(targetPath), 'the existing workflow.db is the one that was migrated')
+            .toBe(realLayer.LATEST);
+        expect(sha256(h.dbPath), 'krono.db was touched while workflow.db was already there').toBe(legacyBefore);
+    });
+
+    it('stops and reports rather than starting a fresh database when the adoption fails', async () => {
+        const h = harness('rename-failed', { env: { renameReleased: true } });
+        fs.writeFileSync(h.dbPath, 'this is not a SQLite database, and must not become workflow.db');
+        const before = sha256(h.dbPath);
+
+        const started = await run(h);
+
+        expect(started, 'startup carried on past a failed adoption').toBeNull();
+        expect(h.recorder.exits).toEqual([EXIT_CODES.databaseFailed]);
+        expect(h.recorder.reports.map((report) => report.kind)).toEqual(['failed']);
+        expect(h.recorder.reports[0]?.body, 'the dialog must name the file the user still has')
+            .toContain(LEGACY_DATABASE_FILE);
+        expect(fs.existsSync(path.join(h.userDataDir, RENAMED_DATABASE_FILE)),
+            'a failed adoption created a database at the new name').toBe(false);
+        expect(sha256(h.dbPath), 'a failed adoption altered the file it could not move').toBe(before);
+        expect(h.recorder.calls, 'a failed adoption opened a window').not.toContain('openMainWindow');
     });
 });

@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import { dirname, join } from 'node:path';
 import type * as DatabaseLayerModule from '../lib/db';
-import { EXIT_CODES } from './config';
+import { DATABASE_RENAME_RELEASED, EXIT_CODES } from './config';
 import { describeError } from './errors';
 import type { LegacyStorageSession } from './legacy-storage';
 import { productionDataDoorRefuses } from './userdata-path';
@@ -19,7 +19,10 @@ export type LegacyImportStatus =
     | ReturnType<DatabaseLayer['importLegacyState']>
     | { readonly failed: string };
 
-export const DATABASE_FILE = 'krono.db';
+/** The name every shipped version wrote, and the name v2 adopts it under once the switch is flipped. */
+export const LEGACY_DATABASE_FILE = 'krono.db';
+export const RENAMED_DATABASE_FILE = 'workflow.db';
+export const DATABASE_FILE = DATABASE_RENAME_RELEASED ? RENAMED_DATABASE_FILE : LEGACY_DATABASE_FILE;
 export const BACKUP_DIR = 'backups';
 
 export type ReportKind = 'door' | 'refused' | 'failed';
@@ -29,6 +32,8 @@ export interface StartupEnvironment {
     readonly productionDir: string;
     readonly isPackaged: boolean;
     readonly doorOpen: boolean;
+    /** V2-SCHEMA-02: config.ts's DATABASE_RENAME_RELEASED. While false the app opens krono.db and adopts nothing. */
+    readonly renameReleased: boolean;
     readonly now: Date;
 }
 
@@ -47,6 +52,43 @@ export interface StartedDatabase {
     readonly report: MigrationReport;
     readonly legacyImport: LegacyImportStatus;
     readonly close: () => void;
+}
+
+/*
+ * V2-SCHEMA-02: the filename change is the app's work, not the user's. A release that only changed DATABASE_FILE
+ * would let every installed user open v2, find no workflow.db, get a brand-new empty database and conclude their
+ * history had been deleted - so the move happens here, before the probe, and a failure to make it stops startup
+ * rather than falling through to a fresh file.
+ */
+function adoptRenamedDatabase(
+    layer: DatabaseLayer,
+    env: StartupEnvironment,
+    ports: StartupPorts,
+    dbPath: string
+): boolean {
+    if (!env.renameReleased) return true;
+    const legacyPath = join(env.userDataDir, LEGACY_DATABASE_FILE);
+    try {
+        const outcome = layer.adoptLegacyDatabase(legacyPath, dbPath);
+        if (outcome.adopted) {
+            ports.log(
+                'database: adopted ' + LEGACY_DATABASE_FILE + ' as ' + RENAMED_DATABASE_FILE +
+                ' (' + String(outcome.walBytesFolded) + ' bytes folded in from the -wal, integrity ' +
+                outcome.verification.integrity + ')'
+            );
+        }
+        return true;
+    } catch (error) {
+        // The adoption never leaves a half-written file: the database is still openable under one of the two
+        // names, and observeChange reads back which (WR-01).
+        reportFailure(ports, {
+            dbPath: legacyPath,
+            backupPath: null,
+            reason: describeError(error),
+            changed: fs.existsSync(dbPath) ? 'created' : 'unchanged'
+        });
+        return false;
+    }
 }
 
 export const REFUSAL_TITLE = 'Workflow will not open this database';
@@ -221,9 +263,10 @@ export async function startDatabase(
     env: StartupEnvironment,
     ports: StartupPorts
 ): Promise<StartedDatabase | null> {
-    const dbPath = join(env.userDataDir, DATABASE_FILE);
+    const dbPath = join(env.userDataDir, env.renameReleased ? RENAMED_DATABASE_FILE : LEGACY_DATABASE_FILE);
 
-    // D-36 first: nothing may open the production directory's krono.db while the door is closed.
+    // D-36 first: nothing may open the production directory's krono.db while the door is closed - the adoption
+    // below included, since it writes to that directory.
     if (productionDataDoorRefuses({
         isPackaged: env.isPackaged,
         doorOpen: env.doorOpen,
@@ -232,6 +275,10 @@ export async function startDatabase(
     })) {
         ports.report('door', DOOR_TITLE, doorMessage(env.productionDir));
         ports.exit(EXIT_CODES.doorClosed);
+        return null;
+    }
+
+    if (!adoptRenamedDatabase(layer, env, ports, dbPath)) {
         return null;
     }
 

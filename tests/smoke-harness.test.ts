@@ -7,10 +7,13 @@ import {
 } from '../src/main/config';
 import { IPC_CHANNELS } from '../src/shared/ipc/channels';
 import {
+    BACKUP_DIR as HARNESS_BACKUP_DIR, DATABASE_FILE as HARNESS_DATABASE_FILE,
     DEFAULT_TIMEOUT_MS, EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX,
-    EXPECTED_ICON_TEXT_MIN_WIDTH_PX, EXPECTED_IPC_CHANNELS, EXPECTED_SERVICES, EXPECTED_WATCHDOG_MS,
-    evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed
+    EXPECTED_ICON_TEXT_MIN_WIDTH_PX, EXPECTED_IPC_CHANNELS, EXPECTED_LATEST, EXPECTED_SERVICES,
+    EXPECTED_WATCHDOG_MS, evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed
 } from '../tools/smoke-packaged.mjs';
+import { LATEST } from '../src/lib/db/migrations/registry';
+import { BACKUP_DIR, DATABASE_FILE } from '../src/main/database-startup';
 import { read } from './helpers/ts-imports';
 import type { SmokeCheck, SmokeReport } from '../tools/smoke-packaged.mjs';
 
@@ -141,5 +144,16 @@ describe('T-04-50: the harness and the app cannot drift apart on exit codes', ()
         expect(EXPECTED_ICON_MAX_WIDTH_PX).toBe(SMOKE_ICON_MAX_WIDTH_PX);
         expect(EXPECTED_ICON_TEXT_MIN_WIDTH_PX).toBe(SMOKE_ICON_TEXT_MIN_WIDTH_PX);
         expect([...EXPECTED_BUNDLED_FONTS]).toEqual([...SMOKE_BUNDLED_FONTS]);
+    });
+
+    /*
+     * V2-SCHEMA-02: the harness seeds and reads a file by name. Flipping DATABASE_RENAME_RELEASED changes the name
+     * the app uses, and a harness still naming krono.db would seed a file the app never opens and then report a
+     * green smoke against a fresh empty database. Held here so the two names cannot move apart.
+     */
+    it('the database filename, the backup directory and LATEST restate their sources', () => {
+        expect(HARNESS_DATABASE_FILE).toBe(DATABASE_FILE);
+        expect(HARNESS_BACKUP_DIR).toBe(BACKUP_DIR);
+        expect(EXPECTED_LATEST).toBe(LATEST);
     });
 });

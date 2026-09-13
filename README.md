@@ -51,6 +51,32 @@ Workflow is a beautiful, minimalist desktop application for tracking your work h
 - **Persistent Storage**: Data is preserved across app updates
 - **Settings**: Customizable daily targets and notification preferences
 
+#### Your database file is now called `workflow.db`
+
+Up to and including v1.2.1, Workflow kept your history in a file named `krono.db`. From v2 it is
+named `workflow.db`, in the same folder as before:
+
+| Platform | Folder |
+| --- | --- |
+| Windows | `%APPDATA%\workflow-timer\` |
+| macOS | `~/Library/Application Support/workflow-timer/` |
+
+**There is nothing for you to do.** The first time v2 starts, it finds your `krono.db`, flushes
+anything still sitting in its write-ahead log into the file, and moves it to `workflow.db`. Your
+companies, sessions, notes and settings are the same rows in the same database — only the name on
+disk changed. If the move cannot be completed for any reason, Workflow stops and tells you so
+rather than starting an empty database; your file is left exactly where it was.
+
+Two things worth knowing:
+
+- **Do not rename the file yourself while Workflow is running**, and do not copy `workflow.db` on
+  its own. A Workflow database can have `-wal` and `-shm` files beside it holding sessions that are
+  not yet in the main file; copying or renaming the main file alone quietly leaves them behind.
+- **Going back to v1.2.1 after v2 has started will show an empty app.** v1.2.1 only knows the name
+  `krono.db`, so it will not find `workflow.db` and will create a new, empty database next to it.
+  Nothing has been deleted — renaming `workflow.db` back to `krono.db`, with Workflow closed,
+  restores everything.
+
 ## 🚀 Installation
 
 ### Prerequisites
