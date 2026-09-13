@@ -262,10 +262,22 @@ export function makeOrphanFixture(): string {
  * clean close, and a clean close checkpoints the sidecar and deletes it. See seed-child.cjs.
  */
 export function makeWalFixture(): Promise<string> {
-    const dbPath = path.join(freshDir('wal'), 'krono.db');
+    return killAfterWriting(path.join(freshDir('wal'), 'krono.db'), []);
+}
 
+/*
+ * The same mechanism with nothing written into it: an EMPTY database carrying a non-empty -wal, which is what
+ * v1.2.1 leaves beside workflow.db after it has been started once and killed from the tray. Nothing binds a -wal
+ * to a particular database file, so this is the sidecar that replays over a restored database and empties it
+ * (DATA CR-02). `dbPath` is taken rather than made: the recovery story needs it beside a real database.
+ */
+export function makeStaleWalFixture(dbPath: string): Promise<string> {
+    return killAfterWriting(dbPath, ['--empty']);
+}
+
+function killAfterWriting(dbPath: string, args: readonly string[]): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-        const child = fork(SEED_CHILD, [dbPath], {
+        const child = fork(SEED_CHILD, [dbPath, ...args], {
             stdio: ['ignore', 'ignore', 'inherit', 'ipc']
         });
         let signalled = false;

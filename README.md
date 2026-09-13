@@ -74,8 +74,16 @@ Two things worth knowing:
   not yet in the main file; copying or renaming the main file alone quietly leaves them behind.
 - **Going back to v1.2.1 after v2 has started will show an empty app.** v1.2.1 only knows the name
   `krono.db`, so it will not find `workflow.db` and will create a new, empty database next to it.
-  Nothing has been deleted — renaming `workflow.db` back to `krono.db`, with Workflow closed,
-  restores everything.
+  Nothing of yours has been deleted. To go back, **with Workflow closed**, in this order:
+  1. Delete `krono.db`, `krono.db-wal` and `krono.db-shm` — all three, and the two sidecars even
+     if they look empty. They belong to the blank database v1.2.1 just made. A `-wal` is not tied
+     to the file it was written for, so one left behind here is applied to your real database the
+     moment it takes that name, and empties it without any error.
+  2. Rename `workflow.db` to `krono.db`. If `workflow.db-wal` and `workflow.db-shm` are there,
+     rename those to `krono.db-wal` and `krono.db-shm` too — they hold sessions that are not yet
+     in the main file.
+
+  Do the deleting before the renaming. The other order is the one that loses everything.
 
 ## 🚀 Installation
 

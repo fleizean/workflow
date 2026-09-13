@@ -52,6 +52,13 @@ if (!dbPath) {
     throw new Error('seed-child.cjs: expected a database path as argv[2]');
 }
 
+/*
+ * --empty builds the OTHER half of the downgrade story: the brand-new database v1.2.1 creates when it cannot
+ * find krono.db, killed from the tray before anything checkpointed it. Schema pages, no rows, a non-empty -wal.
+ * The DDL below is what makes the sidecar non-empty, so the run stops right after it.
+ */
+const emptyOnly = process.argv[3] === '--empty';
+
 const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
@@ -76,7 +83,7 @@ const insertSession = db.prepare(
 );
 
 // Phase A - written, then forced into the MAIN database file.
-for (let i = 0; i < CHECKPOINTED_ROWS; i++) {
+for (let i = 0; emptyOnly ? false : i < CHECKPOINTED_ROWS; i++) {
     insertSession.run(
         'checkpointed-' + i,
         CHECKPOINTED_DURATION,
@@ -86,12 +93,12 @@ for (let i = 0; i < CHECKPOINTED_ROWS; i++) {
         '2026-01-01 09:00:00'
     );
 }
-db.pragma('wal_checkpoint(TRUNCATE)');
+if (!emptyOnly) db.pragma('wal_checkpoint(TRUNCATE)');
 
 // Phase B - committed, and then deliberately abandoned in the sidecar. Each statement
 // autocommits, so these rows are durable as far as SQLite is concerned; they are simply not in
 // the file a naive copy would take.
-for (let i = 0; i < WAL_ONLY_ROWS; i++) {
+for (let i = 0; emptyOnly ? false : i < WAL_ONLY_ROWS; i++) {
     insertSession.run(
         'wal-only-' + i,
         WAL_ONLY_DURATION,
