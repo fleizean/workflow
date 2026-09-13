@@ -295,6 +295,12 @@ describe('criterion 5: one Modal, one Toast, one alert, one width', () => {
         expect(offenders, 'a native dialog blocks the renderer and looks nothing like the app').toEqual([]);
     });
 
+    it('bounds that modal by the window and lets it scroll inside it (SPA-03)', () => {
+        const classes = literalsOf(MODAL).join(' ');
+        expect(classes, 'a dialog taller than the window puts its own buttons out of reach').toContain('max-h-full');
+        expect(classes).toContain('overflow-y-auto');
+    });
+
     it('has the one alert implementation the two scans above are about', () => {
         expect(exists(MODAL), MODAL + ' does not exist, so this whole block proves nothing').toBe(true);
         expect(exists(path.posix.join(SRC, UI, 'AlertDialog.tsx'))).toBe(true);

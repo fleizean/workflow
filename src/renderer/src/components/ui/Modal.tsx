@@ -8,8 +8,14 @@
 import { useEffect } from 'react';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
 
-const OVERLAY_CLASS = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4';
-const PANEL_CLASS = 'w-80 max-w-full rounded-2xl bg-white p-6 shadow-2xl dark:bg-surface-dark animate-modal-in';
+const OVERLAY_CLASS = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6';
+/*
+ * SPA-03: the panel is bounded by the window and scrolls inside it. The app opens at 448 px wide and can be dragged
+ * down to MAIN_WINDOW.minHeight, so a dialog sized by its content alone would put its buttons off-screen - with no
+ * way to answer it and no way out of it.
+ */
+const PANEL_CLASS = 'w-80 max-w-full max-h-full overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl ' +
+    'dark:bg-surface-dark animate-modal-in';
 
 interface ModalProps {
     /** The id of the element naming this dialog, so a screen reader announces it rather than the first button. */
