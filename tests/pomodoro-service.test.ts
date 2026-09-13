@@ -480,16 +480,67 @@ describe('CORE-11: a failure below is reported, never thrown at the user', () =>
             .toMatchObject({ completedToday: 1, elapsedSeconds: 5 });
     });
 
-    it('leaves the completed interval behind even when recording it throws', () => {
+    /*
+     * CR-01. This suite used to assert the opposite - interval 'shortBreak', elapsedSeconds 0 - which pinned the
+     * loss as intended behaviour. The counted time may be discarded only after the write that preserves it has
+     * committed; a write that threw leaves fifty minutes of real work with nowhere to be retried from.
+     */
+    it('holds the completed interval and its seconds when recording it throws', () => {
         const h = harness({
             durations: { workSeconds: 60 },
             onCompleted: () => { throw new Error('disk is full'); }
         });
         h.service.start();
         h.runOut();
+
         expect(h.logs.join(' ')).toContain('disk is full');
-        // Staying on a finished work interval would go on counting time already accounted for.
-        expect(h.snapshot()).toMatchObject({ interval: 'shortBreak', status: 'idle', elapsedSeconds: 0 });
+        expect(h.snapshot()).toMatchObject({
+            interval: 'work', status: 'paused', elapsedSeconds: 60, recordingFailed: true
+        });
+        expect(h.ledger.rows, 'a write that threw still advanced the cycle').toEqual([]);
+        expect(h.changes.at(-1)?.recordingFailed, 'the renderer was never told the write failed').toBe(true);
+    });
+
+    it('retries the held interval when the cycle is started again, and lets go once the write lands', () => {
+        let failing = true;
+        const h = harness({
+            durations: { workSeconds: 60 },
+            onCompleted: (completion, ledger) => {
+                if (failing) throw new Error('disk is full');
+                if (completion.interval === 'work') ledger.add(completion.date);
+            }
+        });
+        h.service.start();
+        h.runOut();
+        expect(h.snapshot().recordingFailed).toBe(true);
+
+        failing = false;
+        h.service.start();
+        h.drive(1);
+
+        expect(h.ledger.rows, 'the held interval was never written').toHaveLength(1);
+        expect(h.completions.at(-1)?.elapsedSeconds, 'the retry recorded less than was counted')
+            .toBeGreaterThanOrEqual(60);
+        expect(h.snapshot()).toMatchObject({
+            interval: 'shortBreak', status: 'idle', elapsedSeconds: 0, recordingFailed: false
+        });
+    });
+
+    // A break earns nothing, so there is nothing a failed write could destroy and nothing to hold the user on.
+    it('moves on from a break whose completion threw', () => {
+        const h = harness({
+            durations: { workSeconds: 60, shortBreakSeconds: 30 },
+            onCompleted: (completion, ledger) => {
+                if (completion.interval !== 'work') throw new Error('disk is full');
+                ledger.add(completion.date);
+            }
+        });
+        h.service.start();
+        h.runOut();
+        h.service.start();
+        h.runOut();
+
+        expect(h.snapshot()).toMatchObject({ interval: 'work', status: 'idle', recordingFailed: false });
     });
 });
 

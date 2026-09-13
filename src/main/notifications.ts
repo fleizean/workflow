@@ -12,6 +12,13 @@ export const GOAL_NOTIFICATION: NotificationRequest = Object.freeze({
     body: 'You have worked your target for today.'
 });
 
+// CR-01: the interval is over, its seconds are still held, and nothing on disk knows about them yet. Raised from
+// main because a log line in a packaged app's stdout is what made this loss silent.
+export const POMODORO_NOT_RECORDED_NOTIFICATION: NotificationRequest = Object.freeze({
+    title: 'Pomodoro not saved',
+    body: 'That interval could not be written. Its time is still counted - start the cycle again to retry.'
+});
+
 const COMPLETED: Readonly<Record<PomodoroInterval, NotificationRequest>> = Object.freeze({
     work: { title: 'Pomodoro complete', body: 'Time for a break.' },
     shortBreak: { title: 'Break over', body: 'Back to work when you are ready.' },

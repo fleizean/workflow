@@ -16,7 +16,9 @@ import {
 import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
 import { closeDatabaseNow } from '../src/main/lifecycle';
-import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME } from '../src/main/notifications';
+import {
+    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME
+} from '../src/main/notifications';
 import { instantFromEpochMs } from '../src/shared/utils/date';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
 import type { IpcEventChannel, SoundId } from '../src/shared/types';
@@ -459,6 +461,16 @@ describe('the services the container composes', () => {
 
         expect(rawCount(dbPath, 'work_sessions'), 'the session survived a failed pomodoro write').toBe(before);
         expect(rawCount(dbPath, 'pomodoro_sessions')).toBe(0);
+
+        /*
+         * CR-01: the rollback was always right; what this test used not to ask is what became of the minute it
+         * rolled back. Nothing on disk holds it, so the only place it can be is the cycle - held, on the interval
+         * that earned it, with the user told rather than a line written to a stdout nobody reads.
+         */
+        expect(container.services.pomodoro.snapshot()).toMatchObject({
+            interval: 'work', status: 'paused', elapsedSeconds: 60, recordingFailed: true
+        });
+        expect(driver.notifications.map((n) => n.title)).toContain(POMODORO_NOT_RECORDED_NOTIFICATION.title);
     });
 
     // IN-01: the notifier and the sound run after the transaction commits, so their failure says nothing about

@@ -99,7 +99,10 @@ export const PomodoroSnapshotSchema = z.strictObject({
     remainingSeconds: DurationSecondsSchema,
     date: LocalDateSchema,
     completedToday: z.int().nonnegative(),
-    sessionsUntilLongBreak: z.int().positive()
+    sessionsUntilLongBreak: z.int().positive(),
+    // CR-01: an interval that reached its target and could not be written. The seconds above are still the ones it
+    // earned, held rather than discarded, so a screen can offer the retry instead of reporting a break that started.
+    recordingFailed: z.boolean()
 });
 
 // POMO-09: how many pomodoros the day and the Monday-to-Sunday week hold.

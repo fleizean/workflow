@@ -76,6 +76,8 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
     let elapsedMs = 0;
     let lastTickAt = 0;
     let repeat: RepeatingTimer | undefined;
+    // CR-01: set when an interval reached its target and the write that would have preserved it threw.
+    let recordingFailed = false;
 
     let date = localDayOf(clock);
     let completedToday = 0;
@@ -122,7 +124,8 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
             remainingSeconds: Math.max(0, targetSeconds - elapsedSeconds()),
             date,
             completedToday,
-            sessionsUntilLongBreak: current.sessionsUntilLongBreak
+            sessionsUntilLongBreak: current.sessionsUntilLongBreak,
+            recordingFailed
         };
     }
 
@@ -163,16 +166,27 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
         const completion: PomodoroCompletion = { interval: finished, date, elapsedSeconds: elapsedSeconds() };
 
         stopRepeat();
-        status = 'idle';
-        elapsedMs = 0;
 
         try {
+            // CR-01: the write first, and the discard below only once it has committed. Zeroing the accumulator
+            // ahead of it left a fifty-minute interval nowhere - not on disk, not in memory, not on screen.
             onCompleted(completion);
         } catch (error) {
-            // The interval is over either way; refusing to leave it would keep counting time already accounted for.
             log('pomodoro: the completed ' + finished + ' interval could not be recorded - ' +
                 (error instanceof Error ? error.message : 'unknown'));
+            if (finished === 'work') {
+                // Held, paused and said out loud: the seconds stay, the cycle stays on the interval that earned
+                // them, and starting again retries the write rather than counting the time a second time.
+                recordingFailed = true;
+                status = 'paused';
+                return;
+            }
+            // A break earns no time, so a failed write destroys nothing and holding the user in it would help nobody.
         }
+
+        recordingFailed = false;
+        status = 'idle';
+        elapsedMs = 0;
 
         if (finished === 'work') {
             refreshCount();
@@ -229,6 +243,8 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
             stopRepeat();
             status = 'idle';
             elapsedMs = 0;
+            // The one path that discards a held-but-unrecorded interval, and only because the user asked for it.
+            recordingFailed = false;
             // The interval itself is unchanged: an abandoned break is still owed, and an abandoned pomodoro is not
             // one the user earned. Nothing is recorded, so the derived count cannot have moved.
             return publish();
@@ -239,6 +255,7 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
                 stopRepeat();
                 status = 'idle';
                 elapsedMs = 0;
+                recordingFailed = false;
                 interval = 'work';
             }
             return publish();

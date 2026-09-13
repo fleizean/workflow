@@ -34,7 +34,7 @@ const SESSION = {
 const TIMER = { status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false } as const;
 const POMODORO = {
     interval: 'work', status: 'idle', elapsedSeconds: 0, targetSeconds: 1500, remainingSeconds: 1500,
-    date: DAY, completedToday: 0, sessionsUntilLongBreak: 4
+    date: DAY, completedToday: 0, sessionsUntilLongBreak: 4, recordingFailed: false
 } as const;
 
 interface Spy {

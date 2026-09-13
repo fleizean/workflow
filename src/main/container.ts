@@ -6,7 +6,9 @@
 import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
 import { describeError } from './errors';
-import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME, notificationForCompletion } from './notifications';
+import {
+    GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, notificationForCompletion
+} from './notifications';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
 import type { AppPorts, ClockPort } from './ports';
 import { createCompaniesService } from './services/companies.service';
@@ -253,16 +255,23 @@ export function createContainer(input: ContainerInput): AppContainer {
      */
     function recordCompletion(completion: PomodoroCompletion): void {
         if (completion.interval === 'work') {
-            transaction(() => {
-                repositories.sessions.create({
-                    name: POMODORO_SESSION_NAME,
-                    durationSeconds: completion.elapsedSeconds,
-                    date: completion.date,
-                    companyId: null,
-                    note: null
+            try {
+                transaction(() => {
+                    repositories.sessions.create({
+                        name: POMODORO_SESSION_NAME,
+                        durationSeconds: completion.elapsedSeconds,
+                        date: completion.date,
+                        companyId: null,
+                        note: null
+                    });
+                    repositories.pomodoro.recordCompletion(completion.date, null);
                 });
-                repositories.pomodoro.recordCompletion(completion.date, null);
-            });
+            } catch (error) {
+                // CR-01: the cycle is about to hold the interval rather than discard it, and the user has to be
+                // told - from main, because the window may be hidden in the tray and stdout is nobody's screen.
+                ports.notifier.notify(POMODORO_NOT_RECORDED_NOTIFICATION);
+                throw error;
+            }
         }
         // IN-01: outside the write's failure envelope and inside one of their own. These run after the transaction
         // committed, so an OS that refused a notification must not be reported as an interval that could not be
