@@ -65,6 +65,14 @@
     --animate-toast-out: toast-out 300ms cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
     --animate-modal-in: modal-in 150ms ease-out;
 
+    /*
+     * v3 -> v4 compatibility, the half that belongs to the theme rather than to Preflight. v4 defaults the ring
+     * colour to currentcolor; v3 drew it in blue-500 at half opacity, which is what the v1.2.1 design assumed
+     * wherever it showed a focus ring. The WIDTH is deliberately not restored here - v4 spells v3's 3px ring
+     * `ring-3`, and the sweep guard is what keeps that spelling honest.
+     */
+    --default-ring-color: rgb(59 130 246 / 0.5);
+
     @keyframes toast-in {
         from { opacity: 0; transform: translateX(400px); }
         to { opacity: 1; transform: translateX(0); }
@@ -82,13 +90,15 @@
 }
 
 /*
- * v3 -> v4 Preflight compatibility. Tailwind v4 changed two defaults that would alter what the
- * app renders: the default border colour became currentColor, and buttons lost the pointer cursor.
- * Both are restored to their v3 values here, because moving from the CDN to a build-time Tailwind
- * must not change the rendered output.
+ * v3 -> v4 Preflight compatibility (SPA-12). v4 changed three defaults the v1.2.1 design assumed: the border
+ * colour became currentColor, buttons lost the pointer cursor, and the placeholder colour became the current text
+ * colour at half opacity. Each is put back to what the CDN served, because moving to a build-time Tailwind must
+ * not change what renders. The ring colour is the fourth and sits in @theme above, which is where v4 reads it.
  *
- * Deliberately NOT handled here: the utility-scale renames (rounded, shadow, ring, outline-none)
- * and the changed ring and placeholder defaults. Those are Phase 7's port and Phase 8's visual diff.
+ * The other half of SPA-12 is the utility-scale sweep, and no rule here can do it: v4 renamed the scales
+ * (rounded -> rounded-sm, shadow -> shadow-sm, ring -> ring-3, outline-none -> outline-hidden) while keeping the
+ * v3 spellings alive as deprecated aliases that mean something else. tests/tailwind-compat.test.ts fails on a v3
+ * spelling reaching src/renderer instead.
  */
 @layer base {
     *,
@@ -99,8 +109,16 @@
         border-color: var(--color-gray-200, currentColor);
     }
 
+    /* v3 carried no :not(:disabled) here; parity is with what the CDN served, not with v4 upgrade advice. */
     button,
     [role="button"] {
         cursor: pointer;
+    }
+
+    /* v3 drew placeholders in gray-400 at full opacity; v4 color-mixes the current text colour instead. */
+    input::placeholder,
+    textarea::placeholder {
+        opacity: 1;
+        color: var(--color-gray-400, #9ca3af);
     }
 }
