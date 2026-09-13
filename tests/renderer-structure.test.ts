@@ -239,6 +239,69 @@ describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragment
     });
 });
 
+/*
+ * Criterion 4's last mile. tests/renderer-data-path.test.ts RUNS the data path - a failing handler, the real
+ * facade, the real query objects, the real client - but it cannot render a component, because this project has no
+ * jsdom. So the two joints between what is executed and what is mounted are asserted here on the source: that the
+ * hooks hand useQuery the very objects the other file executes, and that the subscription is mounted once, from a
+ * provider, inside the client it invalidates.
+ */
+describe('criterion 4: the executed data path is the mounted one', () => {
+    const APP = path.posix.join(SRC, 'app/App.tsx');
+    const SYNC = path.posix.join(SRC, 'app/providers/DataSyncProvider.tsx');
+    const CHANGED_EVENT = 'data:changed';
+
+    const apiFiles = (): string[] => rendererSources().filter((file) => /^features\/[^/]+\/api$/.test(areaOf(file)));
+
+    it('passes useQuery a named object, never one written out at the call site', () => {
+        const callers = apiFiles().filter((file) => /\buseQuery\s*\(/.test(codeOf(file)));
+        expect(callers.length, 'no feature calls useQuery, so this scan proves nothing').toBeGreaterThan(2);
+
+        const offenders = callers.filter((file) => !/\buseQuery\s*\(\s*[A-Za-z_$][\w$]*\s*\)/.test(codeOf(file)));
+        expect(
+            offenders,
+            'an options object written inline cannot be executed by a test, so "a failed call renders an error ' +
+            'state" would be a claim about a copy of the code rather than about the code (SPA-05).'
+        ).toEqual([]);
+    });
+
+    it('exports that object, so the test runs the same one the hook passes in', () => {
+        const offenders = apiFiles()
+            .filter((file) => /\buseQuery\s*\(/.test(codeOf(file)))
+            .filter((file) => {
+                const named = /\buseQuery\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/.exec(codeOf(file))?.[1] ?? '';
+                return !new RegExp('export\\s+const\\s+' + named + '\\b').test(codeOf(file));
+            });
+        expect(offenders, 'the object handed to useQuery is not exported').toEqual([]);
+    });
+
+    it('subscribes to ' + CHANGED_EVENT + ' exactly once, and from app/providers', () => {
+        const subscribers = rendererSources()
+            .filter((file) => literalsOf(file).includes(CHANGED_EVENT));
+        expect(
+            subscribers,
+            'a second subscriber invalidates twice per event; a subscriber inside a screen stops when that screen ' +
+            'unmounts, which is every route change (SPA-07)'
+        ).toEqual([SYNC]);
+        expect(codeOf(SYNC), 'the provider does not invalidate anything').toContain('invalidateDomains');
+    });
+
+    it('mounts that provider inside the client it invalidates', () => {
+        const app = codeOf(APP);
+        const query = app.indexOf('<QueryProvider>');
+        const sync = app.indexOf('<DataSyncProvider>');
+        expect(query, 'App.tsx no longer mounts QueryProvider').toBeGreaterThan(-1);
+        expect(
+            sync,
+            'App.tsx does not mount DataSyncProvider, so nothing listens for a change made in main'
+        ).toBeGreaterThan(-1);
+        expect(
+            sync > query,
+            'DataSyncProvider is outside QueryProvider, so useQueryClient would throw on the first render'
+        ).toBe(true);
+    });
+});
+
 describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
     it('has exactly one .css file, and it is ' + GLOBALS, () => {
         const stylesheets = tracked(RENDERER).filter((file) => file.endsWith('.css'));

@@ -338,6 +338,16 @@ export function createContainer(input: ContainerInput): AppContainer {
         // The row the transaction above wrote may be the one that carried the day: a pomodoro-only day never starts
         // the main timer, so without this nothing would ever ask.
         announceGoalIfReached(null);
+
+        /*
+         * SPA-07, and the one write nobody asked for: the cycle ends on main's own scheduler, so the session row
+         * above appears with no IPC call behind it. Every other change reaches the renderer because it made the
+         * call; this one would leave Work History showing yesterday's list until something else happened to
+         * refetch. Announced after the notification, so a bus failure cannot cost the interval its warning.
+         */
+        if (completion.interval === 'work') {
+            ports.bus.emit('data:changed', { domains: ['sessions', 'pomodoro', 'stats'] });
+        }
     }
 
     const pomodoro = createPomodoroService({

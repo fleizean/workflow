@@ -9,11 +9,13 @@ import { queryKeys } from '@renderer/lib/query-keys';
 import { useTimerStore } from '../state/timer.store';
 import type { TimerSnapshot } from '@shared/types';
 
+export const timerSnapshotQuery = {
+    queryKey: queryKeys.timerSnapshot,
+    queryFn: (): Promise<TimerSnapshot> => invoke('timer:getSnapshot')
+};
+
 export function useTimerSnapshot(): UseQueryResult<TimerSnapshot> {
-    const query = useQuery({
-        queryKey: queryKeys.timerSnapshot,
-        queryFn: () => invoke('timer:getSnapshot')
-    });
+    const query = useQuery(timerSnapshotQuery);
 
     const setSnapshot = useTimerStore((state) => state.setSnapshot);
     const snapshot = query.data;

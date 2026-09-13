@@ -7,10 +7,13 @@ import { mainConfig } from '../config';
 import { createDispatch } from './dispatch';
 import { createHandlers } from './handlers';
 import type { HandlerContext } from './handlers';
+import type { DataDomain } from '@shared/types';
 
 export interface RegisterIpcInput {
     /** Resolved per call, so a request that arrives before the database is open fails rather than holding a stale one. */
     readonly context: () => HandlerContext;
+    /** SPA-07: how a completed write reaches the renderer. Omitted by a caller with no window to tell. */
+    readonly announce?: (domains: readonly DataDomain[]) => void;
     readonly log: (line: string) => void;
 }
 
@@ -31,6 +34,7 @@ export function registerIpcHandlers(input: RegisterIpcInput): () => void {
 
     const dispatch = createDispatch({
         handlers: () => createHandlers(input.context()),
+        announce: input.announce,
         log: input.log,
         // ELECTRON_RENDERER_URL is set by electron-vite dev and by nothing else, so this is off in a packaged app.
         checkOutput: mainConfig.rendererDevUrl !== undefined

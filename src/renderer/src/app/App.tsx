@@ -10,17 +10,19 @@
 
 import type { ReactElement } from 'react';
 import { HashRouter } from 'react-router-dom';
-import { QueryProvider, SoundProvider } from './providers';
+import { DataSyncProvider, QueryProvider, SoundProvider } from './providers';
 import AppRoutes from './router';
 
 export default function App(): ReactElement {
     return (
         <QueryProvider>
-            <SoundProvider>
-                <HashRouter>
-                    <AppRoutes />
-                </HashRouter>
-            </SoundProvider>
+            <DataSyncProvider>
+                <SoundProvider>
+                    <HashRouter>
+                        <AppRoutes />
+                    </HashRouter>
+                </SoundProvider>
+            </DataSyncProvider>
         </QueryProvider>
     );
 }

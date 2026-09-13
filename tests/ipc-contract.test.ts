@@ -7,7 +7,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
-import { ipcContract, ipcEvents } from '@shared/ipc/contract';
+import { DATA_DOMAINS, ipcContract, ipcEvents, ipcWrites } from '@shared/ipc/contract';
 import type { ApiOf, ContractMap, HandlersOf, IpcApi, IpcChannel, IpcContract, IpcHandlers } from '@shared/ipc/contract';
 import * as schemas from '@shared/schemas';
 import { LocalDateSchema, SettingsSchema, WorkSessionSchema } from '@shared/schemas';
@@ -32,7 +32,7 @@ const VOID_INPUT_CHANNELS = [
 ];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
-const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick'];
+const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema',
     'PomodoroCountsSchema', 'PomodoroIntervalSchema', 'PomodoroSessionSchema', 'PomodoroSnapshotSchema',
@@ -246,6 +246,33 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
             expect(schema.safeParse({ sound: 'goalReached', extra: 1 }).success,
                 'an event payload must reject an undeclared key').toBe(false);
         }
+    });
+
+    /*
+     * SPA-07. `satisfies` already makes an unanswered channel a compile error, but a compile error is not what a
+     * reader of this catalogue checks, and "answered" is not the same as "answered sensibly": a table that said []
+     * everywhere would still compile and would refresh nothing.
+     */
+    it('says what every channel changes, in domains that exist, and names a write for the ones that write', () => {
+        expect(Object.keys(ipcWrites).sort(), 'a channel has no entry in ipcWrites').toEqual([...CHANNELS].sort());
+
+        const unknown = Object.entries(ipcWrites)
+            .flatMap(([channel, domains]) => domains
+                .filter((domain) => !DATA_DOMAINS.includes(domain))
+                .map((domain) => channel + ' -> ' + domain));
+        expect(unknown, 'a domain nothing can invalidate').toEqual([]);
+
+        // Each of these really does write, so an empty list here is a screen that stops refreshing.
+        const writers = ['sessions:create', 'sessions:update', 'sessions:delete', 'sessions:deleteAll',
+            'companies:create', 'companies:update', 'companies:delete', 'settings:update', 'timer:stopAndSave'];
+        const silent = writers.filter((channel) => ipcWrites[channel as keyof typeof ipcWrites].length === 0);
+        expect(silent, 'these channels write to the database and announce nothing').toEqual([]);
+
+        // And each of these reads, so announcing anything would refetch on every read - including on its own.
+        const readers = ['sessions:list', 'companies:list', 'settings:get', 'timer:getSnapshot', 'stats:streak',
+            'stats:weekTotals', 'stats:dayProgress', 'pomodoro:counts'];
+        const noisy = readers.filter((channel) => ipcWrites[channel as keyof typeof ipcWrites].length > 0);
+        expect(noisy, 'a read that announces a change invalidates the query that made it').toEqual([]);
     });
 
     it('carries the timer snapshot with no start timestamp on it (CORE-07)', () => {

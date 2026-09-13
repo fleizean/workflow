@@ -142,6 +142,61 @@ export type ChannelsMatchTheContract = [Covers<IpcChannel, DeclaredIpcChannel>, 
 /** The channel names in declaration order, for a caller that registers or bridges every one of them. */
 export const ipcChannels: readonly IpcChannel[] = IPC_CHANNELS;
 
+/*
+ * SPA-07. What a write changed, named in the vocabulary every channel is already namespaced in, so a domain and a
+ * channel prefix cannot mean two different things.
+ *
+ * stats and pomodoro are listed although no query reads them yet: `timer:stopAndSave` really does change what a
+ * streak or a day's progress would answer, and announcing it now costs an invalidation of a cache nobody has
+ * subscribed to. Phase 8 adds the screens, not the announcement.
+ */
+export const DATA_DOMAINS = ['sessions', 'companies', 'settings', 'timer', 'pomodoro', 'stats'] as const;
+export type DataDomain = (typeof DATA_DOMAINS)[number];
+const DataDomainSchema = z.enum(DATA_DOMAINS);
+
+/**
+ * Which domains a successful call to each channel changed - `satisfies` over the whole contract, so a channel added
+ * without an answer here is a compile error rather than a screen that quietly stops refreshing. An empty list is
+ * the answer for a read, and it is stated rather than omitted.
+ */
+export const ipcWrites = {
+    'sessions:list': [],
+    'sessions:listByDateRange': [],
+    'sessions:listByDateAndCompany': [],
+    'sessions:create': ['sessions', 'stats'],
+    'sessions:update': ['sessions', 'stats'],
+    'sessions:delete': ['sessions', 'stats'],
+    'sessions:deleteAll': ['sessions', 'stats'],
+    'companies:list': [],
+    'companies:get': [],
+    'companies:create': ['companies'],
+    'companies:update': ['companies'],
+    // COMP-05: deleting a company takes its sessions with it, which is why the call reports how many.
+    'companies:delete': ['companies', 'sessions', 'stats'],
+    'settings:get': [],
+    // The daily target is a setting, and it is what dayProgress measures against.
+    'settings:update': ['settings', 'stats'],
+    'timer:getSnapshot': [],
+    'timer:start': ['timer'],
+    'timer:pause': ['timer'],
+    'timer:reset': ['timer'],
+    'timer:setMode': ['timer'],
+    'timer:stopAndSave': ['timer', 'sessions', 'stats'],
+    'pomodoro:getSnapshot': [],
+    'pomodoro:start': ['pomodoro'],
+    'pomodoro:pause': ['pomodoro'],
+    'pomodoro:abort': ['pomodoro'],
+    'pomodoro:skipBreak': ['pomodoro'],
+    'pomodoro:counts': [],
+    'stats:streak': [],
+    'stats:weekTotals': [],
+    'stats:dayProgress': [],
+    // The window and the process; nothing the renderer caches depends on either.
+    'window:hide': [],
+    'window:claimHideNotice': [],
+    'app:quit': []
+} as const satisfies Readonly<Record<IpcChannel, readonly DataDomain[]>>;
+
 // Main-to-renderer events; each entry arrives with the phase that designs the event (D-20).
 export const ipcEvents = {
     // The main process decides when a sound is due; only the renderer can play one.
@@ -149,7 +204,13 @@ export const ipcEvents = {
     // One message per second carrying a whole snapshot, so the renderer stores what it is told and computes nothing.
     'timer:tick': TimerSnapshotSchema,
     // The same for the cycle: every state change, including each tick, arrives as a whole snapshot.
-    'pomodoro:tick': PomodoroSnapshotSchema
+    'pomodoro:tick': PomodoroSnapshotSchema,
+    /*
+     * SPA-07: main saying what it changed, so the views that show it refresh. It carries domains and never rows -
+     * the renderer refetches through the same channels it reads with, so an event cannot become a second, quieter
+     * way for data to enter the cache.
+     */
+    'data:changed': z.strictObject({ domains: z.array(DataDomainSchema).min(1) })
 } as const satisfies Readonly<Record<ChannelName, z.ZodType>>;
 export type IpcEventChannel = keyof typeof ipcEvents;
 export type EventChannelsMatchTheContract =

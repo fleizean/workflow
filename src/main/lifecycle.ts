@@ -19,6 +19,7 @@ import {
     registerWindowBoundsStore, shellControls, showRenderer
 } from './window';
 import type { HideNoticeStore, WindowBoundsStore } from './window';
+import type { DataDomain } from '@shared/types';
 
 export function registerLifecycle(): void {
     // WR-01: registered before any window exists, so every web contents gets the guard.
@@ -160,6 +161,11 @@ function handlerContext(): HandlerContext {
     return { ...activeContainer().services, shell: shellControls };
 }
 
+/** SPA-07: main telling the renderer which domains a completed write moved, over the same bus the ticks use. */
+function announceChange(domains: readonly DataDomain[]): void {
+    activeContainer().ports.bus.emit('data:changed', { domains: [...domains] });
+}
+
 // D-30: the database is probed, refused or migrated before the first window; a refusal exits here, not deeper.
 export async function launchApplication(database: DatabaseLayer): Promise<void> {
     /*
@@ -167,7 +173,7 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
      * paint must find the channel answered - an unregistered channel rejects the invoke with Electron's own words,
      * while an unbuilt container is an IpcResult the renderer can render. Registration is for the life of the app.
      */
-    registerIpcHandlers({ context: handlerContext, log: (line) => { console.log(line); } });
+    registerIpcHandlers({ context: handlerContext, announce: announceChange, log: (line) => { console.log(line); } });
 
     const appData = app.getPath('appData');
     const started = await startDatabase(

@@ -36,7 +36,7 @@ export const IPC_CHANNELS = [
     'app:quit'
 ] as const;
 
-export const IPC_EVENT_CHANNELS = ['app:playSound', 'timer:tick', 'pomodoro:tick'] as const;
+export const IPC_EVENT_CHANNELS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed'] as const;
 
 export type DeclaredIpcChannel = (typeof IPC_CHANNELS)[number];
 export type DeclaredIpcEventChannel = (typeof IPC_EVENT_CHANNELS)[number];

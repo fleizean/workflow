@@ -50,11 +50,23 @@ describe('D-21: one alias set, declared for electron-vite, both tsconfigs and vi
             .toEqual(EXPECTED[target]);
     });
 
-    it(NODE_TSCONFIG + ' paths equal the electron-vite main and preload aliases', () => {
+    /*
+     * The node config covers tests/ as well as main and preload, and the suite now loads renderer modules too
+     * (SPA-05 is proved by running the renderer's query objects, not by reading them). So it resolves every alias
+     * the build declares - the same union vitest does, since the two have to agree about what a specifier means.
+     */
+    it(NODE_TSCONFIG + ' paths equal the union of the electron-vite aliases', () => {
         expect(
             tsconfigPaths(NODE_TSCONFIG).aliases,
             NODE_TSCONFIG + ' paths disagree with the build, so tsc resolves a different folder than the bundle (D-21)'
-        ).toEqual({ ...electronAliases('main'), ...electronAliases('preload') });
+        ).toEqual({ ...electronAliases('main'), ...electronAliases('preload'), ...electronAliases('renderer') });
+    });
+
+    it(NODE_TSCONFIG + ' and ' + VITEST_CONFIG + ' resolve the same set', () => {
+        expect(
+            vitestAliases(),
+            'vitest and tsc must agree, or a specifier typechecks against one folder and runs against another'
+        ).toEqual(tsconfigPaths(NODE_TSCONFIG).aliases);
     });
 
     it(WEB_TSCONFIG + ' paths equal the electron-vite renderer aliases', () => {
@@ -75,9 +87,14 @@ describe('D-21: one alias set, declared for electron-vite, both tsconfigs and vi
         ).toBe(false);
     });
 
-    it(VITEST_CONFIG + ' aliases equal the electron-vite main aliases', () => {
-        expect(vitestAliases(), VITEST_CONFIG + ' resolves aliases differently from the main build (D-21)')
-            .toEqual(electronAliases('main'));
+    /*
+     * Every target's aliases, not main's alone. Until SPA-05 the suite only ever loaded main and shared modules; it
+     * now runs the renderer's query objects through a real QueryClient, and those import @renderer. The union is
+     * stated as a rule rather than as a list so it cannot drift: whatever the build resolves, vitest resolves.
+     */
+    it(VITEST_CONFIG + ' aliases equal the union of the electron-vite aliases', () => {
+        expect(vitestAliases(), VITEST_CONFIG + ' resolves aliases differently from the build (D-21)')
+            .toEqual({ ...electronAliases('main'), ...electronAliases('preload'), ...electronAliases('renderer') });
     });
 });
 
@@ -90,9 +107,11 @@ describe('IN-04: every build alias is anchored to its own config file', () => {
     });
 
     it(VITEST_CONFIG + ' resolves every alias from import.meta.dirname', () => {
+        const anchors = aliasAnchors(VITEST_CONFIG, ['resolve', 'alias']);
+        expect(anchors.length, VITEST_CONFIG + ' declares no aliases at all').toBeGreaterThan(0);
         expect(
-            aliasAnchors(VITEST_CONFIG, ['resolve', 'alias']),
+            anchors,
             VITEST_CONFIG + ': an alias not anchored at import.meta.dirname follows the working directory (IN-04)'
-        ).toEqual(Object.keys(EXPECTED.main).map(() => 'import.meta.dirname'));
+        ).toEqual(anchors.map(() => 'import.meta.dirname'));
     });
 });
