@@ -21,8 +21,11 @@ export const PRODUCT_NAME = 'Workflow';
 export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
 export const SMOKE_DB_NAME = 'smoke.db';
 export const DEFAULT_TIMEOUT_MS = 90_000;
-/** The heading the renderer's index route renders (src/renderer/src/routes/Home.tsx). Must match src/main/index.ts. */
+/** The heading the index route renders (src/renderer/src/features/timer/TimerPage.tsx). Must match src/main/config.ts. */
 export const RENDERER_MARKER_TEXT = 'Home';
+/** SPA-01: the second route the smoke visits, and the heading it must find there. Must match src/main/config.ts. */
+export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
+export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
 
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
@@ -181,6 +184,18 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('the sandboxed preload exposed its bridge',
         typeof f.SMOKE_PRELOAD_VERSION === 'string' && f.SMOKE_PRELOAD_VERSION !== '',
         'reported ' + JSON.stringify(f.SMOKE_PRELOAD_VERSION));
+
+    // SPA-01: v1.2.1 changed screens by loading a different HTML file. One document now, and the route is the hash.
+    check('the ' + RENDERER_SECOND_ROUTE_HASH + ' route rendered "' + RENDERER_SECOND_ROUTE_TEXT + '"',
+        typeof f.SMOKE_ROUTE_TEXT === 'string' && f.SMOKE_ROUTE_TEXT.includes(RENDERER_SECOND_ROUTE_TEXT),
+        'reported ' + JSON.stringify(f.SMOKE_ROUTE_TEXT));
+    check('the route lives in the fragment, and the document did not change',
+        f.SMOKE_ROUTE_SAME_DOCUMENT === 'true' && f.SMOKE_ROUTE_HASH === RENDERER_SECOND_ROUTE_HASH.slice(1),
+        'sameDocument=' + JSON.stringify(f.SMOKE_ROUTE_SAME_DOCUMENT) + ' hash=' + JSON.stringify(f.SMOKE_ROUTE_HASH));
+    check('changing route loaded no document, and did change the page in place',
+        f.SMOKE_ROUTE_DOCUMENT_LOADS === '0' && Number(f.SMOKE_ROUTE_IN_PAGE) >= 1,
+        'documentLoads=' + JSON.stringify(f.SMOKE_ROUTE_DOCUMENT_LOADS) +
+        ' inPage=' + JSON.stringify(f.SMOKE_ROUTE_IN_PAGE));
 
     // WR-01: the page must not be able to leave its own CSP-bearing document.
     check('window.open from the page was refused and opened no window',

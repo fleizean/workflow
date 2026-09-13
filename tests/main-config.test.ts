@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
+    RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
     SMOKE_SEED_TIMER_STATE_ENV, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
@@ -121,20 +122,27 @@ function processReads(file: string, source: string = read(file)): string[] {
 
 // Plain Node loads the harness, not vite: .gitattributes checks it out CRLF, and vite's SSR transform (hashbang regex
 // /^#!.*\n/, whose `.` cannot match \r) then emits code above the #! line - a SyntaxError at import.
-function harnessConstants(): Pick<typeof Harness, 'RENDERER_MARKER_TEXT' | 'SMOKE_DB_ENV'> {
+const SHARED_CONSTANTS = [
+    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_HASH', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV'
+] as const;
+type SharedConstant = (typeof SHARED_CONSTANTS)[number];
+
+function harnessConstants(): Pick<typeof Harness, SharedConstant> {
     const env = { ...process.env };
     delete env.NODE_OPTIONS;
     delete env.ELECTRON_RUN_AS_NODE;
+    const picked = SHARED_CONSTANTS.map((name) => name + ': m.' + name).join(', ');
     const script = 'const m = await import(' + JSON.stringify(pathToFileURL(path.join(repoRoot, HARNESS)).href) + ');' +
-        'process.stdout.write(JSON.stringify({ RENDERER_MARKER_TEXT: m.RENDERER_MARKER_TEXT, SMOKE_DB_ENV: m.SMOKE_DB_ENV }));';
+        'process.stdout.write(JSON.stringify({ ' + picked + ' }));';
     const parsed: unknown = JSON.parse(
         execFileSync(process.execPath, ['--input-type=module', '-e', script], { cwd: repoRoot, env, encoding: 'utf8' })
     );
-    if (typeof parsed !== 'object' || parsed === null || !('RENDERER_MARKER_TEXT' in parsed) || !('SMOKE_DB_ENV' in parsed) ||
-        typeof parsed.RENDERER_MARKER_TEXT !== 'string' || typeof parsed.SMOKE_DB_ENV !== 'string') {
-        throw new Error(HARNESS + ' no longer exports both constants as strings: ' + JSON.stringify(parsed));
+    const record = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {};
+    const missing = SHARED_CONSTANTS.filter((name) => typeof record[name] !== 'string');
+    if (missing.length > 0) {
+        throw new Error(HARNESS + ' no longer exports ' + missing.join(', ') + ' as strings: ' + JSON.stringify(parsed));
     }
-    return { RENDERER_MARKER_TEXT: parsed.RENDERER_MARKER_TEXT, SMOKE_DB_ENV: parsed.SMOKE_DB_ENV };
+    return record as unknown as Pick<typeof Harness, SharedConstant>;
 }
 
 const exportedFunctions = (file: string): string[] =>
@@ -189,6 +197,14 @@ describe('D-24: the values the smoke harness depends on equal its own', () => {
             'smoke launch would wait for text the harness never checks').toBe(harness.RENDERER_MARKER_TEXT);
         expect(SMOKE_DB_ENV, 'D-24: the app would read a different variable than the one the harness injects')
             .toBe(harness.SMOKE_DB_ENV);
+    });
+
+    it('shares the second route and its heading with ' + HARNESS + ', so SPA-01 is checked on the same screen', () => {
+        const harness = harnessConstants();
+        expect(RENDERER_SECOND_ROUTE_HASH, 'D-24: the app would route somewhere the harness does not check')
+            .toBe(harness.RENDERER_SECOND_ROUTE_HASH);
+        expect(RENDERER_SECOND_ROUTE_TEXT, 'D-24: the smoke would wait for text the harness never asserts')
+            .toBe(harness.RENDERER_SECOND_ROUTE_TEXT);
     });
 
     it('uses as SMOKE_FLAG the first argument the harness spawns the packaged binary with', () => {

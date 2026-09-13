@@ -13,7 +13,7 @@ const WEB_TSCONFIG = 'tsconfig.web.json';
 const EXPECTED = {
     main: { '@main': 'src/main', '@lib': 'src/lib', '@shared': 'src/shared' },
     preload: { '@shared': 'src/shared' },
-    renderer: { '@renderer': 'src/renderer/src', '@shared': 'src/shared' }
+    renderer: { '@renderer': 'src/renderer/src', '@assets': 'src/assets', '@shared': 'src/shared' }
 };
 type Target = keyof typeof EXPECTED;
 const TARGETS = Object.keys(EXPECTED) as Target[];

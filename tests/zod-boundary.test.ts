@@ -7,7 +7,7 @@ import { read, readAliases, repoRoot, resolveModuleFile, scriptKindFor } from '.
 
 const aliases = readAliases('electron.vite.config.ts', ['renderer', 'resolve', 'alias']);
 const FOLLOWED = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
-const RENDERER_ENTRY = 'src/renderer/src/main.tsx';
+const RENDERER_ENTRY = 'src/renderer/src/app/main.tsx';
 const RENDERER_SAFE_SHARED = ['src/shared/utils', 'src/shared/constants', 'src/shared/types'];
 
 const isZod = (specifier: string): boolean => specifier === 'zod' || specifier.startsWith('zod/');
@@ -80,13 +80,16 @@ const sharedRoots = (): string[] =>
 
 describe('D-14: zod reaches the renderer only as types', () => {
     it('resolves through the aliases the renderer build uses', () => {
-        expect([...aliases.keys()].sort(), 'the renderer alias block changed; the walk would resolve nothing').toEqual(['@renderer', '@shared']);
+        // @assets points at a directory of binary files, which the walk never follows; it is listed so that a new
+        // code alias cannot be added without this assertion being reconsidered.
+        expect([...aliases.keys()].sort(), 'the renderer alias block changed; the walk would resolve nothing')
+            .toEqual(['@assets', '@renderer', '@shared']);
     });
 
     it('finds no value-import chain to zod from the renderer entry or a renderer-safe shared module', () => {
         const { chains, visited } = valueImportChainsToZod([{ file: RENDERER_ENTRY }, ...sharedRoots().map((file) => ({ file }))]);
         expect(chains, 'value-import chains that would ship zod to the renderer:\n  ' + chains.join('\n  ')).toEqual([]);
-        for (const file of ['src/renderer/src/App.tsx', 'src/shared/utils/date.ts', 'src/shared/constants/settings.ts', 'src/shared/types/index.ts']) {
+        for (const file of ['src/renderer/src/app/App.tsx', 'src/shared/utils/date.ts', 'src/shared/constants/settings.ts', 'src/shared/types/index.ts']) {
             expect(visited.has(file), file + ' was never reached, so the walk proves nothing about it').toBe(true);
         }
     });

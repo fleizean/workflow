@@ -637,7 +637,7 @@ describe('D-15 and D-14: import boundaries', () => {
         ];
         const allowed = ['import type { ZodType } from \'zod\';', 'import type { Company } from \'@shared/types\';'];
         const { missed, flagged } = await probe(
-            'src/renderer/src/App.tsx', [], banned, allowed,
+            'src/renderer/src/app/App.tsx', [], banned, allowed,
             byRule('@typescript-eslint/no-restricted-imports', '@typescript-eslint/no-import-type-side-effects')
         );
         expect(missed, 'value imports that would ship zod to the renderer').toEqual([]);
@@ -663,8 +663,8 @@ describe('D-15 and D-14: import boundaries', () => {
         it.each([
             { file: SHARED_PROBE_FILE, rule: 'no-restricted-imports' },
             { file: SHARED_PROBE_FILE, rule: '@typescript-eslint/no-restricted-imports' },
-            { file: 'src/renderer/src/App.tsx', rule: 'no-restricted-imports' },
-            { file: 'src/renderer/src/App.tsx', rule: '@typescript-eslint/no-restricted-imports' }
+            { file: 'src/renderer/src/app/App.tsx', rule: 'no-restricted-imports' },
+            { file: 'src/renderer/src/app/App.tsx', rule: '@typescript-eslint/no-restricted-imports' }
         ])('refuses drizzle-kit and the migrators in $file through $rule', async ({ file, rule }) => {
             const { missed } = await probe(file, [], banned, [], byRule(rule));
             expect(missed, 'drizzle tooling imports ' + rule + ' let through in ' + file).toEqual([]);

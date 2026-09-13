@@ -6,6 +6,8 @@ export declare const PRODUCT_NAME: string;
 export declare const SMOKE_DB_ENV: string;
 export declare const SMOKE_DB_NAME: string;
 export declare const RENDERER_MARKER_TEXT: string;
+export declare const RENDERER_SECOND_ROUTE_HASH: string;
+export declare const RENDERER_SECOND_ROUTE_TEXT: string;
 export declare const DEFAULT_TIMEOUT_MS: number;
 export declare const DATABASE_FILE: string;
 export declare const BACKUP_DIR: string;

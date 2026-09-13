@@ -9,9 +9,9 @@ import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
-    PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
-    SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS,
-    SMOKE_TICK_WAIT_MS, mainConfig
+    PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT,
+    SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
+    SMOKE_RENDER_TIMEOUT_MS, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -397,7 +397,7 @@ function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: stri
 async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<string | null> {
     try {
         await loadRenderer(win);
-        const rendered = await waitForRendererText(win);
+        const rendered = await waitForRendererText(win, RENDERER_MARKER_TEXT);
         lines.push('SMOKE_RENDERER_TEXT=' + rendered);
         if (!rendered.includes(RENDERER_MARKER_TEXT)) {
             return 'the renderer never rendered "' + RENDERER_MARKER_TEXT + '"';
@@ -422,14 +422,76 @@ async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<strin
         if (!containment.navigationBlocked) {
             return 'a navigation to ' + SMOKE_ESCAPE_URL + ' was not refused';
         }
+
+        // SPA-01, last because it leaves the page on Home again and the checks above expect to find it there.
+        const routing = await probeRouting(win, lines);
+        if (routing !== null) {
+            return routing;
+        }
     } catch (error) {
         return 'renderer: ' + describeError(error);
     }
     return null;
 }
 
+/*
+ * SPA-01 in the packaged app: the second route is reached, and no document is loaded to reach it.
+ *
+ * v1.2.1 changed screens by asking main to loadFile() a different HTML file, so every screen change was a fresh
+ * document, a fresh script evaluation and a fresh set of globals. The claim now is that there is one document and
+ * the route lives after the #. did-navigate fires for a document navigation and did-navigate-in-page for a
+ * same-document one, so the two counters say which kind actually happened - and the URL is compared with its
+ * fragment stripped, which is the part a loadFile would have changed.
+ */
+async function probeRouting(win: BrowserWindow, lines: string[]): Promise<string | null> {
+    const documentOf = (url: string): string => url.split('#')[0] ?? url;
+
+    let documentLoads = 0;
+    let inPageChanges = 0;
+    const onNavigate = (): void => { documentLoads += 1; };
+    const onNavigateInPage = (): void => { inPageChanges += 1; };
+    win.webContents.on('did-navigate', onNavigate);
+    win.webContents.on('did-navigate-in-page', onNavigateInPage);
+
+    try {
+        const before = documentOf(win.webContents.getURL());
+        await win.webContents.executeJavaScript(
+            'window.location.hash = ' + JSON.stringify(RENDERER_SECOND_ROUTE_HASH) + '; true'
+        );
+        const rendered = await waitForRendererText(win, RENDERER_SECOND_ROUTE_TEXT);
+        const after = documentOf(win.webContents.getURL());
+
+        lines.push('SMOKE_ROUTE_TEXT=' + rendered);
+        lines.push('SMOKE_ROUTE_HASH=' + (win.webContents.getURL().split('#')[1] ?? ''));
+        lines.push('SMOKE_ROUTE_SAME_DOCUMENT=' + String(before === after));
+        lines.push('SMOKE_ROUTE_DOCUMENT_LOADS=' + String(documentLoads));
+        lines.push('SMOKE_ROUTE_IN_PAGE=' + String(inPageChanges));
+
+        if (!rendered.includes(RENDERER_SECOND_ROUTE_TEXT)) {
+            return 'the ' + RENDERER_SECOND_ROUTE_HASH + ' route never rendered "' + RENDERER_SECOND_ROUTE_TEXT + '"';
+        }
+        if (before !== after) {
+            return 'the route change replaced the document: ' + before + ' -> ' + after;
+        }
+        if (documentLoads > 0) {
+            return 'the route change loaded ' + String(documentLoads) + ' document(s); a screen change must load none';
+        }
+
+        // Back to Home, so the marker the rest of the smoke waits for is on screen again.
+        await win.webContents.executeJavaScript('window.location.hash = "#/"; true');
+        const home = await waitForRendererText(win, RENDERER_MARKER_TEXT);
+        if (!home.includes(RENDERER_MARKER_TEXT)) {
+            return 'the app did not route back to "' + RENDERER_MARKER_TEXT + '"';
+        }
+    } finally {
+        win.webContents.off('did-navigate', onNavigate);
+        win.webContents.off('did-navigate-in-page', onNavigateInPage);
+    }
+    return null;
+}
+
 /** Polls the page until #root has text containing the marker, or the timeout passes. */
-async function waitForRendererText(win: BrowserWindow): Promise<string> {
+async function waitForRendererText(win: BrowserWindow, marker: string): Promise<string> {
     const deadline = Date.now() + SMOKE_RENDER_TIMEOUT_MS;
     let text = '';
     while (Date.now() < deadline) {
@@ -437,7 +499,7 @@ async function waitForRendererText(win: BrowserWindow): Promise<string> {
             'document.getElementById("root") ? document.getElementById("root").textContent : ""'
         );
         text = typeof value === 'string' ? value : '';
-        if (text.includes(RENDERER_MARKER_TEXT)) {
+        if (text.includes(marker)) {
             return text;
         }
         await new Promise((done) => setTimeout(done, SMOKE_POLL_INTERVAL_MS));
@@ -476,7 +538,7 @@ async function probeContainment(win: BrowserWindow): Promise<{ windowOpenBlocked
     const prevented = await decision;
     await new Promise((done) => setTimeout(done, SMOKE_POLL_INTERVAL_MS * 5));
     const stillApp = win.webContents.getURL() === urlBefore &&
-        (await waitForRendererText(win)).includes(RENDERER_MARKER_TEXT);
+        (await waitForRendererText(win, RENDERER_MARKER_TEXT)).includes(RENDERER_MARKER_TEXT);
     return { windowOpenBlocked, navigationBlocked: prevented && stillApp };
 }
 

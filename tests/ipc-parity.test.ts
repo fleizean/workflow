@@ -138,7 +138,9 @@ describe('criterion 6: the v1.2.1 window.api surface has a counterpart in the ty
  */
 describe('criterion 6: navigate is not a channel anywhere in the v2 source', () => {
     const V2_TREES = ['src/main', 'src/preload', 'src/shared', 'src/renderer/src'];
-    const ALLOWED = new Set(['will-navigate']);
+    // Electron's own event names. will-navigate and will-redirect are the guards that REFUSE a navigation;
+    // did-navigate and did-navigate-in-page are how the packaged smoke tells a document load from a hash change.
+    const ALLOWED = new Set(['will-navigate', 'did-navigate', 'did-navigate-in-page']);
 
     const v2Files = (): string[] =>
         execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '--', ...V2_TREES], {

@@ -9,6 +9,9 @@ export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 export const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
 // The Home route's heading, which the smoke launch waits for; tests/main-config.test.ts pins it to the harness.
 export const RENDERER_MARKER_TEXT = 'Home';
+// SPA-01: the second route the smoke visits, and the heading it must find there. Reaching it changes no document.
+export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
+export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
 export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.

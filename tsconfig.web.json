@@ -18,6 +18,7 @@
         "skipLibCheck": true,
         "paths": {
             "@renderer/*": ["./src/renderer/src/*"],
+            "@assets/*": ["./src/assets/*"],
             "@shared/*": ["./src/shared/*"]
         }
     },
