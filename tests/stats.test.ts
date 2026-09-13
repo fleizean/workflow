@@ -231,7 +231,10 @@ describe('CORE-08: the stats service reads the clock, the settings and the ledge
             countedDays,
             service: createStatsService({
                 clock,
-                sessions: { dayTotals: () => options.totals ?? [] },
+                sessions: {
+                    dayTotals: () => options.totals ?? [],
+                    dayTotalFor: (date) => totalForDay(options.totals ?? [], date)
+                },
                 pomodoro: {
                     countForDay: (date) => { countedDays.push(date); return pomodoros[date] ?? 0; }
                 },

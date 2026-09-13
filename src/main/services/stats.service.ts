@@ -89,6 +89,8 @@ export function weekTotals(dayTotals: readonly DayTotal[], today: LocalDate): We
 /** Structural, so nothing here imports src/lib/db: the container passes the repositories themselves. */
 export interface DayTotalsLedger {
     dayTotals(): DayTotal[];
+    /** One day, read as one day. The streak and the week totals still need them all; a day's progress does not. */
+    dayTotalFor(date: LocalDate): number;
 }
 
 export interface PomodoroDayLedger {
@@ -121,9 +123,11 @@ const DAYS_IN_WEEK = 7;
 export function createStatsService(input: StatsServiceInput): StatsService {
     const { clock, pomodoro, sessions, settings } = input;
 
+    // WR-09: one date's own read. The goal decision asks this on the timer's tick, so aggregating every day the
+    // user has ever recorded to read one of them made a late tick likelier the longer they had used the app.
     const progress = (date: LocalDate): DayProgress => {
         const { dailyTargetSeconds } = settings.get();
-        const totalSeconds = totalForDay(sessions.dayTotals(), date);
+        const totalSeconds = sessions.dayTotalFor(date);
         return { date, totalSeconds, dailyTargetSeconds, goalMet: totalSeconds >= dailyTargetSeconds };
     };
 

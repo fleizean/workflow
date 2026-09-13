@@ -33,6 +33,8 @@ export interface SessionsRepository {
     removeByCompany(companyId: number): number;
     /** Every local day that has sessions, with its total. The unit CORE-08 computes every statistic from. */
     dayTotals(): DayTotal[];
+    /** One day's total, asked of that day rather than of every day the table has ever held (WR-09). */
+    dayTotalFor(date: LocalDate): number;
 }
 
 function toSession(row: WorkSessionRow): WorkSession {
@@ -102,6 +104,23 @@ export function createSessionsRepository(handle: DbHandle, options: RepositoryOp
 
         removeByCompany(companyId) {
             return handle.delete(workSessions).where(eq(workSessions.company_id, companyId)).run().changes;
+        },
+
+        // WR-09: the same sum as dayTotals, for one date. The goal decision asks this on the timer's tick, and
+        // aggregating a user's whole history to read one day grows with their history - on the clock's own thread,
+        // where a slow read is a late tick.
+        dayTotalFor(date) {
+            const row = handle.select({
+                totalSeconds: sql<number>`coalesce(sum(${workSessions.duration}), 0)`
+            }).from(workSessions)
+                .where(and(
+                    eq(workSessions.date, date),
+                    // The same rows list() and dayTotals() count, so the three can never disagree.
+                    sql`typeof(${workSessions.duration}) = 'integer' AND ${workSessions.duration} >= 0`
+                )).get();
+
+            const total = mapRow(TABLE, row, (found) => requireWholeSeconds('duration', found.totalSeconds), options);
+            return total ?? 0;
         },
 
         dayTotals() {

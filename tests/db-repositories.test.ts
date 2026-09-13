@@ -109,6 +109,9 @@ describe('CORE-01: the sessions repository', () => {
     });
 
     it('totals each local day from all of its sessions, not from the longest one (B7)', () => {
+        expect(repo().dayTotalFor(ld('2026-01-05')), 'WR-09: one day read as one day')
+            .toBe(19800);
+        expect(repo().dayTotalFor(ld('1999-01-01')), 'a day with nothing on it totals 0, never null').toBe(0);
         expect(repo().dayTotals()).toEqual([
             { date: '2026-01-07', totalSeconds: 1800 },
             { date: '2026-01-06', totalSeconds: 10800 },
