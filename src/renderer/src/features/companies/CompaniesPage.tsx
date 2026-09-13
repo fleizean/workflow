@@ -13,11 +13,11 @@ import { ROUTE_PATHS } from '@renderer/lib/routes';
 import { useUiStore } from '@renderer/store/ui.store';
 import { useCompanies } from './api/useCompanies';
 import { useCompanySessions } from './api/useCompanySessions';
-import { useCreateCompany, useUpdateCompany } from './api/useCompanyMutations';
+import { useCreateCompany, useDeleteCompany, useUpdateCompany } from './api/useCompanyMutations';
 import type { CompanyValues } from './api/useCompanyMutations';
 import CompanyForm from './components/CompanyForm';
 import CompanyRow from './components/CompanyRow';
-import { countSessionsByCompany } from './session-counts';
+import { countSessionsByCompany, describeCompanyDelete, describeSessionCount } from './session-counts';
 import type { Company } from '@shared/types';
 
 const EMPTY_CLASS = 'flex flex-col items-center justify-center py-16 px-6';
@@ -31,7 +31,9 @@ export default function CompaniesPage(): ReactElement {
     const sessions = useCompanySessions();
     const create = useCreateCompany();
     const update = useUpdateCompany();
+    const remove = useDeleteCompany();
     const pushToast = useUiStore((state) => state.pushToast);
+    const openDialog = useUiStore((state) => state.openDialog);
     // null: no form. 'new': the add form. A Company: the edit form for that company.
     const [editing, setEditing] = useState<Company | 'new' | null>(null);
 
@@ -62,6 +64,38 @@ export default function CompaniesPage(): ReactElement {
         }
     };
 
+    /*
+     * COMP-05. The count is quoted from the list this screen already holds, and checked against what the delete
+     * reports: if they disagree, the user was warned about the wrong number and is told so rather than congratulated.
+     */
+    const confirmDelete = (company: Company): void => {
+        const expected = counts.get(company.id) ?? 0;
+        void openDialog({
+            tone: 'error',
+            icon: 'delete',
+            title: 'Delete "' + company.name + '"?',
+            body: describeCompanyDelete(expected),
+            dismissLabel: 'Cancel',
+            confirmLabel: 'Delete',
+            destructive: true
+        }).then((confirmed) => {
+            if (!confirmed) {
+                return;
+            }
+            remove.mutate(company.id, {
+                onSuccess: (result) => {
+                    const removed = result.deletedSessionCount;
+                    pushToast(
+                        removed === expected ? 'success' : 'warning',
+                        removed === 0
+                            ? 'Company deleted successfully'
+                            : 'Company deleted, with ' + describeSessionCount(removed)
+                    );
+                }
+            });
+        });
+    };
+
     return (
         <div className="flex flex-col">
             <ScreenHeader title="Companies" backTo={ROUTE_PATHS.history} />
@@ -86,6 +120,7 @@ export default function CompaniesPage(): ReactElement {
                             company={company}
                             sessionCount={counts.get(company.id) ?? 0}
                             onEdit={setEditing}
+                            onDelete={confirmDelete}
                         />
                     ))}
                 </section>

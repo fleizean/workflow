@@ -22,14 +22,17 @@ const NAME_CLASS = 'truncate text-base font-semibold text-slate-900 dark:text-wh
 const META_CLASS = 'flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400';
 const EDIT_CLASS = 'flex items-center justify-center w-9 h-9 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 ' +
     'hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400 transition-colors';
+const DELETE_CLASS = 'flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 dark:bg-red-400/10 ' +
+    'hover:bg-red-500/20 dark:hover:bg-red-400/20 text-red-600 dark:text-red-400 transition-colors';
 
 interface CompanyRowProps {
     readonly company: Company;
     readonly sessionCount: number;
     readonly onEdit: (company: Company) => void;
+    readonly onDelete: (company: Company) => void;
 }
 
-export default function CompanyRow({ company, sessionCount, onEdit }: CompanyRowProps): ReactElement {
+export default function CompanyRow({ company, sessionCount, onEdit, onDelete }: CompanyRowProps): ReactElement {
     return (
         <div className={ROW_CLASS}>
             <div className={ICON_CLASS}>
@@ -53,6 +56,14 @@ export default function CompanyRow({ company, sessionCount, onEdit }: CompanyRow
                     onClick={() => { onEdit(company); }}
                 >
                     <span className="material-symbols-outlined text-[18px]">edit</span>
+                </button>
+                <button
+                    type="button"
+                    aria-label={'Delete ' + company.name}
+                    className={DELETE_CLASS}
+                    onClick={() => { onDelete(company); }}
+                >
+                    <span className="material-symbols-outlined text-[18px]">delete</span>
                 </button>
             </div>
         </div>
