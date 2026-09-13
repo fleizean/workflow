@@ -17,7 +17,6 @@ import type { AppContainer } from '../src/main/container';
 import type { DatabaseLayer } from '../src/main/database-startup';
 import { closeDatabaseNow } from '../src/main/lifecycle';
 import { GOAL_NOTIFICATION, POMODORO_SESSION_NAME } from '../src/main/notifications';
-import { MAX_CREDIT_MS } from '../src/main/services/timer.service';
 import { instantFromEpochMs } from '../src/shared/utils/date';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
 import type { IpcEventChannel, SoundId } from '../src/shared/types';
@@ -87,6 +86,11 @@ const WALL_ORIGIN_MS = new Date(2026, 0, 5, 12, 0, 0).getTime();
 // transition in the zones this suite runs in, so the only thing that moves across the boundary is the day.
 const MIDNIGHT_EVE_MS = new Date(2026, 3, 13, 23, 0, 10).getTime();
 const SECONDS_TO_MIDNIGHT = 3590;
+
+// The most one tick may credit - timer.service.ts MAX_CREDIT_MS, pinned at two seconds in timer-service.test.ts.
+// Spelled out rather than imported: a test file that names a service module has to stub electron, and this one
+// drives the composition root, which imports the Electron adapters on purpose (tests/services-electron-free.test.ts).
+const LATE_TICK_MS = 2000;
 
 interface DrivenPorts {
     readonly ports: AppPorts;
@@ -690,7 +694,7 @@ describe('CORE-13: the goal is a fact about the local day, not about the timer',
         container.services.settings.update({ dailyTargetSeconds: savedToday + 20, goalNotification: true });
 
         container.services.timer.start();
-        driver.tickEvery(MAX_CREDIT_MS, 200);
+        driver.tickEvery(LATE_TICK_MS, 200);
 
         expect(container.services.timer.snapshot().elapsedSeconds, 'the clamp stopped crediting two seconds a tick')
             .toBe(401);
