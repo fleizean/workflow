@@ -11,7 +11,9 @@ export const queryKeys = {
     companies: ['companies'] as const,
     sessions: ['sessions'] as const,
     settings: ['settings'] as const,
-    timerSnapshot: ['timer', 'snapshot'] as const
+    timerSnapshot: ['timer', 'snapshot'] as const,
+    // HIST-01's summary card. 'stats' is a domain main announces, so a saved session refreshes this with the list.
+    weekTotals: ['stats', 'weekTotals'] as const
 };
 
 /** What a `data:changed` domain invalidates: the prefix every key in that domain starts with. */
