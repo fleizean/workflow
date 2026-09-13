@@ -688,8 +688,12 @@ const asTextNode = (value: string): string =>
  * markup carries the ESCAPED form (so the first two are not both true because the row is missing).
  */
 async function checkEscaping(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
+    // Removed again at the end: the legacy-migration case counts the companies this launch leaves behind, and a
+    // probe that changes what another check measures is a probe that breaks it.
+    let probeCompanyId: number | null = null;
     try {
-        container.services.companies.create({ name: SMOKE_XSS_COMPANY_NAME, noteRequired: false });
+        probeCompanyId = container.services.companies
+            .create({ name: SMOKE_XSS_COMPANY_NAME, noteRequired: false }).id;
         await win.webContents.executeJavaScript(
             'window.location.hash = ' + JSON.stringify(RENDERER_COMPANIES_ROUTE_HASH) + '; true'
         );
@@ -720,6 +724,10 @@ async function checkEscaping(win: BrowserWindow, container: AppContainer, lines:
         await waitForRendererText(win, RENDERER_MARKER_TEXT);
     } catch (error) {
         return 'escaping: ' + describeError(error);
+    } finally {
+        if (probeCompanyId !== null) {
+            container.services.companies.remove(probeCompanyId);
+        }
     }
     return null;
 }
