@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useUiStore } from '@renderer/store/ui.store';
 import { useCompanies } from '@renderer/features/companies';
-import { useSettings } from '@renderer/features/settings';
+import { useSetTimerMode, useSettings } from '@renderer/features/settings';
 import { formatElapsed } from '@renderer/lib/duration';
 import { formatLocalDate } from '@shared/utils/date';
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
@@ -25,9 +25,7 @@ import type { LocalDate } from '@shared/types';
 import { useTimerSnapshot } from './api/useTimerSnapshot';
 import { useTimerSessions } from './api/useTimerSessions';
 import { useStreak } from './api/useStreak';
-import {
-    usePauseTimer, useResetTimer, useSetTimerMode, useStartTimer, useStopAndSave
-} from './api/useTimerCommands';
+import { usePauseTimer, useResetTimer, useStartTimer, useStopAndSave } from './api/useTimerCommands';
 import type { StopAndSaveValues } from './api/useTimerCommands';
 import { useTimerStore } from './state/timer.store';
 import { useAttributeSession } from './api/usePomodoro';

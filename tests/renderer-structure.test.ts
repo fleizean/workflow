@@ -430,6 +430,46 @@ describe('criterion 4: the executed data path is the mounted one', () => {
     });
 });
 
+/*
+ * Criterion 4, and the obligation 08-D-SUMMARY.md left slice E. Two things mean the pomodoro mode: the clock main
+ * runs in (timer.state.mode) and the preference Settings shows (settings.pomodoroEnabled). Home writes both,
+ * Settings writes both, and if either ever wrote one of them alone the two screens would disagree about what the
+ * app is doing - Settings reporting "off" while Home counts down a pomodoro.
+ *
+ * Avoiding that by remembering is what rots when a third caller appears. There is exactly one writer, it lives
+ * where both screens can reach it, and this is what says so.
+ */
+describe('criterion 4: the mode and its preference are written by one caller', () => {
+    const MODE_WRITER = path.posix.join(SRC, 'features/settings/api/useTimerMode.ts');
+    /** A written property, not a read: `pomodoroEnabled: x` rather than `settings.data.pomodoroEnabled`. */
+    const WRITES_FLAG = /\bpomodoroEnabled\s*:/;
+
+    it('writes settings.pomodoroEnabled from exactly one file, and it is ' + MODE_WRITER, () => {
+        const writers = rendererSources().filter((file) => WRITES_FLAG.test(codeOf(file)));
+        expect(
+            writers,
+            'a second writer of pomodoroEnabled can set the preference without setting the mode, which is the ' +
+            'drift 08-D-SUMMARY.md named'
+        ).toEqual([MODE_WRITER]);
+    });
+
+    it('sends timer:setMode from that same file and nowhere else', () => {
+        const callers = rendererSources().filter((file) => literalsOf(file).includes('timer:setMode'));
+        expect(callers, 'the mode is set somewhere that does not set the preference with it').toEqual([MODE_WRITER]);
+    });
+
+    it('reaches that one caller from both screens that toggle the mode', () => {
+        const surface = codeOf(path.posix.join(SRC, 'features/settings/index.ts'));
+        expect(surface, 'features/settings no longer publishes the writer, so Home cannot reach it')
+            .toMatch(/useSetTimerMode/);
+        const callers = rendererSources()
+            .filter((file) => file !== MODE_WRITER)
+            .filter((file) => /\buseSetTimerMode\s*\(/.test(codeOf(file)));
+        expect(callers, 'a screen with a pomodoro toggle stopped going through the one writer')
+            .toContain(path.posix.join(SRC, 'features/timer/TimerPage.tsx'));
+    });
+});
+
 describe('ARCH-05: one stylesheet under ' + RENDERER, () => {
     it('has exactly one .css file, and it is ' + GLOBALS, () => {
         const stylesheets = tracked(RENDERER).filter((file) => file.endsWith('.css'));
