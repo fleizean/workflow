@@ -1,0 +1,193 @@
+/*
+ * The Home screen's decisions, run rather than read.
+ *
+ * There is no jsdom in this project by decision, so nothing here renders TimerPage. What IS provable is every
+ * number and every word the screen puts on itself: the ring, the headline, the meta line, the streak tier, the
+ * day's logged total and - the one that matters - how many seconds a save would write.
+ *
+ * What this leaves unproven is stated in 08-C-SUMMARY.md: that the components draw what these functions return,
+ * that the save button opens the form, and that the form's answer reaches `timer:stopAndSave`.
+ */
+
+import { describe, expect, it } from 'vitest';
+import {
+    RING_CIRCUMFERENCE, adjustmentLabel, dayTotalOf, describeWorkDial, dialDigits, headerDateLabel, ringOffsetFor,
+    ringToneFor, savableSeconds, streakLabel, streakTierOf
+} from '@renderer/features/timer/timer-view';
+import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
+import type { LocalDate, WorkSession } from '@shared/types';
+
+const ld = (text: string): LocalDate => text as LocalDate;
+const DAY = ld('2026-09-15');
+const OTHER_DAY = ld('2026-09-14');
+
+const session = (id: number, date: LocalDate, durationSeconds: number): WorkSession => ({
+    id,
+    name: 'Work Session',
+    durationSeconds,
+    date,
+    companyId: null,
+    note: null,
+    createdAt: 1_757_000_000_000
+});
+
+/** Local noon, so no zone this suite runs in can move the clock time across a day boundary. */
+const NOON_MS = new Date(2026, 8, 15, 12, 0, 0).getTime();
+
+const HOUR = 3600;
+const EIGHT_HOURS = 8 * HOUR;
+
+const dial = (over: Partial<Parameters<typeof describeWorkDial>[0]>): ReturnType<typeof describeWorkDial> =>
+    describeWorkDial({
+        dailyTargetSeconds: EIGHT_HOURS,
+        loggedSeconds: 0,
+        elapsedSeconds: 0,
+        adjustmentSeconds: 0,
+        running: false,
+        nowMs: NOON_MS,
+        ...over
+    });
+
+describe('savableSeconds: what a save is allowed to write', () => {
+    it('writes what was counted when nothing was adjusted', () => {
+        expect(savableSeconds(3725, 0)).toBe(3725);
+    });
+
+    it('adds the pending correction, because that is what Adjust now changes', () => {
+        expect(savableSeconds(3600, 1800)).toBe(5400);
+    });
+
+    it('never goes below zero, so a correction cannot write a negative duration', () => {
+        expect(savableSeconds(600, -1800)).toBe(0);
+    });
+
+    /*
+     * The honest way to reach this: a timer left running across a weekend with the app open. The contract refuses a
+     * duration above a day (WR-07), so without the bound the save would be rejected with nothing the user could do
+     * about it except lose the lot.
+     */
+    it('is bounded by the one-day limit the contract enforces', () => {
+        expect(savableSeconds(MAX_SESSION_DURATION_SECONDS + 10_000, 0)).toBe(MAX_SESSION_DURATION_SECONDS);
+        expect(savableSeconds(0, MAX_SESSION_DURATION_SECONDS * 2)).toBe(MAX_SESSION_DURATION_SECONDS);
+    });
+});
+
+describe('the dial', () => {
+    it('counts DOWN to the target, as v1.2.1 did, from the day total and not from the session', () => {
+        // Three hours already on disk for the day, one hour on the clock: four left of eight.
+        expect(dial({ loggedSeconds: 3 * HOUR, elapsedSeconds: HOUR }).digits).toEqual(['04', '00', '00']);
+    });
+
+    it('says EXCEEDED once the day is past its target, and shows how far past', () => {
+        const past = dial({ loggedSeconds: EIGHT_HOURS, elapsedSeconds: 90 });
+        expect(past.headline).toBe('EXCEEDED');
+        expect(past.exceeded).toBe(true);
+        expect(past.digits).toEqual(['00', '01', '30']);
+        expect(past.meta).toBe('Goal Exceeded!');
+    });
+
+    it('counts the pending correction into the day, so the ring and the save agree', () => {
+        const adjusted = dial({ elapsedSeconds: HOUR, adjustmentSeconds: HOUR });
+        expect(adjusted.savableSeconds).toBe(2 * HOUR);
+        expect(adjusted.digits).toEqual(['06', '00', '00']);
+    });
+
+    it('empties the ring at nothing and fills it at the target', () => {
+        expect(dial({}).ringOffset).toBe(RING_CIRCUMFERENCE);
+        expect(dial({ loggedSeconds: EIGHT_HOURS }).ringOffset).toBe(0);
+    });
+
+    it('does not let the ring wind past full once the target is exceeded', () => {
+        expect(dial({ loggedSeconds: EIGHT_HOURS * 3 }).ringOffset).toBe(0);
+        expect(ringOffsetFor(400)).toBe(0);
+        expect(ringOffsetFor(-10)).toBe(RING_CIRCUMFERENCE);
+    });
+
+    it('colours the ring at v1.2.1 two thresholds', () => {
+        expect(ringToneFor(0)).toBe('normal');
+        expect(ringToneFor(79.9)).toBe('normal');
+        expect(ringToneFor(80)).toBe('near');
+        expect(ringToneFor(99.9)).toBe('near');
+        expect(ringToneFor(100)).toBe('complete');
+    });
+
+    it('names the clock time the target would be reached at, but only while the timer runs', () => {
+        expect(dial({ running: false, loggedSeconds: HOUR }).meta).toBe('Not running');
+        // Seven hours left at noon: 19:00, in the 24-hour shape lib/format produces.
+        expect(dial({ running: true, loggedSeconds: HOUR }).meta).toBe('19:00');
+    });
+
+    it('reports the goal met on the day total, never on one session (B7)', () => {
+        expect(dial({ loggedSeconds: EIGHT_HOURS - 1 }).goalMet).toBe(false);
+        expect(dial({ loggedSeconds: EIGHT_HOURS }).goalMet).toBe(true);
+        // Four two-hour blocks are eight hours, which is the case v1.2.1 answered no to.
+        expect(dial({ loggedSeconds: 4 * 2 * HOUR }).goalMet).toBe(true);
+    });
+
+    it('does not divide by a target of zero', () => {
+        const none = dial({ dailyTargetSeconds: 0, loggedSeconds: HOUR });
+        expect(Number.isFinite(none.ringOffset)).toBe(true);
+        expect(none.goalMet).toBe(false);
+    });
+});
+
+describe('dialDigits', () => {
+    it('splits into the three groups v1.2.1 wrote into three spans', () => {
+        expect(dialDigits(0)).toEqual(['00', '00', '00']);
+        expect(dialDigits(3725)).toEqual(['01', '02', '05']);
+        expect(dialDigits(360_000)).toEqual(['100', '00', '00']);
+    });
+});
+
+describe('the Logged card', () => {
+    it('totals the sessions on that day and no other', () => {
+        const rows = [session(1, DAY, HOUR), session(2, DAY, 1800), session(3, OTHER_DAY, HOUR)];
+        expect(dayTotalOf(rows, DAY)).toBe(HOUR + 1800);
+        expect(dayTotalOf(rows, OTHER_DAY)).toBe(HOUR);
+    });
+
+    it('answers zero for a day with nothing on it', () => {
+        expect(dayTotalOf([], DAY)).toBe(0);
+    });
+});
+
+describe('TIMER-09: the streak card', () => {
+    it('reads the value out plainly, with no (TEST) anywhere in it', () => {
+        expect(streakLabel(0)).toBe('0 days');
+        expect(streakLabel(1)).toBe('1 day');
+        expect(streakLabel(12)).toBe('12 days');
+        for (const days of [0, 1, 6, 15, 25]) {
+            expect(streakLabel(days)).not.toContain('TEST');
+        }
+    });
+
+    it('applies v1.2.1 three tiers at v1.2.1 thresholds', () => {
+        expect(streakTierOf(0)).toBe(0);
+        expect(streakTierOf(5)).toBe(0);
+        expect(streakTierOf(6)).toBe(1);
+        expect(streakTierOf(10)).toBe(1);
+        expect(streakTierOf(11)).toBe(2);
+        expect(streakTierOf(20)).toBe(2);
+        expect(streakTierOf(21)).toBe(3);
+    });
+});
+
+describe('the header date', () => {
+    it('spells the month the way v1.2.1 did', () => {
+        expect(headerDateLabel(9, 15)).toBe('SEP 15');
+        expect(headerDateLabel(1, 1)).toBe('JAN 1');
+        expect(headerDateLabel(12, 31)).toBe('DEC 31');
+    });
+});
+
+describe('the pending correction is visible whenever it is set', () => {
+    it('says nothing when there is nothing pending', () => {
+        expect(adjustmentLabel(0)).toBeNull();
+    });
+
+    it('names the size and the direction, so an added half hour is never silent', () => {
+        expect(adjustmentLabel(1800)).toBe('+30 min when you save');
+        expect(adjustmentLabel(-1800)).toBe('-30 min when you save');
+        expect(adjustmentLabel(3900)).toBe('+1h 05m when you save');
+    });
+});
