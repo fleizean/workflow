@@ -8,7 +8,7 @@
  * setting that bounces at the boundary or refuse one the app accepts.
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
     ABOUT, DAILY_TARGET_LABEL, DESTRUCTIVE_ACTION_ID, NUMBER_FIELDS, QUICK_TARGET_HOURS, RESET_ALL_CONFIRM,
     boundOf, describeDeleteAll, describeSessionCount, draftFrom, formatTargetClock, hasChanges, isRefused,
@@ -19,6 +19,11 @@ import { DEFAULT_SETTINGS, SETTINGS_BOUNDS } from '@shared/constants/settings';
 import { SettingsValidationError, validateSettingsPatch } from '@main/services/settings.service';
 import { RENDERER_DESTRUCTIVE_TESTID } from '@main/config';
 import type { Settings } from '@shared/types';
+
+// Criterion 3: the validator this file checks the screen against must pass with electron refusing to load.
+vi.mock('electron', () => {
+    throw new Error('electron was imported by a module that must load without it');
+});
 
 const stored = (patch: Partial<Settings> = {}): Settings => ({ ...DEFAULT_SETTINGS, ...patch });
 
