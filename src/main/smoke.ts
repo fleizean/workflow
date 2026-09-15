@@ -10,10 +10,12 @@ import { IPC_CHANNELS } from '@shared/ipc/channels';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
     DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_COMPANIES_ROUTE_HASH,
+    RENDERER_DESTRUCTIVE_TESTID, RENDERER_LEGACY_DESTRUCTIVE_SELECTOR,
     RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH,
     RENDERER_SECOND_ROUTE_TEXT, SMOKE_BUNDLED_FONTS, SMOKE_DB_ENV, SMOKE_ESCAPE_URL, SMOKE_EXIT_FALLBACK_MS,
     SMOKE_ICON_FONT_SIZE_PX, SMOKE_ICON_NAME, SMOKE_NAVIGATION_TIMEOUT_MS, SMOKE_POLL_INTERVAL_MS,
-    SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
+    SMOKE_RENDER_TIMEOUT_MS, SMOKE_SETTINGS_NUMBER_FIELDS, SMOKE_SETTINGS_TARGET_SECONDS,
+    SMOKE_SETTINGS_TARGET_TEXT, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
     SMOKE_XSS_COMPANY_NAME, mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
@@ -187,6 +189,15 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         if (win === undefined) {
             return fail('startup returned a database without ever opening a main window');
         }
+        /*
+         * Before the first render, because the Settings form seeds its fields once from what the database held
+         * when it opened. Restored below, so the launch leaves the injected database as it found it.
+         */
+        const settingsBefore = container.services.settings.get();
+        container.services.settings.update({
+            dailyTargetSeconds: SMOKE_SETTINGS_TARGET_SECONDS,
+            pomodoroEnabled: true
+        });
         const rendererFailure = await checkRenderer(win, lines);
         if (rendererFailure !== null) {
             return fail(rendererFailure);
@@ -202,6 +213,14 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         const escapingFailure = await checkEscaping(win, container, lines);
         if (escapingFailure !== null) {
             return fail(escapingFailure);
+        }
+        const settingsFailure = await checkSettingsScreen(win, lines);
+        container.services.settings.update({
+            dailyTargetSeconds: settingsBefore.dailyTargetSeconds,
+            pomodoroEnabled: settingsBefore.pomodoroEnabled
+        });
+        if (settingsFailure !== null) {
+            return fail(settingsFailure);
         }
         lines.push('SMOKE_OFFLINE_REQUESTS=' + String(remoteRequests()));
         // Last, because it ends by telling the app it is quitting - which is the state being proved.
@@ -795,6 +814,76 @@ async function probeRouting(win: BrowserWindow, lines: string[]): Promise<string
     }
     return null;
 }
+
+/*
+ * Criterion 4 in the packaged app: the settings the screen shows are the ones on disk, and the one irreversible
+ * button on it is reached by an identifier rather than by where it happens to sit.
+ *
+ * v1.2.1 found the delete-all-data button with document.querySelector('.mt-8.mb-8 button'), so a spacing tweak
+ * detached the handler - or hung it on whatever button a later edit put first inside those margins. Both halves are
+ * asked here: the handle resolves to exactly one element, and the selector that used to find it resolves to none.
+ *
+ * The switch is asked about too, because its markup changed. v1.2.1 drew `has-[:checked]:`; the row is one <label>
+ * now and the track is styled `peer-checked:`, which only works while the input is the track's own sibling. Nothing
+ * outside a browser can tell whether that is still true - a switch that never moves is a checkbox that works
+ * perfectly and a control that lies.
+ */
+async function checkSettingsScreen(win: BrowserWindow, lines: string[]): Promise<string | null> {
+    try {
+        await win.webContents.executeJavaScript(
+            'window.location.hash = ' + JSON.stringify(RENDERER_SECOND_ROUTE_HASH) + '; true'
+        );
+        const rendered = await waitForRendererText(win, SMOKE_SETTINGS_TARGET_TEXT);
+        const probe = asRecord(await win.webContents.executeJavaScript(
+            settingsProbeScript(RENDERER_DESTRUCTIVE_TESTID, RENDERER_LEGACY_DESTRUCTIVE_SELECTOR)
+        ));
+
+        lines.push('SMOKE_SETTINGS_TARGET=' + String(rendered.includes(SMOKE_SETTINGS_TARGET_TEXT)));
+        lines.push('SMOKE_SETTINGS_HANDLE=' + text(probe.handle));
+        lines.push('SMOKE_SETTINGS_LEGACY_HANDLE=' + text(probe.legacy));
+        lines.push('SMOKE_SETTINGS_SWITCH=' + text(probe.switchJustify));
+        lines.push('SMOKE_SETTINGS_DURATIONS=' + text(probe.durations));
+
+        if (!rendered.includes(SMOKE_SETTINGS_TARGET_TEXT)) {
+            return 'the settings route never showed the stored daily target ' + SMOKE_SETTINGS_TARGET_TEXT;
+        }
+        if (probe.handle !== 1) {
+            return 'the delete-all button answered to its identifier ' + text(probe.handle) + ' times';
+        }
+        if (probe.legacy !== 0) {
+            return "v1.2.1's '" + RENDERER_LEGACY_DESTRUCTIVE_SELECTOR + "' found " + text(probe.legacy) +
+                ' button(s), so a spacing class is load-bearing again';
+        }
+        if (probe.switchJustify !== 'flex-end') {
+            return 'a checked switch left its knob at ' + text(probe.switchJustify) + ', so the control does not ' +
+                'show the state it is in';
+        }
+        if (probe.durations !== SMOKE_SETTINGS_NUMBER_FIELDS) {
+            return 'pomodoro is enabled on disk and the screen offered ' + text(probe.durations) + ' of its ' +
+                String(SMOKE_SETTINGS_NUMBER_FIELDS) + ' durations';
+        }
+
+        // Home again, so the marker the rest of the launch waits for is on screen.
+        await win.webContents.executeJavaScript('window.location.hash = "#/"; true');
+        await waitForRendererText(win, RENDERER_MARKER_TEXT);
+    } catch (error) {
+        return 'settings: ' + describeError(error);
+    }
+    return null;
+}
+
+const settingsProbeScript = (testid: string, legacySelector: string): string => `(() => {
+    const root = document.getElementById('root');
+    if (root === null) return { handle: -1, legacy: -1, switchJustify: 'no-root', durations: -1 };
+    const checked = root.querySelector('input.peer:checked');
+    const track = checked === null ? null : checked.nextElementSibling;
+    return {
+        handle: root.querySelectorAll(${JSON.stringify('[data-testid="' + testid + '"]')}).length,
+        legacy: root.querySelectorAll(${JSON.stringify(legacySelector)}).length,
+        switchJustify: track === null ? 'none' : getComputedStyle(track).justifyContent,
+        durations: root.querySelectorAll('input[type="number"]').length
+    };
+})()`;
 
 /** Polls the page until #root has text containing the marker, or the timeout passes. */
 async function waitForRendererText(win: BrowserWindow, marker: string): Promise<string> {

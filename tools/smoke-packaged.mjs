@@ -29,6 +29,14 @@ export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
 /** Criterion 1 / S2: the route the escaping is watched on, and the name watched there. Must match src/main/config.ts. */
 export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
 export const EXPECTED_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
+/*
+ * Criterion 4: the identifier the delete-all-data button answers to, and the daily target the probe writes before
+ * the window opens. Must match src/main/config.ts. v1.2.1 reached that button with a spacing selector, so 'found
+ * exactly one' and 'the old selector finds none' are two different claims and both are made.
+ */
+export const EXPECTED_DESTRUCTIVE_TESTID = 'reset-all-data';
+export const EXPECTED_SETTINGS_TARGET_TEXT = '07:30';
+export const EXPECTED_SETTINGS_NUMBER_FIELDS = 4;
 
 /** src/main/config.ts's icon probe and font list; tests/smoke-harness.test.ts holds the two equal (SPA-08/SPA-09). */
 export const EXPECTED_ICON_MAX_WIDTH_PX = 32;
@@ -223,6 +231,24 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('that name put no element of its own on the page',
         f.SMOKE_XSS_ELEMENTS === '0',
         'injected=' + JSON.stringify(f.SMOKE_XSS_ELEMENTS));
+
+    // Criterion 4: the settings on disk are what the screen shows, and the one irreversible button has a handle.
+    check('the settings screen showed the daily target that was on disk',
+        f.SMOKE_SETTINGS_TARGET === 'true',
+        'expected ' + JSON.stringify(EXPECTED_SETTINGS_TARGET_TEXT) + ', reported ' +
+        JSON.stringify(f.SMOKE_SETTINGS_TARGET));
+    check('the delete-all button answered to data-testid="' + EXPECTED_DESTRUCTIVE_TESTID + '" exactly once',
+        f.SMOKE_SETTINGS_HANDLE === '1',
+        'found ' + JSON.stringify(f.SMOKE_SETTINGS_HANDLE));
+    check("v1.2.1's spacing selector found no button at all",
+        f.SMOKE_SETTINGS_LEGACY_HANDLE === '0',
+        'found ' + JSON.stringify(f.SMOKE_SETTINGS_LEGACY_HANDLE));
+    check('a switch that is on drew itself on',
+        f.SMOKE_SETTINGS_SWITCH === 'flex-end',
+        'the knob sat at ' + JSON.stringify(f.SMOKE_SETTINGS_SWITCH));
+    check('the pomodoro section offered all ' + EXPECTED_SETTINGS_NUMBER_FIELDS + ' of its numbers',
+        Number(f.SMOKE_SETTINGS_DURATIONS) === EXPECTED_SETTINGS_NUMBER_FIELDS,
+        'offered ' + JSON.stringify(f.SMOKE_SETTINGS_DURATIONS));
 
     // SPA-08/SPA-09/SPA-10, all of it with networking emulated off for the whole launch.
     check('the app attempted no remote request with networking off',

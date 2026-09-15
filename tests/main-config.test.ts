@@ -9,8 +9,10 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_COMPANIES_ROUTE_HASH, RENDERER_MARKER_TEXT,
-    RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG, SMOKE_XSS_COMPANY_NAME,
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_COMPANIES_ROUTE_HASH, RENDERER_DESTRUCTIVE_TESTID,
+    RENDERER_MARKER_TEXT,
+    RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
+    SMOKE_SETTINGS_TARGET_SECONDS, SMOKE_SETTINGS_TARGET_TEXT, SMOKE_XSS_COMPANY_NAME,
     SMOKE_SEED_TIMER_STATE_ENV, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
@@ -124,7 +126,8 @@ function processReads(file: string, source: string = read(file)): string[] {
 // /^#!.*\n/, whose `.` cannot match \r) then emits code above the #! line - a SyntaxError at import.
 const SHARED_CONSTANTS = [
     'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_HASH', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV',
-    'RENDERER_COMPANIES_ROUTE_HASH', 'EXPECTED_XSS_COMPANY_NAME'
+    'RENDERER_COMPANIES_ROUTE_HASH', 'EXPECTED_XSS_COMPANY_NAME', 'EXPECTED_DESTRUCTIVE_TESTID',
+    'EXPECTED_SETTINGS_TARGET_TEXT'
 ] as const;
 type SharedConstant = (typeof SHARED_CONSTANTS)[number];
 
@@ -219,6 +222,35 @@ describe('D-24: the values the smoke harness depends on equal its own', () => {
             'D-24: the app would name a company one thing and the harness would pass the run for another. A payload ' +
             'the two ends disagree on proves nothing about S2.'
         ).toBe(harness.EXPECTED_XSS_COMPANY_NAME);
+    });
+
+    /*
+     * Criterion 4: the handle the delete-all-data button carries and the target the probe writes are checked by the
+     * harness, so both ends have to spell them the same way. The renderer's own copy of the handle is held equal to
+     * this one in tests/settings-screen.test.ts, which closes the chain screen -> app -> harness.
+     */
+    it('shares the destructive handle and the settings target with ' + HARNESS, () => {
+        const harness = harnessConstants();
+        expect(
+            RENDERER_DESTRUCTIVE_TESTID,
+            'D-24: the smoke would probe for an identifier the harness does not check, so the one irreversible ' +
+            'button in the app would be unguarded in both places at once'
+        ).toBe(harness.EXPECTED_DESTRUCTIVE_TESTID);
+        expect(
+            SMOKE_SETTINGS_TARGET_TEXT,
+            'D-24: the app would wait for one clock reading and the harness would pass the run for another'
+        ).toBe(harness.EXPECTED_SETTINGS_TARGET_TEXT);
+    });
+
+    it('writes a target that reads back as the text the screen is waited for', () => {
+        const hours = Math.floor(SMOKE_SETTINGS_TARGET_SECONDS / 3600);
+        const minutes = Math.floor((SMOKE_SETTINGS_TARGET_SECONDS % 3600) / 60);
+        const clock = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+        expect(
+            clock,
+            'the probe would write a target the settings screen never renders as ' + SMOKE_SETTINGS_TARGET_TEXT +
+            ', and the launch would wait 20 seconds for text that cannot appear'
+        ).toBe(SMOKE_SETTINGS_TARGET_TEXT);
     });
 
     it('uses as SMOKE_FLAG the first argument the harness spawns the packaged binary with', () => {

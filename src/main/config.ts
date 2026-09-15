@@ -31,6 +31,14 @@ export const SMOKE_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
  */
 export const RENDERER_DESTRUCTIVE_TESTID = 'reset-all-data';
 export const RENDERER_LEGACY_DESTRUCTIVE_SELECTOR = '.mt-8.mb-8 button';
+/*
+ * What the settings probe writes before the window loads, and what the screen must then show for it. Written
+ * first, and not after: the form seeds its fields once, from what the database held when it opened.
+ */
+export const SMOKE_SETTINGS_TARGET_SECONDS = 27_000;
+export const SMOKE_SETTINGS_TARGET_TEXT = '07:30';
+/** The four numbers the pomodoro section offers once it is enabled (features/settings/settings-view.ts). */
+export const SMOKE_SETTINGS_NUMBER_FIELDS = 4;
 export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
