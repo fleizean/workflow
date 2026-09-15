@@ -340,6 +340,44 @@ describe('SPA-12: the renamed utility scales are swept, and stay swept', () => {
             .toContain('in oklab');
     }, 60_000);
 
+    /*
+     * The half of the rename table the ban above cannot express, found while porting Home (08-C).
+     *
+     * v4 renamed the BOTTOM of four scales as well as the bare spelling: v3's `shadow-sm` is v4's `shadow-xs`, v3's
+     * `rounded-sm` is v4's `rounded-xs`, and the same for blur and backdrop-blur. So a block of markup copied out of
+     * legacy/ that already said `shadow-sm` renders one step LARGER, with nothing to complain and nothing above to
+     * catch it - `shadow-sm` is also where the sweep sends the bare `shadow`, so it cannot be banned.
+     *
+     * It is therefore swept by hand and pinned here: the values below are read out of real Tailwind, and the two
+     * spellings the sweep produced have to still be in the renderer, so a later copy-paste that reverts one of them
+     * is visible. Legacy carried 26 `shadow-sm` and 14 `backdrop-blur-sm`; six of them had reached the v2 tree.
+     */
+    it('knows that v4 renamed the bottom of the shadow, blur and radius scales too', async () => {
+        const base = path.join(repoRoot, STYLES_DIR);
+        const compiler = await compile(read(GLOBALS), { base, onDependency: () => undefined });
+        const pairs = [['shadow-xs', 'shadow-sm'], ['rounded-xs', 'rounded-sm'], ['backdrop-blur-xs', 'backdrop-blur-sm']];
+        const css = compiler.build(pairs.flat());
+
+        for (const [v4, v3] of pairs) {
+            const emitted = (token: string): string =>
+                css.split(selectorFor(String(token)) + ' {')[1]?.split('}')[0] ?? '';
+            expect(emitted(String(v4)), String(v4) + ' emitted nothing, so the sweep sent these classes nowhere')
+                .not.toBe('');
+            expect(
+                emitted(String(v4)),
+                String(v3) + ' and ' + String(v4) + ' render the same, so copying ' + String(v3) +
+                ' out of legacy/ would be harmless and this sweep would be pointless'
+            ).not.toBe(emitted(String(v3)));
+        }
+    }, 60_000);
+
+    it('keeps the swept spellings in the renderer, so a later copy-paste cannot quietly undo it', () => {
+        const tokens = rendererSources().flatMap((file) => literalsOf(file).flatMap((value) => value.split(/\s+/)));
+        for (const spelling of ['shadow-xs', 'backdrop-blur-xs']) {
+            expect(tokens, spelling + ' is gone from the renderer, so a v3 spelling has come back').toContain(spelling);
+        }
+    });
+
     it('scans files that actually carry class names, so the sweep is not vacuous', () => {
         const withClasses = rendererSources()
             .filter((file) => literalsOf(file).some((value) => /\b(?:flex|text-|bg-|rounded-)/.test(value)));

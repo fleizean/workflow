@@ -12,7 +12,7 @@ import { formatDurationShort } from '@renderer/lib/format';
 
 const CARD_CLASS = 'flex w-full flex-col gap-2 rounded-2xl bg-primary p-6 text-white shadow-lg ' +
     'shadow-primary/20 relative overflow-hidden';
-const BADGE_CLASS = 'flex h-12 w-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-sm';
+const BADGE_CLASS = 'flex h-12 w-12 items-center justify-center rounded-full bg-white/20 backdrop-blur-xs';
 
 export default function WeekTotalCard({ thisWeekSeconds }: { readonly thisWeekSeconds: number }): ReactElement {
     return (

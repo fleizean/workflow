@@ -19,7 +19,7 @@ import { describeSessionCount } from '@renderer/features/companies';
 import type { SessionGroup } from '../grouping';
 import type { WorkSession } from '@shared/types';
 
-const CARD_CLASS = 'group flex flex-col rounded-xl bg-white dark:bg-card-dark p-4 shadow-sm transition-all ' +
+const CARD_CLASS = 'group flex flex-col rounded-xl bg-white dark:bg-card-dark p-4 shadow-xs transition-all ' +
     'hover:shadow-md border border-transparent dark:border-slate-800/50';
 const HEADER_CLASS = 'flex items-center gap-4 w-full text-left';
 const BADGE_CLASS = 'flex shrink-0 flex-col items-center justify-center rounded-lg bg-slate-100 ' +

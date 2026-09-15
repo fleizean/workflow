@@ -44,7 +44,7 @@ const SHORTCUT_CLASS = 'group relative flex items-center gap-3 p-4 rounded-2xl b
     'from-violet-500 to-violet-600 text-white shadow-lg shadow-violet-500/20 transition-all duration-300 ' +
     'active:scale-95 overflow-hidden';
 const SHORTCUT_ICON_CLASS = 'relative flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 ' +
-    'backdrop-blur-sm z-10';
+    'backdrop-blur-xs z-10';
 const SECTION_HEAD_CLASS = 'mb-3 flex items-end justify-between px-1';
 const SECTION_TITLE_CLASS = 'text-slate-900 dark:text-white text-lg font-bold leading-tight';
 const RANGE_CLASS = 'text-xs font-medium text-slate-500 dark:text-slate-400';

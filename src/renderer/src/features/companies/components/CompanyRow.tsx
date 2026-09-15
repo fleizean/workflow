@@ -15,7 +15,7 @@ import { formatCreatedOn } from '@renderer/lib/format';
 import { describeSessionCount } from '../session-counts';
 import type { Company } from '@shared/types';
 
-const ROW_CLASS = 'group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 mb-3 shadow-sm ' +
+const ROW_CLASS = 'group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 mb-3 shadow-xs ' +
     'transition-all hover:shadow-md border border-transparent dark:border-slate-800/50';
 const ICON_CLASS = 'flex shrink-0 items-center justify-center rounded-lg bg-primary/10 dark:bg-primary/20 h-14 w-14';
 const NAME_CLASS = 'truncate text-base font-semibold text-slate-900 dark:text-white';
