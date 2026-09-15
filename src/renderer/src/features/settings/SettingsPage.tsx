@@ -53,7 +53,8 @@ export default function SettingsPage(): ReactElement {
      */
     const save = (review: DraftReview): void => {
         if (isRefused(review)) {
-            pushToast('warning', 'Nothing was saved. Two of these settings have limits - see the fields below.');
+            pushToast('warning', 'Nothing was saved. One or more settings are outside what this app accepts - ' +
+                'the fields below say which, and what the limits are.');
             return;
         }
         if (!hasChanges(review)) {

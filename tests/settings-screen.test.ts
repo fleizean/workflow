@@ -18,6 +18,7 @@ import type { NumberField, SettingsDraft } from '@renderer/features/settings/set
 import { DEFAULT_SETTINGS, SETTINGS_BOUNDS } from '@shared/constants/settings';
 import { SettingsValidationError, validateSettingsPatch } from '@main/services/settings.service';
 import { RENDERER_DESTRUCTIVE_TESTID } from '@main/config';
+import { read, stripCommentsAndStrings } from './helpers/ts-imports';
 import type { Settings } from '@shared/types';
 
 // Criterion 3: the validator this file checks the screen against must pass with electron refusing to load.
@@ -238,6 +239,57 @@ describe('the destructive action is reached by a stable identifier', () => {
     it('reports the number that actually went, rather than a success with no number', () => {
         expect(describeDeleteAll(3)).toBe('Deleted 3 work sessions.');
         expect(describeSessionCount(1)).toBe('1 work session');
+    });
+});
+
+/*
+ * Criterion 4's second clause, which is about something NOT happening: "raises no spurious 'settings saved' dialog
+ * on the Pomodoro toggle".
+ *
+ * legacy/pages/settings.html:744 called saveSettings() from the toggle's change handler, and saveSettings ended in
+ * showAlert('Settings saved successfully!') - a modal, over a switch the user had just watched move, every time
+ * they touched it. Nothing about that is visible to a type or to a lint rule, and no test in this project renders a
+ * component, so what is pinned here is the source: the only two dialogs this screen opens, and the fact that the
+ * toggle's handler asks the mode writer and nothing else.
+ */
+describe('criterion 4: the pomodoro toggle announces itself with the switch, and with nothing else', () => {
+    const PAGE = 'src/renderer/src/features/settings/SettingsPage.tsx';
+    const FORM = 'src/renderer/src/features/settings/components/SettingsForm.tsx';
+    const source = (file: string): string => stripCommentsAndStrings(file, read(file)).code;
+
+    it('opens exactly two dialogs on this screen, and both are named requests', () => {
+        const opened = [...source(PAGE).matchAll(/openDialog\(\s*([A-Za-z_$][\w$]*)/g)].map((match) => match[1]);
+        expect(
+            opened.sort(),
+            'a dialog written out at a call site on this screen is how "Settings saved successfully!" comes back'
+        ).toEqual(['ABOUT', 'RESET_ALL_CONFIRM']);
+        expect(
+            source(PAGE),
+            'a dialog request built inline would not be counted above'
+        ).not.toMatch(/openDialog\(\s*\{/);
+    });
+
+    it('hands the toggle a handler that only asks for the mode', () => {
+        const handler = /onTogglePomodoro=\{([^}]*\}[^}]*)\}/.exec(source(PAGE))?.[1] ?? '';
+        expect(handler, PAGE + ' no longer passes onTogglePomodoro').not.toBe('');
+        expect(handler, 'the toggle stopped going through the one writer of the pair').toContain('setMode.mutate');
+        for (const forbidden of ['openDialog', 'pushToast', 'update.mutate']) {
+            expect(handler, 'the toggle raises ' + forbidden + ' over a switch the user watched move')
+                .not.toContain(forbidden);
+        }
+    });
+
+    it('raises nothing of its own from the form the switch lives in', () => {
+        for (const noise of ['openDialog', 'pushToast']) {
+            expect(source(FORM), FORM + ' raises ' + noise + ' itself, so the page no longer owns what is said')
+                .not.toContain(noise);
+        }
+    });
+
+    it('says "saved" only where a save actually happened', () => {
+        const saidOnSuccess = /onSuccess:\s*\(\)\s*=>\s*\{[^}]*pushToast\('success',\s*'Settings saved'/
+            .test(read(PAGE));
+        expect(saidOnSuccess, 'the success line moved off the mutation that earns it').toBe(true);
     });
 });
 

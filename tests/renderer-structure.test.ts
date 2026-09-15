@@ -465,6 +465,23 @@ describe('criterion 4: the mode and its preference are written by one caller', (
         return found;
     };
 
+    /**
+     * The key spelt as a value, which is what a computed property name would need. A LiteralTypeNode parent means
+     * it is a TYPE saying the key is excluded - the Omit in features/settings - which is the opposite of a write.
+     */
+    const spellsFlag = (file: string, source = read(file)): boolean => {
+        const { sourceFile } = stripCommentsAndStrings(file, source);
+        let found = false;
+        const visit = (node: ts.Node): void => {
+            if (ts.isStringLiteral(node) && node.text === 'pomodoroEnabled' && !ts.isLiteralTypeNode(node.parent)) {
+                found = true;
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(sourceFile);
+        return found;
+    };
+
     it('writes settings.pomodoroEnabled from exactly one file, and it is ' + MODE_WRITER, () => {
         const writers = rendererSources().filter((file) => setsFlag(file));
         expect(
@@ -472,6 +489,29 @@ describe('criterion 4: the mode and its preference are written by one caller', (
             'a second writer of pomodoroEnabled can set the preference without setting the mode, which is the ' +
             'drift 08-D-SUMMARY.md named'
         ).toEqual([MODE_WRITER]);
+
+        /*
+         * The other spelling: a computed key, `{ ['pomodoroEnabled']: true }`, is not a PropertyAssignment named
+         * pomodoroEnabled and the scan above cannot see it. It has to spell the key as a string somewhere, and
+         * reading `settings.data.pomodoroEnabled` never does - that is a member access, not a literal.
+         */
+        const spellers = rendererSources().filter((file) => file !== MODE_WRITER && spellsFlag(file));
+        expect(
+            spellers,
+            'the key is spelt as a string outside the writer, which is how a computed key would reach it'
+        ).toEqual([]);
+    });
+
+    it('would see a computed key, and does not read the type that excludes one as a write', () => {
+        const probe = 'src/renderer/src/features/settings/probe.ts';
+        expect(
+            spellsFlag(probe, "const patch = { ['pomodoroEnabled']: true };"),
+            'the scan above can never fail, so it says nothing about a computed key'
+        ).toBe(true);
+        expect(
+            spellsFlag(probe, "type Patch = Partial<Omit<Settings, 'pomodoroEnabled'>>;"),
+            'the type that keeps the key out of the form would be reported as a write'
+        ).toBe(false);
     });
 
     it('sends timer:setMode from that same file and nowhere else', () => {
