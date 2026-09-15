@@ -20,6 +20,9 @@ import {
     GOAL_NOTIFICATION, POMODORO_NOT_RECORDED_NOTIFICATION, POMODORO_SESSION_NAME, TIMER_NOT_SAVED_NOTIFICATION
 } from '../src/main/notifications';
 import { instantFromEpochMs } from '../src/shared/utils/date';
+import {
+    ANSWERED_WITH_NO_NOTE, pendingAttributions
+} from '@renderer/features/timer/pomodoro-view';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
 import type { IpcEventChannel, SoundId } from '../src/shared/types';
 import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
@@ -93,6 +96,9 @@ const SECONDS_TO_MIDNIGHT = 3590;
 // Spelled out rather than imported: a test file that names a service module has to stub electron, and this one
 // drives the composition root, which imports the Electron adapters on purpose (tests/services-electron-free.test.ts).
 const LATE_TICK_MS = 2000;
+
+/** The local day drivenPorts' wall clock reports: WALL_ORIGIN_MS is local noon on 2026-01-05. */
+const TODAY_FOR_DRIVER = '2026-01-05';
 
 interface DrivenPorts {
     readonly ports: AppPorts;
@@ -471,6 +477,61 @@ describe('the services the container composes', () => {
             interval: 'work', status: 'paused', elapsedSeconds: 60, recordingFailed: true
         });
         expect(driver.notifications.map((n) => n.title)).toContain(POMODORO_NOT_RECORDED_NOTIFICATION.title);
+    });
+
+    /*
+     * POMO-04, driven end to end rather than reasoned about.
+     *
+     * A work interval completes, the process stops without ever getting to the prompt, and a second launch over the
+     * same file is asked - with the SCREEN's own predicate, the one features/timer/pomodoro-view.ts exports and
+     * TimerPage renders from - whether it still owes the user a question. Then the answer is given as an ordinary
+     * session update, and the predicate stops finding it. The day's recorded total is asserted across all of it,
+     * because the one thing attribution must never do is change how much time was worked.
+     *
+     * The stop here is "nothing further was written", which is what the prompt's crash actually costs: the
+     * transaction committed before the completion callback returned, so there is nothing else in flight. A real
+     * SIGKILL mid-write is tests/db-kill.test.ts's job.
+     */
+    it('still owes the user the attribution question after the process stops at the prompt', async () => {
+        const dbPath = makeCleanFixture();
+        const first = await driven(dbPath);
+        first.container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        const totalBefore = first.container.repositories.sessions.dayTotalFor(ld(TODAY_FOR_DRIVER));
+
+        first.container.services.pomodoro.start();
+        first.driver.tick(60);
+        expect(rawCount(dbPath, 'pomodoro_sessions'), 'the interval never reached the database').toBe(1);
+
+        // The process stops here: no dispose, no flush, nothing but the connection going away.
+        realLayer.closeDatabase(first.connection);
+
+        const second = await driven(dbPath);
+        const waiting = pendingAttributions(second.container.services.sessions.list());
+        expect(waiting.length, 'the next launch does not know the interval was never attributed').toBe(1);
+        expect(waiting[0]?.durationSeconds, 'the minute that was worked is not the minute that was kept').toBe(60);
+        expect(second.container.repositories.sessions.dayTotalFor(ld(TODAY_FOR_DRIVER)))
+            .toBe(totalBefore + 60);
+
+        // The answer: no company and nothing to say, which is still an answer and must end the asking.
+        const row = waiting[0];
+        expect(row).toBeDefined();
+        second.container.services.sessions.update(row?.id ?? 0, {
+            name: row?.name ?? '',
+            durationSeconds: row?.durationSeconds ?? 0,
+            date: row?.date ?? ld(TODAY_FOR_DRIVER),
+            companyId: null,
+            note: ANSWERED_WITH_NO_NOTE
+        });
+
+        const third = await driven(dbPath);
+        expect(
+            pendingAttributions(third.container.services.sessions.list()),
+            'an answered interval is asked about again on the next launch, for ever'
+        ).toEqual([]);
+        expect(
+            third.container.repositories.sessions.dayTotalFor(ld(TODAY_FOR_DRIVER)),
+            'attributing an interval changed how much time the day holds'
+        ).toBe(totalBefore + 60);
     });
 
     // IN-01: the notifier and the sound run after the transaction commits, so their failure says nothing about
