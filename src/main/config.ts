@@ -24,6 +24,13 @@ export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
  */
 export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
 export const SMOKE_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
+/*
+ * Criterion 4: the handle the delete-all-data button is reached by on the settings route. v1.2.1 reached that exact
+ * button with document.querySelector('.mt-8.mb-8 button') (legacy/pages/settings.html:659), so a spacing tweak
+ * detached it; the smoke probes for this identifier and for that selector finding nothing.
+ */
+export const RENDERER_DESTRUCTIVE_TESTID = 'reset-all-data';
+export const RENDERER_LEGACY_DESTRUCTIVE_SELECTOR = '.mt-8.mb-8 button';
 export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
