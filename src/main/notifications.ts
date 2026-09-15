@@ -1,11 +1,17 @@
 // The words the notifier says, and the name a pomodoro's session is written under. Text, not behaviour: the decision
 // to notify belongs to a service, and the notifier port to an adapter.
 
+import { POMODORO_SESSION_NAME } from '@shared/constants/sessions';
 import type { NotificationRequest } from './ports';
 import type { PomodoroInterval } from '@shared/types';
 
-/** v1.2.1 wrote a completed pomodoro as a session called this (legacy/renderer/timer.js:520). */
-export const POMODORO_SESSION_NAME = 'Pomodoro';
+/*
+ * Re-exported from @shared/constants/sessions, where 08-D moved it: the renderer has to recognise the rows the
+ * cycle writes in order to raise the attribution prompt again, and a constant only main can read cannot be the
+ * thing both ends agree on. The old comment here credited legacy/renderer/timer.js:520 for the name; that file is
+ * 250 lines long and writes no session at all.
+ */
+export { POMODORO_SESSION_NAME };
 
 export const GOAL_NOTIFICATION: NotificationRequest = Object.freeze({
     title: 'Daily goal reached',

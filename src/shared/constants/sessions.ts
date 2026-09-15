@@ -17,3 +17,19 @@ export const MAX_SESSION_NAME_LENGTH = 200;
 
 /** A note is a sentence or two about what was done, not a document. */
 export const MAX_SESSION_NOTE_LENGTH = 2_000;
+
+/*
+ * POMO-01/POMO-04: the name a completed pomodoro interval is written under, before anybody is asked which company
+ * it was for. It lives in shared rather than in src/main/notifications.ts, where it was, because both ends need it:
+ * main writes the row and the renderer has to recognise the rows that are still waiting to be attributed.
+ *
+ * The recognition rule, stated here because the name alone does not carry it: a session is awaiting attribution
+ * when it is named this, has no company, AND has a NULL note. A null note means nobody has been asked; an empty
+ * string means somebody was asked and had nothing to say. That is the ordinary meaning of SQL NULL, and it is what
+ * lets a user answer "no company, no note" once instead of being asked again on every launch for ever.
+ *
+ * v1.2.1 wrote no such row at all: completePomodoroSession (legacy/renderer/timer.js:150-186) advances its own
+ * counters, fires an onPomodoroComplete callback that index.html never assigns, and touches the database nowhere.
+ * So a v1.2.1 database holds no unattributed pomodoro sessions to be mistaken for a pending prompt.
+ */
+export const POMODORO_SESSION_NAME = 'Pomodoro';
