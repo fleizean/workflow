@@ -148,6 +148,48 @@ describe('C3: the classes the alert draws its icon circle with exist in the emit
 });
 
 /*
+ * Criterion 4, and the one class of failure this screen can have that nothing else here would see. The switch on
+ * Settings is drawn by `peer-checked:` utilities rather than v1.2.1's `has-[:checked]:`, because the input has to
+ * be the switch's own sibling for the row to be one label. A utility that emits no CSS leaves a switch that never
+ * moves and never changes colour, with a checkbox behind it that works perfectly - which is the C3 failure wearing
+ * a different hat.
+ */
+describe('C3: the settings switch is styled in the state it has to show', () => {
+    const TOGGLE = 'src/renderer/src/features/settings/components/SettingsToggle.tsx';
+    /** `const NAME = 'a ' + 'b';` -> `a b`. Class lists here are written as adjacent literals over two lines. */
+    const classConstant = (name: string): string => {
+        const declaration = new RegExp(String.raw`const ${name}\s*=\s*([^;]+);`).exec(read(TOGGLE))?.[1] ?? '';
+        return [...declaration.matchAll(/'([^']*)'/g)].map((match) => match[1] ?? '').join('');
+    };
+    // `peer` is a marker for the variants below it; it has no rule of its own and never had one.
+    const tokensOf = (value: string): string[] =>
+        value.split(/\s+/).filter((token) => token !== '' && token !== 'peer');
+
+    it.each(['SWITCH_CLASS', 'KNOB_CLASS'])('%s is scanned and emitted, class by class', (name) => {
+        const classes = tokensOf(classConstant(name));
+        expect(classes.length, TOGGLE + ' no longer declares ' + name + ' as a class string').toBeGreaterThan(3);
+
+        const unscanned = classes.filter((token) => !compiled.candidates.includes(token));
+        expect(unscanned, 'Tailwind never saw these in the source, so they have no CSS at runtime').toEqual([]);
+
+        const unstyled = classes.filter((token) => !compiled.css.includes(selectorFor(token)));
+        expect(unstyled, 'these were scanned and no rule was emitted - a misspelt utility styles nothing').toEqual([]);
+    });
+
+    it('makes the knob move and the track colour depend on the checkbox, not on a class the app toggles', () => {
+        const checked = tokensOf(classConstant('SWITCH_CLASS')).filter((token) => token.startsWith('peer-checked:'));
+        expect(checked.length, 'the switch has no checked state at all').toBe(2);
+        for (const token of checked) {
+            const selector = compiled.css.split('\n').find((line) => line.includes(selectorFor(token))) ?? '';
+            expect(
+                selector,
+                token + ' is emitted without a :checked selector, so the switch would never move'
+            ).toContain(':checked');
+        }
+    });
+});
+
+/*
  * The control. If Tailwind's scanner returned every identifier it saw, every assertion above would pass whether or
  * not the maps existed - so the bug is reproduced here, in a directory nothing else reads, and shown to be missed.
  */

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import ts from 'typescript';
 import { read, readAliases, repoRoot, resolveModuleFile, stripCommentsAndStrings } from './helpers/ts-imports';
 
 const RENDERER = 'src/renderer';
@@ -441,11 +442,31 @@ describe('criterion 4: the executed data path is the mounted one', () => {
  */
 describe('criterion 4: the mode and its preference are written by one caller', () => {
     const MODE_WRITER = path.posix.join(SRC, 'features/settings/api/useTimerMode.ts');
-    /** A written property, not a read: `pomodoroEnabled: x` rather than `settings.data.pomodoroEnabled`. */
-    const WRITES_FLAG = /\bpomodoroEnabled\s*:/;
+
+    /*
+     * A property SET on an object, which is what any settings:update payload is - and not a prop of that name
+     * passed down, a field of that name declared, or `settings.data.pomodoroEnabled` read. The difference is
+     * syntactic, so it is read off the parser rather than guessed at with a regular expression.
+     */
+    const setsFlag = (file: string): boolean => {
+        const { sourceFile } = stripCommentsAndStrings(file, read(file));
+        let found = false;
+        const visit = (node: ts.Node): void => {
+            if (
+                (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
+                ts.isObjectLiteralExpression(node.parent) &&
+                node.name.getText(sourceFile) === 'pomodoroEnabled'
+            ) {
+                found = true;
+            }
+            ts.forEachChild(node, visit);
+        };
+        visit(sourceFile);
+        return found;
+    };
 
     it('writes settings.pomodoroEnabled from exactly one file, and it is ' + MODE_WRITER, () => {
-        const writers = rendererSources().filter((file) => WRITES_FLAG.test(codeOf(file)));
+        const writers = rendererSources().filter((file) => setsFlag(file));
         expect(
             writers,
             'a second writer of pomodoroEnabled can set the preference without setting the mode, which is the ' +
@@ -464,9 +485,12 @@ describe('criterion 4: the mode and its preference are written by one caller', (
             .toMatch(/useSetTimerMode/);
         const callers = rendererSources()
             .filter((file) => file !== MODE_WRITER)
-            .filter((file) => /\buseSetTimerMode\s*\(/.test(codeOf(file)));
-        expect(callers, 'a screen with a pomodoro toggle stopped going through the one writer')
-            .toContain(path.posix.join(SRC, 'features/timer/TimerPage.tsx'));
+            .filter((file) => /\buseSetTimerMode\s*\(/.test(codeOf(file)))
+            .sort();
+        expect(callers, 'both screens carry a pomodoro toggle, and both go through the one writer').toEqual([
+            path.posix.join(SRC, 'features/settings/SettingsPage.tsx'),
+            path.posix.join(SRC, 'features/timer/TimerPage.tsx')
+        ]);
     });
 });
 
