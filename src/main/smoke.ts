@@ -852,7 +852,7 @@ async function checkSettingsScreen(win: BrowserWindow, lines: string[]): Promise
         }
         if (probe.legacy !== 0) {
             return "v1.2.1's '" + RENDERER_LEGACY_DESTRUCTIVE_SELECTOR + "' found " + text(probe.legacy) +
-                ' button(s), so a spacing class is load-bearing again';
+                ' button(s): the danger zone has reproduced the selector that used to identify this one';
         }
         if (probe.switchJustify !== 'flex-end') {
             return 'a checked switch left its knob at ' + text(probe.switchJustify) + ', so the control does not ' +

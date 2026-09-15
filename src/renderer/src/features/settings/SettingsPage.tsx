@@ -110,7 +110,13 @@ export default function SettingsPage(): ReactElement {
                     </div>
                 </div>
 
-                <div className="mt-8 mb-8">
+                {/*
+                  * my-8, not v1.2.1's `mt-8 mb-8`: the same 2rem above and below, written as one utility so that
+                  * `.mt-8.mb-8 button` - the selector settings.html:659 reached this exact button with - resolves
+                  * to nothing at all. The packaged smoke asks for both halves, and it found this one the first
+                  * time it ran, because the markup was ported verbatim.
+                  */}
+                <div className="my-8">
                     <button
                         type="button"
                         data-testid={DESTRUCTIVE_ACTION_ID}
