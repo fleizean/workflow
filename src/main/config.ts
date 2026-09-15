@@ -7,8 +7,13 @@ export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
 export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 // Set by `electron-vite dev` to the renderer dev server's address.
 export const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
-// The Home route's heading, which the smoke launch waits for; tests/main-config.test.ts pins it to the harness.
-export const RENDERER_MARKER_TEXT = 'Home';
+/*
+ * Text only the Home route renders, which the smoke launch waits for; tests/main-config.test.ts pins it to the
+ * harness (D-24). A stat-card label rather than a heading, because Home has no visible heading - v1.2.1's
+ * index.html carries a hidden one - and because "Home" is also the bottom navigation's first item, so a marker of
+ * "Home" would be satisfied by the chrome even if the route itself rendered nothing.
+ */
+export const RENDERER_MARKER_TEXT = 'Daily Target';
 // SPA-01: the second route the smoke visits, and the heading it must find there. Reaching it changes no document.
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';

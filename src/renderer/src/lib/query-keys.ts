@@ -13,7 +13,13 @@ export const queryKeys = {
     settings: ['settings'] as const,
     timerSnapshot: ['timer', 'snapshot'] as const,
     // HIST-01's summary card. 'stats' is a domain main announces, so a saved session refreshes this with the list.
-    weekTotals: ['stats', 'weekTotals'] as const
+    weekTotals: ['stats', 'weekTotals'] as const,
+    // TIMER-09. Keyed under 'stats' for the same reason: a saved session can carry the day and move the streak.
+    streak: ['stats', 'streak'] as const,
+    // POMO-08/POMO-09. The cycle is its own domain, and settings:update announces that domain too (WR-04), so a
+    // duration changed on Settings refreshes what the running interval is measured against.
+    pomodoroSnapshot: ['pomodoro', 'snapshot'] as const,
+    pomodoroCounts: ['pomodoro', 'counts'] as const
 };
 
 /** What a `data:changed` domain invalidates: the prefix every key in that domain starts with. */

@@ -1,37 +1,289 @@
 /*
- * The Phase 7 shell of the Home screen. It READS the authoritative clock and nothing more: no start, no pause, no
- * save. TIMER-01..09 build the screen in Phase 8, and a shell that could start a clock it cannot save would be a
- * way to lose tracked time, which is the one thing this milestone is not allowed to do.
+ * TIMER-01..09. legacy/pages/index.html's Home screen, over the authoritative clock in main.
  *
- * "Home" is the marker the packaged smoke waits for (src/main/config.ts RENDERER_MARKER_TEXT).
+ * The screen owns no clock. Every number on it is either a snapshot main pushed (X1) or a row the database holds;
+ * what it decides, it decides in timer-view.ts where a test can run it. The one thing it does own is what gets
+ * WRITTEN - the duration, the company, the note and the date - and that goes out through `timer:stopAndSave`, the
+ * single transaction Phase 5 added because `sessions:create` then `timer:reset` is two invokes and two invokes
+ * cannot be atomic (WR-06).
+ *
+ * The selected date and the pending adjustment are this component's own state on purpose. v1.2.1 reloaded the page
+ * on every navigation, so both reset whenever you came back to Home; keeping them in a feature store would make a
+ * date picked yesterday afternoon still be selected tomorrow morning, and the timer would then write today's work
+ * onto a day the user had forgotten they picked.
  */
 
+import { useEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
+import { useUiStore } from '@renderer/store/ui.store';
+import { useCompanies } from '@renderer/features/companies';
+import { useSettings } from '@renderer/features/settings';
 import { formatElapsed } from '@renderer/lib/duration';
+import { formatLocalDate } from '@shared/utils/date';
+import { DEFAULT_SETTINGS } from '@shared/constants/settings';
+import type { LocalDate } from '@shared/types';
 import { useTimerSnapshot } from './api/useTimerSnapshot';
+import { useTimerSessions } from './api/useTimerSessions';
+import { useStreak } from './api/useStreak';
+import {
+    usePauseTimer, useResetTimer, useSetTimerMode, useStartTimer, useStopAndSave
+} from './api/useTimerCommands';
+import type { StopAndSaveValues } from './api/useTimerCommands';
 import { useTimerStore } from './state/timer.store';
+import AdjustTimeForm from './components/AdjustTimeForm';
+import DatePickerForm from './components/DatePickerForm';
+import HomeHeader from './components/HomeHeader';
+import RestorePrompt from './components/RestorePrompt';
+import SaveSessionForm from './components/SaveSessionForm';
+import StatCards from './components/StatCards';
+import TimerControls from './components/TimerControls';
+import TimerDial from './components/TimerDial';
+import { adjustmentLabel, dayTotalOf, describeWorkDial } from './timer-view';
+
+type OpenDialog = 'none' | 'date' | 'adjust' | 'save' | 'restore';
+
+const BANNER_CLASS = 'flex items-center gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 ' +
+    'text-left text-sm text-amber-200';
+const BANNER_ACTION_CLASS = 'shrink-0 rounded-xl bg-amber-500/20 px-3 py-1.5 text-xs font-bold uppercase ' +
+    'tracking-wider text-amber-100 transition hover:bg-amber-500/30';
+const FAILING_CLASS = 'flex items-center gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 px-4 py-3 ' +
+    'text-left text-sm text-red-200';
+const ADJUSTED_CLASS = 'text-center text-xs font-semibold text-amber-400';
 
 export default function TimerPage(): ReactElement {
     // The ticks and the opening read are mounted by app/providers, for the whole app (CR-01). The query is named
     // again here only so this screen can show the error state of the call it depends on.
-    const query = useTimerSnapshot();
+    const snapshotQuery = useTimerSnapshot();
     const snapshot = useTimerStore((state) => state.snapshot);
+    const settings = useSettings();
+    const sessions = useTimerSessions();
+    const companies = useCompanies();
+    const streak = useStreak();
+
+    const start = useStartTimer();
+    const pause = usePauseTimer();
+    const reset = useResetTimer();
+    const stopAndSave = useStopAndSave();
+    const setMode = useSetTimerMode();
+
+    const pushToast = useUiStore((state) => state.pushToast);
+    const openDialog = useUiStore((state) => state.openDialog);
+
+    const today = formatLocalDate(new Date());
+    const [selectedDate, setSelectedDate] = useState<LocalDate>(today);
+    const [adjustmentSeconds, setAdjustmentSeconds] = useState(0);
+    const [dialog, setDialog] = useState<OpenDialog>('none');
+
+    const elapsedSeconds = snapshot?.elapsedSeconds ?? 0;
+    const running = snapshot?.status === 'running';
+    const mode = snapshot?.mode ?? 'work';
+    const restored = snapshot?.restoredFromPreviousLaunch === true && elapsedSeconds > 0;
+
+    const dial = describeWorkDial({
+        dailyTargetSeconds: settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds,
+        loggedSeconds: dayTotalOf(sessions.data ?? [], selectedDate),
+        elapsedSeconds,
+        adjustmentSeconds,
+        running,
+        // Only ever used to NAME the clock time the target would be reached at; never to measure one.
+        nowMs: Date.now()
+    });
+
+    /*
+     * The restore prompt is raised once per mount, when the flag first arrives. It is not raised again if the user
+     * says "not now" - the banner below carries the offer from then on, and the next launch asks again.
+     */
+    const restoreAsked = useRef(false);
+    useEffect(() => {
+        if (restored && !restoreAsked.current) {
+            restoreAsked.current = true;
+            setDialog('restore');
+        }
+    }, [restored]);
+
+    /*
+     * TIMER-05's visible half. The sound and the system notification are main's - it owns the once-per-local-day
+     * decision in app_state (goal.service.ts), which is what B1's localStorage flag and in-memory flag could not do
+     * between them. This only congratulates, and only on the transition, so re-entering Home on a day already met
+     * says nothing.
+     */
+    const goalWas = useRef<boolean | null>(null);
+    const ready = settings.isSuccess && sessions.isSuccess;
+    useEffect(() => {
+        if (!ready) {
+            return;
+        }
+        const was = goalWas.current;
+        goalWas.current = dial.goalMet;
+        if (was === false && dial.goalMet) {
+            void openDialog({
+                tone: 'success',
+                icon: 'emoji_events',
+                title: 'Daily goal reached',
+                body: 'You have worked your target for today.',
+                dismissLabel: 'Great'
+            });
+        }
+    }, [ready, dial.goalMet, openDialog]);
+
+    const close = (): void => { setDialog('none'); };
+
+    const toggleRunning = (): void => {
+        if (running) {
+            pause.mutate();
+            return;
+        }
+        start.mutate();
+    };
+
+    /*
+     * The one destructive path on this screen, and it says what it costs before it happens. Nothing else discards:
+     * dismissing a dialog, changing route, hiding the window and quitting all leave every counted second where it
+     * is, and quitting restores it paused on the next launch (features/shell/quit-dialog.ts says so too).
+     */
+    const confirmReset = (): void => {
+        void openDialog({
+            tone: 'error',
+            icon: 'restart_alt',
+            title: 'Discard ' + formatElapsed(dial.savableSeconds) + '?',
+            body: 'This time has not been saved as a session. Discarding it records it nowhere, and it cannot be ' +
+                'brought back. To keep it, cancel and use Save instead.',
+            dismissLabel: 'Cancel',
+            confirmLabel: 'Discard',
+            destructive: true
+        }).then((confirmed) => {
+            if (confirmed) {
+                reset.mutate(undefined, {
+                    onSuccess: () => {
+                        setAdjustmentSeconds(0);
+                        pushToast('success', 'Timer has been reset.');
+                    }
+                });
+            }
+        });
+    };
+
+    const save = (values: StopAndSaveValues): void => {
+        stopAndSave.mutate(values, {
+            onSuccess: () => {
+                setAdjustmentSeconds(0);
+                setDialog('none');
+                pushToast('success', 'Session saved successfully');
+            }
+        });
+    };
+
+    const pending = adjustmentLabel(adjustmentSeconds);
 
     return (
-        <section className="px-6 pt-4 pb-28">
-            <h1 className="text-2xl font-bold tracking-tight">Home</h1>
-            <p className="mt-6 font-mono text-5xl tabular-nums tracking-tight">
-                {formatElapsed(snapshot?.elapsedSeconds ?? 0)}
-            </p>
-            <p className="mt-2 text-sm text-gray-400">
-                {snapshot === null ? 'Reading the clock...' : snapshot.status + ' / ' + snapshot.mode}
-            </p>
-            {snapshot?.restoredFromPreviousLaunch === true ? (
-                <p className="mt-2 text-sm text-amber-400">
-                    Time from a previous launch was restored. Phase 8 adds the save-or-discard prompt.
-                </p>
+        <div className="flex flex-col">
+            <HomeHeader
+                date={selectedDate}
+                mode={mode}
+                onPickDate={() => { setDialog('date'); }}
+                onToggleMode={() => { setMode.mutate(mode === 'pomodoro' ? 'work' : 'pomodoro'); }}
+            />
+
+            <div className="flex flex-1 flex-col gap-4 px-6 pt-4 pb-32">
+                <StatCards
+                    dailyTargetSeconds={settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds}
+                    loggedSeconds={dayTotalOf(sessions.data ?? [], selectedDate)}
+                    streakDays={streak.data?.days ?? 0}
+                />
+
+                {snapshot?.persistFailing === true ? (
+                    <p className={FAILING_CLASS}>
+                        <span className="material-symbols-outlined text-xl">warning</span>
+                        Workflow is counting but cannot write to the database. Save this session now - a restart
+                        would lose it.
+                    </p>
+                ) : null}
+
+                {restored ? (
+                    <div className={BANNER_CLASS}>
+                        <span className="material-symbols-outlined text-xl">history_toggle_off</span>
+                        <span className="flex-1">
+                            {formatElapsed(elapsedSeconds)} was counted before Workflow last closed, and is waiting
+                            to be saved or discarded.
+                        </span>
+                        <button
+                            type="button"
+                            className={BANNER_ACTION_CLASS}
+                            onClick={() => { setDialog('restore'); }}
+                        >
+                            Decide
+                        </button>
+                    </div>
+                ) : null}
+
+                <TimerDial
+                    headline={dial.headline}
+                    exceeded={dial.exceeded}
+                    digits={dial.digits}
+                    ringOffset={dial.ringOffset}
+                    ringColour={dial.ringTone}
+                    badgeIcon={null}
+                    badgeText="Focused"
+                    running={running}
+                    meta={dial.meta}
+                />
+
+                {pending === null ? null : <p className={ADJUSTED_CLASS}>{pending}</p>}
+
+                <TimerControls
+                    running={running}
+                    hasCountedTime={dial.savableSeconds > 0}
+                    busy={start.isPending || pause.isPending}
+                    onAdjust={() => { setDialog('adjust'); }}
+                    onToggle={toggleRunning}
+                    onSave={() => { setDialog('save'); }}
+                    onReset={confirmReset}
+                />
+
+                {snapshotQuery.isError ? (
+                    <p className="text-sm text-red-400">{snapshotQuery.error.message}</p>
+                ) : null}
+            </div>
+
+            {dialog === 'date' ? (
+                <DatePickerForm
+                    date={selectedDate}
+                    today={today}
+                    onPick={(picked) => { setSelectedDate(picked); setDialog('none'); }}
+                    onDismiss={close}
+                />
             ) : null}
-            {query.isError ? <p className="mt-4 text-sm text-red-400">{query.error.message}</p> : null}
-        </section>
+
+            {dialog === 'adjust' ? (
+                <AdjustTimeForm
+                    elapsedSeconds={elapsedSeconds}
+                    adjustmentSeconds={adjustmentSeconds}
+                    onChange={setAdjustmentSeconds}
+                    onDismiss={close}
+                />
+            ) : null}
+
+            {dialog === 'save' ? (
+                <SaveSessionForm
+                    countedSeconds={dial.savableSeconds}
+                    date={selectedDate}
+                    today={today}
+                    companies={companies.data ?? []}
+                    busy={stopAndSave.isPending}
+                    onSubmit={save}
+                    onInvalid={(reason) => { pushToast('warning', reason); }}
+                    onDismiss={close}
+                />
+            ) : null}
+
+            {dialog === 'restore' ? (
+                <RestorePrompt
+                    countedSeconds={elapsedSeconds}
+                    onSave={() => { setDialog('save'); }}
+                    onDiscard={() => { setDialog('none'); confirmReset(); }}
+                    onDismiss={close}
+                />
+            ) : null}
+        </div>
     );
 }

@@ -21,8 +21,8 @@ export const PRODUCT_NAME = 'Workflow';
 export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
 export const SMOKE_DB_NAME = 'smoke.db';
 export const DEFAULT_TIMEOUT_MS = 90_000;
-/** The heading the index route renders (src/renderer/src/features/timer/TimerPage.tsx). Must match src/main/config.ts. */
-export const RENDERER_MARKER_TEXT = 'Home';
+/** Text only the index route renders (features/timer/components/StatCards.tsx). Must match src/main/config.ts. */
+export const RENDERER_MARKER_TEXT = 'Daily Target';
 /** SPA-01: the second route the smoke visits, and the heading it must find there. Must match src/main/config.ts. */
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';

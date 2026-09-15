@@ -11,6 +11,8 @@ import { weekTotalsQuery } from '@renderer/features/history/api/useWeekTotals';
 import { companySessionsQuery } from '@renderer/features/companies/api/useCompanySessions';
 import { settingsQuery } from '@renderer/features/settings/api/useSettings';
 import { timerSnapshotQuery } from '@renderer/features/timer/api/useTimerSnapshot';
+import { timerSessionsQuery } from '@renderer/features/timer/api/useTimerSessions';
+import { streakQuery } from '@renderer/features/timer/api/useStreak';
 import { useUiStore } from '@renderer/store/ui.store';
 import { API_BRIDGE_KEY } from '@shared/constants/bridge';
 import { DATA_DOMAINS, ipcWrites } from '@shared/ipc/contract';
@@ -312,7 +314,8 @@ describe('SPA-07: a change made in main refreshes the views that show it', () =>
     it('keys every query the features export by one of the declared keys', () => {
         const declared = Object.values(queryKeys).map((key) => JSON.stringify(key));
         const all = [
-            companiesQuery, sessionsQuery, settingsQuery, timerSnapshotQuery, weekTotalsQuery, companySessionsQuery
+            companiesQuery, sessionsQuery, settingsQuery, timerSnapshotQuery, weekTotalsQuery, companySessionsQuery,
+            timerSessionsQuery, streakQuery
         ];
         for (const query of all) {
             expect(declared, 'a feature keyed a query outside lib/query-keys.ts, where nothing can find it to invalidate')
@@ -328,6 +331,7 @@ describe('SPA-07: a change made in main refreshes the views that show it', () =>
      */
     it('reads the session list from one cache entry, whichever feature asked for it', () => {
         expect(JSON.stringify(companySessionsQuery.queryKey)).toBe(JSON.stringify(sessionsQuery.queryKey));
+        expect(JSON.stringify(timerSessionsQuery.queryKey)).toBe(JSON.stringify(sessionsQuery.queryKey));
     });
 
     it('keys every query by a domain main can announce', () => {

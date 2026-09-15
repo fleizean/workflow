@@ -284,15 +284,33 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
      * --animate-* - emits no rule at all, breaks the layout and the motion, and passes the whole suite. That is
      * the C3 failure mode reappearing on the tokens slice E introduced.
      */
-    it('the one width token and the three motion tokens produced rules', () => {
+    it('the one width token and the motion tokens produced rules', () => {
         const css = emittedWith('.css').map(read).join('\n');
         expect(css.length, 'no CSS was emitted, so this scan would pass vacuously').toBeGreaterThan(1000);
 
-        for (const utility of ['max-w-app', 'md:max-w-app', 'animate-toast-in', 'animate-toast-out', 'animate-modal-in']) {
+        /*
+         * `md:max-w-app` was here until 08-B: the bar centred itself at md and spanned the window below it, so
+         * between 28rem and 48rem a narrow column sat above an edge-to-edge bar. It reads max-w-app at every width
+         * now, and the variant that no longer exists cannot be asserted - the guard is the bare token.
+         *
+         * The six streak tokens are 08-C's, and they are here for the reason the three motion ones are: a @theme
+         * namespace typo emits no rule at all, and a streak card that simply does not animate looks like a streak
+         * below the tier threshold rather than like a bug.
+         */
+        const utilities = [
+            'max-w-app', 'animate-toast-in', 'animate-toast-out', 'animate-modal-in',
+            'animate-streak-glow', 'animate-streak-pulse', 'animate-streak-pulse-quick',
+            'animate-streak-shimmer', 'animate-streak-fire', 'animate-streak-flicker'
+        ];
+        for (const utility of utilities) {
             expect(css, utility + ' emitted no rule - the token it reads is misspelt or missing')
                 .toContain('.' + utility.replace(/[^a-zA-Z0-9_-]/g, (c) => '\\' + c));
         }
-        for (const frames of ['toast-in', 'toast-out', 'modal-in']) {
+        const keyframes = [
+            'toast-in', 'toast-out', 'modal-in',
+            'streak-pulse', 'streak-glow-pulse', 'streak-shimmer', 'fire-bg', 'fire-border', 'fire-flicker'
+        ];
+        for (const frames of keyframes) {
             expect(css, '@keyframes ' + frames + ' is not in the emitted CSS, so the animation names nothing')
                 .toContain('@keyframes ' + frames);
         }
