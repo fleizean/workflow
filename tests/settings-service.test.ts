@@ -2,7 +2,7 @@
 // notification or the long-break derivation is refused at the write rather than stored and lived with.
 
 import { describe, expect, it, vi } from 'vitest';
-import { DEFAULT_SETTINGS } from '@shared/constants/settings';
+import { DEFAULT_SETTINGS, SETTINGS_BOUNDS as SHARED_BOUNDS } from '@shared/constants/settings';
 import { SettingsSchema } from '@shared/schemas';
 import {
     MAX_DAILY_TARGET_SECONDS, MAX_INTERVAL_SECONDS, MAX_SESSIONS_UNTIL_LONG_BREAK, MIN_INTERVAL_SECONDS,
@@ -63,6 +63,15 @@ describe('CORE-03: the service covers the ten-key Settings shape and nothing els
         const numeric = Object.entries(DEFAULT_SETTINGS)
             .filter(([, value]) => typeof value === 'number').map(([key]) => key).sort();
         expect(Object.keys(SETTINGS_BOUNDS).sort()).toEqual(numeric);
+    });
+
+    /*
+     * SET-01. The service refuses rather than clamps, so the Settings screen has to say what a bound is before a
+     * value is sent - and a screen holding its own copy of a number would promise or refuse the wrong thing the
+     * first time one moved. They are the same object, not two objects that agree today.
+     */
+    it('bounds from the one declaration the Settings screen reads', () => {
+        expect(SETTINGS_BOUNDS, 'main has its own copy of the bounds again').toBe(SHARED_BOUNDS);
     });
 
     it('admits every shipped default, so a fresh install is not refusing its own seed', () => {

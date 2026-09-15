@@ -2,6 +2,8 @@
 // once; the ten-key Settings shape and the v1.2.1 key strings stay where they already live.
 
 import { ServiceError } from './service-errors';
+import { SETTINGS_BOUNDS } from '@shared/constants/settings';
+import type { BooleanSettingKey, NumericSettingKey, SettingBound } from '@shared/constants/settings';
 import type { Settings } from '@shared/types';
 
 /** Structural, so nothing here imports src/lib/db: the container passes the settings repository itself. */
@@ -10,18 +12,9 @@ export interface SettingsStore {
     update(patch: Partial<Settings>): Settings;
 }
 
-type NumericKey = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
-type BooleanKey = { [K in keyof Settings]: Settings[K] extends boolean ? K : never }[keyof Settings];
-
-export interface SettingBound {
-    readonly min: number;
-    readonly max: number;
-    /** What the number means, for the message the user is shown when it is refused. */
-    readonly unit: 'seconds' | 'pomodoros';
-}
-
 /*
- * Why these bounds and not others.
+ * Why these bounds and not others. The numbers live in @shared/constants/settings, because the Settings screen has
+ * to show a bound it cannot enforce; this stays the only place that enforces one.
  *
  * A minute is the floor for every duration because v1.2.1's settings UI is a number of minutes, so anything shorter
  * is untypable there - and a pomodoro of a few seconds is a completion loop that would write a row a second.
@@ -37,20 +30,14 @@ export interface SettingBound {
  * number, and a stored 0 would make the next break NaN rather than wrong. Twelve is the ceiling because a cycle
  * longer than that cannot complete inside a working day, so the long break would never arrive.
  */
-export const MIN_INTERVAL_SECONDS = 60;
-export const MAX_INTERVAL_SECONDS = 14400;
-export const MAX_DAILY_TARGET_SECONDS = 86400;
-export const MAX_SESSIONS_UNTIL_LONG_BREAK = 12;
+export {
+    MAX_DAILY_TARGET_SECONDS, MAX_INTERVAL_SECONDS, MAX_SESSIONS_UNTIL_LONG_BREAK, MIN_INTERVAL_SECONDS,
+    SETTINGS_BOUNDS
+} from '@shared/constants/settings';
+export type { SettingBound };
 
-const interval = (): SettingBound => ({ min: MIN_INTERVAL_SECONDS, max: MAX_INTERVAL_SECONDS, unit: 'seconds' });
-
-export const SETTINGS_BOUNDS: Readonly<Record<NumericKey, SettingBound>> = Object.freeze({
-    dailyTargetSeconds: { min: MIN_INTERVAL_SECONDS, max: MAX_DAILY_TARGET_SECONDS, unit: 'seconds' },
-    pomodoroWorkSeconds: interval(),
-    pomodoroShortBreakSeconds: interval(),
-    pomodoroLongBreakSeconds: interval(),
-    pomodoroSessionsUntilLongBreak: { min: 1, max: MAX_SESSIONS_UNTIL_LONG_BREAK, unit: 'pomodoros' }
-});
+type NumericKey = NumericSettingKey;
+type BooleanKey = BooleanSettingKey;
 
 export const BOOLEAN_SETTING_KEYS: readonly BooleanKey[] = Object.freeze([
     'goalNotification', 'excludeWeekendsFromStreak', 'pomodoroEnabled', 'pomodoroAutoStartBreaks',
