@@ -13,6 +13,7 @@ import { settingsQuery } from '@renderer/features/settings/api/useSettings';
 import { timerSnapshotQuery } from '@renderer/features/timer/api/useTimerSnapshot';
 import { timerSessionsQuery } from '@renderer/features/timer/api/useTimerSessions';
 import { streakQuery } from '@renderer/features/timer/api/useStreak';
+import { pomodoroCountsQuery, pomodoroSnapshotQuery } from '@renderer/features/timer/api/usePomodoro';
 import { useUiStore } from '@renderer/store/ui.store';
 import { API_BRIDGE_KEY } from '@shared/constants/bridge';
 import { DATA_DOMAINS, ipcWrites } from '@shared/ipc/contract';
@@ -315,7 +316,7 @@ describe('SPA-07: a change made in main refreshes the views that show it', () =>
         const declared = Object.values(queryKeys).map((key) => JSON.stringify(key));
         const all = [
             companiesQuery, sessionsQuery, settingsQuery, timerSnapshotQuery, weekTotalsQuery, companySessionsQuery,
-            timerSessionsQuery, streakQuery
+            timerSessionsQuery, streakQuery, pomodoroSnapshotQuery, pomodoroCountsQuery
         ];
         for (const query of all) {
             expect(declared, 'a feature keyed a query outside lib/query-keys.ts, where nothing can find it to invalidate')

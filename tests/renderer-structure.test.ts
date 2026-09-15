@@ -349,7 +349,7 @@ describe('criterion 4: the executed data path is the mounted one', () => {
      * user was on another screen left the confirm promising "Quitting keeps it". Naming the events in a list is
      * what stops the next one being mounted in a screen too.
      */
-    const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick'];
+    const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick', 'pomodoro:tick'];
 
     const apiFiles = (): string[] => rendererSources().filter((file) => /^features\/[^/]+\/api$/.test(areaOf(file)));
 

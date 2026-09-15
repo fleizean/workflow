@@ -30,15 +30,20 @@ import {
 } from './api/useTimerCommands';
 import type { StopAndSaveValues } from './api/useTimerCommands';
 import { useTimerStore } from './state/timer.store';
+import { useAttributeSession } from './api/usePomodoro';
 import AdjustTimeForm from './components/AdjustTimeForm';
+import AttributionForm from './components/AttributionForm';
+import type { AttributionAnswer } from './components/AttributionForm';
 import DatePickerForm from './components/DatePickerForm';
 import HomeHeader from './components/HomeHeader';
+import PomodoroPanel from './components/PomodoroPanel';
 import RestorePrompt from './components/RestorePrompt';
 import SaveSessionForm from './components/SaveSessionForm';
 import StatCards from './components/StatCards';
 import TimerControls from './components/TimerControls';
 import TimerDial from './components/TimerDial';
 import { adjustmentLabel, dayTotalOf, describeWorkDial } from './timer-view';
+import { pendingAttributions } from './pomodoro-view';
 
 type OpenDialog = 'none' | 'date' | 'adjust' | 'save' | 'restore';
 
@@ -65,6 +70,7 @@ export default function TimerPage(): ReactElement {
     const reset = useResetTimer();
     const stopAndSave = useStopAndSave();
     const setMode = useSetTimerMode();
+    const attribute = useAttributeSession();
 
     const pushToast = useUiStore((state) => state.pushToast);
     const openDialog = useUiStore((state) => state.openDialog);
@@ -73,6 +79,13 @@ export default function TimerPage(): ReactElement {
     const [selectedDate, setSelectedDate] = useState<LocalDate>(today);
     const [adjustmentSeconds, setAdjustmentSeconds] = useState(0);
     const [dialog, setDialog] = useState<OpenDialog>('none');
+    /*
+     * POMO-02/POMO-04. The prompt is offered, never forced: saying "not now" sets this and the queue waits until
+     * the next visit to Home or the next launch. The rows themselves are untouched either way - they were written
+     * in one transaction before this screen was told anything (container.ts recordCompletion), which is why no
+     * dismissal path here can lose a second.
+     */
+    const [attributionDeferred, setAttributionDeferred] = useState(false);
 
     const elapsedSeconds = snapshot?.elapsedSeconds ?? 0;
     const running = snapshot?.status === 'running';
@@ -174,6 +187,26 @@ export default function TimerPage(): ReactElement {
     };
 
     const pending = adjustmentLabel(adjustmentSeconds);
+    const unattributed = pendingAttributions(sessions.data ?? []);
+    const attributing = attributionDeferred || dialog !== 'none' ? undefined : unattributed[0];
+
+    /*
+     * An ordinary session update, because the session already exists. The note is a string and never null: a null
+     * note is what marks a row as never having been asked, so writing one back would re-arm the prompt the user
+     * just answered (see ANSWERED_WITH_NO_NOTE).
+     */
+    const saveAttribution = (session: typeof unattributed[number], answer: AttributionAnswer): void => {
+        attribute.mutate({
+            id: session.id,
+            name: session.name,
+            durationSeconds: session.durationSeconds,
+            date: session.date,
+            companyId: answer.companyId,
+            note: answer.note
+        }, {
+            onSuccess: () => { pushToast('success', 'Pomodoro attributed'); }
+        });
+    };
 
     return (
         <div className="flex flex-col">
@@ -199,12 +232,20 @@ export default function TimerPage(): ReactElement {
                     </p>
                 ) : null}
 
-                {restored ? (
+                {/*
+                  * Counted work-timer seconds that are not on this screen are seconds the user cannot see. That is
+                  * true after a restore, and it is true in pomodoro mode, where the dial shows the cycle instead -
+                  * so the banner covers both rather than only the one it was written for.
+                  */}
+                {elapsedSeconds > 0 && (restored || mode === 'pomodoro') ? (
                     <div className={BANNER_CLASS}>
                         <span className="material-symbols-outlined text-xl">history_toggle_off</span>
                         <span className="flex-1">
-                            {formatElapsed(elapsedSeconds)} was counted before Workflow last closed, and is waiting
-                            to be saved or discarded.
+                            {restored
+                                ? formatElapsed(elapsedSeconds) + ' was counted before Workflow last closed, and is' +
+                                    ' waiting to be saved or discarded.'
+                                : formatElapsed(elapsedSeconds) + ' is still held on the work timer, paused while' +
+                                    ' the cycle runs. It is not lost.'}
                         </span>
                         <button
                             type="button"
@@ -216,29 +257,40 @@ export default function TimerPage(): ReactElement {
                     </div>
                 ) : null}
 
-                <TimerDial
-                    headline={dial.headline}
-                    exceeded={dial.exceeded}
-                    digits={dial.digits}
-                    ringOffset={dial.ringOffset}
-                    ringColour={dial.ringTone}
-                    badgeIcon={null}
-                    badgeText="Focused"
-                    running={running}
-                    meta={dial.meta}
-                />
+                {/*
+                  * One screen, two clocks, and at most one of them counts: starting either pauses the other, and
+                  * that rule is enforced in the composition root rather than here (container.ts `exclusive`).
+                  * Switching mode moves what is on screen and never touches what has been counted - CORE-14, and
+                  * the whole of CB-1, where v1.2.1's toggle called reset() on both branches and threw away every
+                  * unsaved second with one tap.
+                  */}
+                {mode === 'pomodoro' ? <PomodoroPanel /> : (
+                    <>
+                        <TimerDial
+                            headline={dial.headline}
+                            exceeded={dial.exceeded}
+                            digits={dial.digits}
+                            ringOffset={dial.ringOffset}
+                            ringColour={dial.ringTone}
+                            badgeIcon={null}
+                            badgeText="Focused"
+                            running={running}
+                            meta={dial.meta}
+                        />
 
-                {pending === null ? null : <p className={ADJUSTED_CLASS}>{pending}</p>}
+                        {pending === null ? null : <p className={ADJUSTED_CLASS}>{pending}</p>}
 
-                <TimerControls
-                    running={running}
-                    hasCountedTime={dial.savableSeconds > 0}
-                    busy={start.isPending || pause.isPending}
-                    onAdjust={() => { setDialog('adjust'); }}
-                    onToggle={toggleRunning}
-                    onSave={() => { setDialog('save'); }}
-                    onReset={confirmReset}
-                />
+                        <TimerControls
+                            running={running}
+                            hasCountedTime={dial.savableSeconds > 0}
+                            busy={start.isPending || pause.isPending}
+                            onAdjust={() => { setDialog('adjust'); }}
+                            onToggle={toggleRunning}
+                            onSave={() => { setDialog('save'); }}
+                            onReset={confirmReset}
+                        />
+                    </>
+                )}
 
                 {snapshotQuery.isError ? (
                     <p className="text-sm text-red-400">{snapshotQuery.error.message}</p>
@@ -284,6 +336,19 @@ export default function TimerPage(): ReactElement {
                     onDismiss={close}
                 />
             ) : null}
+
+            {attributing === undefined ? null : (
+                <AttributionForm
+                    key={String(attributing.id)}
+                    session={attributing}
+                    remaining={unattributed.length - 1}
+                    companies={companies.data ?? []}
+                    busy={attribute.isPending}
+                    onSubmit={(answer) => { saveAttribution(attributing, answer); }}
+                    onInvalid={(reason) => { pushToast('warning', reason); }}
+                    onLater={() => { setAttributionDeferred(true); }}
+                />
+            )}
         </div>
     );
 }
