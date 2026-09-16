@@ -67,8 +67,16 @@ export default function SettingsForm(props: SettingsFormProps): ReactElement {
         onSubmit(next);
     };
 
+    /*
+     * noValidate (WR-01). NumberSettingCard carries min/max and a number input's default step of 1, so Chromium
+     * refused the submit for exactly the two refusal classes this screen exists to explain - out of range, and not
+     * a whole number. reviewDraft never ran, the hint line never turned red, aria-invalid was never set and the
+     * "Nothing was saved" toast never appeared; the user got a bubble instead. The attributes stay, because they
+     * still drive the spinner and state the real bounds; the screen's own review is the authority, and
+     * settings.service.ts refuses again below IPC.
+     */
     return (
-        <form onSubmit={submit}>
+        <form onSubmit={submit} noValidate>
             <div className={SECTION_CLASS}>
                 <h2 className={SECTION_TITLE_CLASS}>Work Preferences</h2>
                 <div className="flex flex-col gap-3">
