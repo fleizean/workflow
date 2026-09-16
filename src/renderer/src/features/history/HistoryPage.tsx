@@ -19,6 +19,7 @@ import { useUiStore } from '@renderer/store/ui.store';
 import { useCompanies } from '@renderer/features/companies';
 import { useSettings } from '@renderer/features/settings';
 import { formatLocalDate } from '@shared/utils/date';
+import { seedDuration } from '@renderer/lib/duration';
 import { useSessions } from './api/useSessions';
 import { useWeekTotals } from './api/useWeekTotals';
 import { useCreateSession, useDeleteSession, useUpdateSession } from './api/useSessionMutations';
@@ -49,9 +50,8 @@ const SECTION_HEAD_CLASS = 'mb-3 flex items-end justify-between px-1';
 const SECTION_TITLE_CLASS = 'text-slate-900 dark:text-white text-lg font-bold leading-tight';
 const RANGE_CLASS = 'text-xs font-medium text-slate-500 dark:text-slate-400';
 
-const HOURS_PER_SECOND = 1 / 3600;
 const newDraft = (today: LocalDate): SessionDraft =>
-    ({ name: '', hours: '', date: today, companyId: null, note: '' });
+    ({ name: '', duration: seedDuration(0), date: today, companyId: null, note: '' });
 
 export default function HistoryPage(): ReactElement {
     const sessions = useSessions();
@@ -203,7 +203,9 @@ export default function HistoryPage(): ReactElement {
                     mode={editing === 'new' ? 'create' : 'edit'}
                     initial={editing === 'new' ? newDraft(today) : {
                         name: editing.name,
-                        hours: (editing.durationSeconds * HOURS_PER_SECOND).toFixed(1),
+                        // BL-01: the stored seconds travel with the boxes, so an edit that leaves them alone
+                        // writes the same number back rather than the nearest six minutes.
+                        duration: seedDuration(editing.durationSeconds),
                         date: editing.date,
                         companyId: editing.companyId,
                         note: editing.note ?? ''

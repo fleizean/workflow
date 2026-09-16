@@ -14,13 +14,20 @@
  *    no companies at all it wrote NaN into the row.
  *  - the duration is editable. v1.2.1 showed it as text. It is the same field History's form has, and it is the
  *    answer for a timer left running across a weekend, which counts past the one-day bound the contract enforces.
+ *
+ * CR-01/CR-02: the duration is whole hours and whole minutes over an integer second count, and the pair re-seeds
+ * from the live counted value until the user types into it - so the number this dialog holds cannot drift away from
+ * the number the clock holds, and a save nobody re-typed writes the counted seconds verbatim.
  */
 
 import { useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import Modal from '@renderer/components/ui/Modal';
 import { formatLongDay } from '@renderer/lib/format';
-import { formatElapsed } from '@renderer/lib/duration';
+import {
+    MAX_DURATION_HOURS, MINUTES_PER_HOUR, formatElapsed, reviewDuration, seedDuration
+} from '@renderer/lib/duration';
+import type { DurationFields } from '@renderer/lib/duration';
 import { addDays } from '@shared/utils/date';
 import type { Company, LocalDate } from '@shared/types';
 import type { StopAndSaveValues } from '../api/useTimerCommands';
@@ -40,6 +47,7 @@ const SELECT_CLASS = 'w-full pl-14 pr-12 py-4 bg-[#27272a] border border-transpa
 const DATE_CLASS = FIELD_CLASS + ' [color-scheme:dark]';
 const NOTE_CLASS = FIELD_CLASS + ' resize-none';
 const SUMMARY_CLASS = 'bg-white/5 rounded-2xl p-4 border border-white/10';
+const UNIT_CLASS = 'text-xs text-gray-500 mt-1.5 ml-1';
 const SUBMIT_CLASS = 'w-full py-4 mt-2 bg-linear-to-br/srgb from-blue-500 to-blue-600 hover:from-blue-400 ' +
     'hover:to-blue-500 text-white font-semibold rounded-2xl active:scale-95 transition-all duration-200 ' +
     'shadow-lg shadow-blue-500/20 disabled:opacity-50';
@@ -61,9 +69,10 @@ const QUICK_DATES: readonly { readonly offset: number; readonly icon: string; re
 ];
 
 const NO_COMPANY = '';
-const SECONDS_PER_HOUR = 3600;
+const LAST_MINUTE = MINUTES_PER_HOUR - 1;
 /** v1.2.1's default name, which it also pre-filled and selected (legacy/pages/index.html:1157). */
 export const DEFAULT_SESSION_NAME = 'Work Session';
+const DEFAULT_REFUSAL = 'There is no time to save';
 
 interface SaveSessionFormProps {
     readonly countedSeconds: number;
@@ -81,23 +90,33 @@ export default function SaveSessionForm(props: SaveSessionFormProps): ReactEleme
     const { busy, companies, countedSeconds, onDismiss, onInvalid, onSubmit, today } = props;
     const [name, setName] = useState(DEFAULT_SESSION_NAME);
     const [companyId, setCompanyId] = useState<number | null>(companies[0]?.id ?? null);
-    const [hours, setHours] = useState((countedSeconds / SECONDS_PER_HOUR).toFixed(2));
+    /*
+     * CR-01: the pair follows the clock until the user types into it. `countedSeconds` is recomputed every tick, so
+     * a value frozen at mount is a promise about a number that has already moved on - five minutes of counted work
+     * went unrecorded that way, reproduced. Null until a box changes, and only then does the form stop tracking.
+     */
+    const [typed, setTyped] = useState<DurationFields | null>(null);
     const [date, setDate] = useState<LocalDate>(props.date);
     const [note, setNote] = useState('');
     const titleId = useId();
     const nameId = useId();
     const companyFieldId = useId();
     const hoursId = useId();
+    const minutesId = useId();
     const dateId = useId();
     const noteId = useId();
 
+    const seeded = seedDuration(countedSeconds);
+    const fields = typed ?? seeded.fields;
+
     const submit = (event: FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-        const durationSeconds = Math.floor((Number.parseFloat(hours) || 0) * SECONDS_PER_HOUR);
-        if (durationSeconds <= 0) {
-            onInvalid('There is no time to save');
+        const duration = reviewDuration(fields, seeded);
+        if (duration.seconds === null) {
+            onInvalid(duration.refusal ?? DEFAULT_REFUSAL);
             return;
         }
+        const durationSeconds = duration.seconds;
         const trimmedNote = note.trim();
         const company = companies.find((row) => row.id === companyId);
         // TIMER-03: this company's own answer, not "every company" as v1.2.1 asked it.
@@ -130,7 +149,8 @@ export default function SaveSessionForm(props: SaveSessionFormProps): ReactEleme
                 </div>
             )}
         >
-            <form onSubmit={submit} className="flex flex-col gap-4">
+            {/* noValidate: the refusals above are this form's to explain, and Chromium's bubble cannot name a field. */}
+            <form onSubmit={submit} noValidate className="flex flex-col gap-4">
                 <div>
                     <label htmlFor={nameId} className={LABEL_CLASS}>Session Name</label>
                     <input
@@ -177,16 +197,39 @@ export default function SaveSessionForm(props: SaveSessionFormProps): ReactEleme
                 </div>
 
                 <div>
-                    <label htmlFor={hoursId} className={LABEL_CLASS}>Duration (hours)</label>
-                    <input
-                        id={hoursId}
-                        type="number"
-                        min="0"
-                        step="0.25"
-                        className={FIELD_CLASS}
-                        value={hours}
-                        onChange={(event) => { setHours(event.target.value); }}
-                    />
+                    <span className={LABEL_CLASS}>Duration</span>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <input
+                                id={hoursId}
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                max={String(MAX_DURATION_HOURS)}
+                                step="1"
+                                aria-label="Hours"
+                                className={FIELD_CLASS}
+                                value={fields.hours}
+                                onChange={(event) => { setTyped({ ...fields, hours: event.target.value }); }}
+                            />
+                            <p className={UNIT_CLASS}>Hours</p>
+                        </div>
+                        <div>
+                            <input
+                                id={minutesId}
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                max={String(LAST_MINUTE)}
+                                step="1"
+                                aria-label="Minutes"
+                                className={FIELD_CLASS}
+                                value={fields.minutes}
+                                onChange={(event) => { setTyped({ ...fields, minutes: event.target.value }); }}
+                            />
+                            <p className={UNIT_CLASS}>Minutes</p>
+                        </div>
+                    </div>
                 </div>
 
                 <div>

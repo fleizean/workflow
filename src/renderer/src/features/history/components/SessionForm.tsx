@@ -11,12 +11,20 @@
  *    and an empty list wrote NaN;
  *  - the quick dates are three buttons in this form rather than a second modal on top of the first. The nested
  *    date-picker overlay is not carried.
+ *
+ * BL-01/BL-02: the duration is whole hours and whole minutes over an integer second count. It used to be a
+ * one-decimal hours string, so saving THIS FORM rewrote the duration of a session whose note was the only thing
+ * touched (4980 s -> 5040 s), and its step="0.5" inside a real <form> refused the submit for every duration that
+ * was not a multiple of thirty minutes. A pair of boxes nobody typed into now writes the stored seconds back
+ * byte-identical, and every attribute below states a bound this file actually enforces.
  */
 
 import { useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import Modal from '@renderer/components/ui/Modal';
 import { formatLongDay } from '@renderer/lib/format';
+import { MAX_DURATION_HOURS, MINUTES_PER_HOUR, reviewDuration } from '@renderer/lib/duration';
+import type { DurationFields, SeededDuration } from '@renderer/lib/duration';
 import { addDays } from '@shared/utils/date';
 import type { Company, LocalDate } from '@shared/types';
 import type { SessionValues } from '../api/useSessionMutations';
@@ -71,10 +79,13 @@ const QUICK_DATES: readonly { readonly offset: number; readonly icon: string; re
 ];
 
 const NO_COMPANY = '';
+const LAST_MINUTE = MINUTES_PER_HOUR - 1;
+const UNIT_CLASS = 'text-xs text-gray-500 mt-1.5 ml-1';
 
 export interface SessionDraft {
     readonly name: string;
-    readonly hours: string;
+    /** The stored seconds and the boxes they seeded: an untouched pair is what writes them back unchanged. */
+    readonly duration: SeededDuration;
     readonly date: LocalDate;
     readonly companyId: number | null;
     readonly note: string;
@@ -95,7 +106,7 @@ interface SessionFormProps {
 export default function SessionForm(props: SessionFormProps): ReactElement {
     const { mode, initial, companies, today, busy, onSubmit, onInvalid, onDismiss } = props;
     const [name, setName] = useState(initial.name);
-    const [hours, setHours] = useState(initial.hours);
+    const [fields, setFields] = useState<DurationFields>(initial.duration.fields);
     const [date, setDate] = useState<LocalDate>(initial.date);
     const [companyId, setCompanyId] = useState<number | null>(initial.companyId);
     const [note, setNote] = useState(initial.note);
@@ -103,17 +114,19 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
     const nameId = useId();
     const companySelectId = useId();
     const hoursId = useId();
+    const minutesId = useId();
     const dateId = useId();
     const noteId = useId();
     const words = WORDING[mode];
 
     const submit = (event: FormEvent<HTMLFormElement>): void => {
         event.preventDefault();
-        const durationSeconds = Math.floor((Number.parseFloat(hours) || 0) * 3600);
-        if (durationSeconds <= 0) {
-            onInvalid('Please enter valid hours');
+        const duration = reviewDuration(fields, initial.duration);
+        if (duration.seconds === null) {
+            onInvalid(duration.refusal ?? 'Enter how long this session was.');
             return;
         }
+        const durationSeconds = duration.seconds;
         const trimmedNote = note.trim();
         const company = companies.find((row) => row.id === companyId);
         // HIST-06: on the edit form too, which is where v1.2.1 stopped asking.
@@ -144,7 +157,13 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
                 </div>
             )}
         >
-            <form onSubmit={submit} className="flex flex-col gap-4">
+            {/*
+              * noValidate (BL-02): with native validation on, step="0.5" made Chromium refuse the submit for every
+              * duration this app writes, so onSubmit never ran and the only way forward was one of the two values
+              * the browser offered. The attributes above state the bounds; reviewDuration is what enforces them,
+              * and sessions.service.ts refuses again below IPC.
+              */}
+            <form onSubmit={submit} noValidate className="flex flex-col gap-4">
                 <div>
                     <label htmlFor={nameId} className={LABEL_CLASS}>Session Name</label>
                     <input
@@ -181,17 +200,39 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
                     </div>
                 </div>
                 <div>
-                    <label htmlFor={hoursId} className={LABEL_CLASS}>Duration (hours)</label>
-                    <input
-                        id={hoursId}
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        placeholder="8"
-                        className={FIELD_CLASS}
-                        value={hours}
-                        onChange={(event) => { setHours(event.target.value); }}
-                    />
+                    <span className={LABEL_CLASS}>Duration</span>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <input
+                                id={hoursId}
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                max={String(MAX_DURATION_HOURS)}
+                                step="1"
+                                aria-label="Hours"
+                                className={FIELD_CLASS}
+                                value={fields.hours}
+                                onChange={(event) => { setFields({ ...fields, hours: event.target.value }); }}
+                            />
+                            <p className={UNIT_CLASS}>Hours</p>
+                        </div>
+                        <div>
+                            <input
+                                id={minutesId}
+                                type="number"
+                                inputMode="numeric"
+                                min="0"
+                                max={String(LAST_MINUTE)}
+                                step="1"
+                                aria-label="Minutes"
+                                className={FIELD_CLASS}
+                                value={fields.minutes}
+                                onChange={(event) => { setFields({ ...fields, minutes: event.target.value }); }}
+                            />
+                            <p className={UNIT_CLASS}>Minutes</p>
+                        </div>
+                    </div>
                 </div>
                 <div>
                     <label htmlFor={dateId} className={LABEL_CLASS}>Date</label>
