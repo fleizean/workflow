@@ -296,6 +296,9 @@ function createdAt(date, hhmmss) {
     return `${date} ${hhmmss}`;
 }
 
+/* SQLite's CURRENT_TIMESTAMP shape: UTC, space-separated, second resolution, no zone suffix. */
+const UTC_TIMESTAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+
 export function seedDatabase(targetDir, now = new Date()) {
     fs.mkdirSync(targetDir, { recursive: true });
     const file = path.join(targetDir, DB_NAME);
@@ -328,7 +331,7 @@ export function seedDatabase(targetDir, now = new Date()) {
         TODAY_SESSIONS.forEach((session, index) => {
             insertSession.run(
                 session.name, session.duration, dates.today,
-                createdAt(dates.today, `0${9 + index}:15:00`),
+                createdAt(dates.today, `${String(9 + index).padStart(2, '0')}:15:00`),
                 session.company_id, session.note
             );
         });
@@ -581,6 +584,7 @@ function selfTest() {
         let objects;
         let sessions;
         let missingCreatedAt;
+        let malformedCreatedAt;
         let foreignKeys;
         let fkViolations;
         let columns;
@@ -591,6 +595,21 @@ function selfTest() {
                 db.prepare('SELECT count(*) AS c FROM work_sessions WHERE created_at IS NULL').get().c +
                 db.prepare('SELECT count(*) AS c FROM companies WHERE created_at IS NULL').get().c +
                 db.prepare('SELECT count(*) AS c FROM pomodoro_sessions WHERE created_at IS NULL').get().c;
+            /*
+             * v1.2.1 never writes created_at explicitly - database/db.js declares DEFAULT CURRENT_TIMESTAMP on all
+             * three tables and never names the column in an INSERT - so every stamp a real database holds is UTC
+             * "YYYY-MM-DD HH:MM:SS". A fixture that writes its own must produce that shape or it is not the thing
+             * the baselines were taken over. This check exists because it would have caught `0${9 + index}`
+             * emitting "010:15:00" and "011:15:00" for two of today's three sessions.
+             */
+            malformedCreatedAt = [];
+            for (const table of ['companies', 'work_sessions', 'pomodoro_sessions']) {
+                for (const row of db.prepare('SELECT rowid AS rid, created_at FROM ' + table).all()) {
+                    if (!UTC_TIMESTAMP.test(String(row.created_at))) {
+                        malformedCreatedAt.push(table + ' rowid ' + row.rid + ' = ' + JSON.stringify(row.created_at));
+                    }
+                }
+            }
             foreignKeys = db.prepare('PRAGMA foreign_keys').get().foreign_keys;
             fkViolations = db.prepare('PRAGMA foreign_key_check').all().length;
             columns = {};
@@ -659,6 +678,11 @@ function selfTest() {
             dangling.detail
         );
         check('every created_at explicitly set', missingCreatedAt === 0, `${missingCreatedAt} NULL`);
+        check(
+            'every created_at is the UTC YYYY-MM-DD HH:MM:SS shape v1.2.1 wrote by DEFAULT CURRENT_TIMESTAMP',
+            malformedCreatedAt.length === 0,
+            malformedCreatedAt.length === 0 ? 'all rows' : malformedCreatedAt.join('; ')
+        );
 
         const contentA = JSON.stringify(dumpContent(first.file));
         const contentB = JSON.stringify(dumpContent(second.file));
