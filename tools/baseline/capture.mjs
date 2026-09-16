@@ -69,7 +69,7 @@ export const PAGES = ['index', 'companies', 'work-history', 'settings'];
  * the live DOM through a MutationObserver, so `load` fires long before the page is styled. */
 const SETTLED_BACKGROUND = 'rgb(16, 28, 34)';
 
-const COMPUTED_PROPS = [
+export const COMPUTED_PROPS = [
     'display', 'position', 'width', 'height', 'margin', 'padding', 'color',
     'background-color', 'border', 'border-radius', 'box-shadow', 'font-family', 'font-size',
     'font-weight', 'line-height', 'letter-spacing', 'flex', 'grid-template-columns', 'gap',
@@ -150,30 +150,38 @@ async function capturePage(page, win, name, sizes, out, log) {
             fullPage: false
         });
 
-        const styles = await page.evaluate((props) => {
-            const pathOf = (el) => {
-                const parts = [];
-                for (let n = el; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
-                    const i = Array.prototype.indexOf.call(n.parentElement?.children ?? [], n);
-                    parts.unshift(`${n.tagName.toLowerCase()}${n.id ? `#${n.id}` : ''}:nth-child(${i + 1})`);
-                }
-                return parts.join(' > ');
-            };
-            const result = {};
-            for (const el of document.querySelectorAll('*')) {
-                const cs = getComputedStyle(el);
-                const record = {};
-                for (const prop of props) record[prop] = cs.getPropertyValue(prop);
-                result[pathOf(el)] = record;
-            }
-            return result;
-        }, COMPUTED_PROPS);
+        const styles = await readComputedStyles(page);
         fs.writeFileSync(jsonPath, `${JSON.stringify(styles, null, 2)}\n`);
 
         written.push({ png: pngPath, json: jsonPath, elements: Object.keys(styles).length });
         log(`${SCRIPT_NAME}:   ${stem} -> ${written.at(-1).elements} elements`);
     }
     return written;
+}
+
+/*
+ * The one measurement. Phase 8 captures the v2 SPA with this same function rather than a copy of it
+ * (tools/baseline/capture-v2.mjs), so "the two records were taken the same way" is structural.
+ */
+export async function readComputedStyles(page, props = COMPUTED_PROPS) {
+    return page.evaluate((wanted) => {
+        const pathOf = (el) => {
+            const parts = [];
+            for (let n = el; n && n.nodeType === 1 && n !== document.documentElement; n = n.parentElement) {
+                const i = Array.prototype.indexOf.call(n.parentElement?.children ?? [], n);
+                parts.unshift(`${n.tagName.toLowerCase()}${n.id ? `#${n.id}` : ''}:nth-child(${i + 1})`);
+            }
+            return parts.join(' > ');
+        };
+        const result = {};
+        for (const el of document.querySelectorAll('*')) {
+            const cs = getComputedStyle(el);
+            const record = {};
+            for (const prop of wanted) record[prop] = cs.getPropertyValue(prop);
+            result[pathOf(el)] = record;
+        }
+        return result;
+    }, props);
 }
 
 export async function runCapture(options = {}) {

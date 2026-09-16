@@ -179,6 +179,79 @@
 }
 
 /*
+ * SPA-12, the third half: Tailwind v4 did not only rename utilities, it RESPECIFIED its default palette. The
+ * names are the same and the colours are not - green-400 moved from #4ade80 to #05df72, orange-400 from
+ * #fb923c to #ff8904, emerald-400 from #34d399 to #00d492, red-600 from #dc2626 to #e7000b. That is 52 to 69
+ * points on a channel, which is not a rounding difference; the neutrals moved by 0 to 4, which is. Nothing
+ * warns, because the class names are unchanged - it is exactly the silent regression the Phase 1 computed-style
+ * baselines exist to catch, and that is where it was caught.
+ *
+ * The brief requires component appearance to carry over unchanged, so every default-palette colour this
+ * renderer names is pinned to the value v1.2.1 rendered. The values are not typed from memory: they are the
+ * ones inside tools/baseline/vendor/tailwind.js, the Tailwind 3.4.17 the Play CDN served and the baselines were
+ * captured under, pinned by SHA-256 in baselines/v1.2.1/MANIFEST.md.
+ *
+ * tests/tailwind-compat.test.ts regenerates this list from that bundle and from the class names in this
+ * renderer, so a colour added to a screen without a pin fails rather than quietly shipping a v4 value.
+ */
+@theme {
+    --color-amber-100: #fef3c7;
+    --color-amber-200: #fde68a;
+    --color-amber-400: #fbbf24;
+    --color-amber-500: #f59e0b;
+    --color-amber-900: #78350f;
+    --color-blue-100: #dbeafe;
+    --color-blue-400: #60a5fa;
+    --color-blue-500: #3b82f6;
+    --color-blue-600: #2563eb;
+    --color-blue-900: #1e3a8a;
+    --color-emerald-200: #a7f3d0;
+    --color-emerald-400: #34d399;
+    --color-emerald-500: #10b981;
+    --color-emerald-600: #059669;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-400: #9ca3af;
+    --color-gray-500: #6b7280;
+    --color-gray-600: #4b5563;
+    --color-green-100: #dcfce7;
+    --color-green-400: #4ade80;
+    --color-green-500: #22c55e;
+    --color-green-600: #16a34a;
+    --color-green-900: #14532d;
+    --color-orange-100: #ffedd5;
+    --color-orange-400: #fb923c;
+    --color-orange-500: #f97316;
+    --color-orange-600: #ea580c;
+    --color-orange-900: #7c2d12;
+    --color-purple-400: #c084fc;
+    --color-purple-500: #a855f7;
+    --color-purple-600: #9333ea;
+    --color-purple-900: #581c87;
+    --color-red-50: #fef2f2;
+    --color-red-100: #fee2e2;
+    --color-red-200: #fecaca;
+    --color-red-300: #fca5a5;
+    --color-red-400: #f87171;
+    --color-red-500: #ef4444;
+    --color-red-600: #dc2626;
+    --color-red-700: #b91c1c;
+    --color-red-900: #7f1d1d;
+    --color-slate-50: #f8fafc;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8;
+    --color-slate-500: #64748b;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-900: #0f172a;
+    --color-violet-500: #8b5cf6;
+    --color-violet-600: #7c3aed;
+}
+
+/*
  * v3 -> v4 Preflight compatibility (SPA-12). v4 changed three defaults the v1.2.1 design assumed: the border
  * colour became currentColor, buttons lost the pointer cursor, and the placeholder colour became the current text
  * colour at half opacity. Each is put back to what the CDN served, because moving to a build-time Tailwind must
