@@ -34,8 +34,9 @@
  * WHAT IS DELIBERATELY NOT A GATE. The twelve geometry properties (width, height, margin, padding,
  * gap, flex, grid-template-columns, transform, display, position, overflow, z-index) are reported as
  * counts only. The DOM differs by construction - v1.2.1 kept every modal in the markup and v2 mounts
-    lines.push('it opens - and the content column is 40rem where the v1.2.1 column was 448px (owner, 2026-09-14), so above');
- * so a geometry vocabulary difference is evidence of nothing either way.
+ * each one only while it opens - and the content column is 40rem where the v1.2.1 column was 448px
+ * (owner, 2026-09-14), so above 448px these baselines have nothing left to match. A geometry
+ * vocabulary difference is therefore evidence of nothing either way.
  */
 
 import fs from 'node:fs';
