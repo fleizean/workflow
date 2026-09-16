@@ -18,6 +18,7 @@ import {
     NO_FILTERS, buildHistory, dayTotals, filtersAreActive, weekRangeLabel
 } from '@renderer/features/history/grouping';
 import type { HistoryFilters } from '@renderer/features/history/grouping';
+import { read } from './helpers/ts-imports';
 import type { Company, LocalDate, WorkSession } from '@shared/types';
 
 const day = (value: string): LocalDate => value as LocalDate;
@@ -260,5 +261,45 @@ describe('dayTotals', () => {
         expect(totals.get('2026-09-16')).toBe(10_800);
         expect(totals.get('2026-09-15')).toBe(60);
         expect(totals.get('2026-09-14')).toBeUndefined();
+    });
+});
+
+/*
+ * 08-REVIEW-SCREENS WR-04. `settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds` is honest
+ * while the read is in flight and dishonest after it fails - and `retry: false` means one transient failure is
+ * enough. Every Goal pill and every achieved/not-achieved filter then measured against 28800, B6's exact constant,
+ * for as long as the user stayed on the route, with nothing on screen to say the number was a stand-in. A user
+ * with a six-hour target saw days marked unmet that they met.
+ *
+ * A target nobody has read is not eight hours. It is nothing, and a day cannot be judged against nothing.
+ */
+describe('WR-04: an unread target is not a default target', () => {
+    const rows = [session('2026-09-16', 6 * 3600), session('2026-09-15', 9 * 3600)];
+    const withTarget = (target: number | null, filters: HistoryFilters = NO_FILTERS): ReturnType<typeof buildHistory> =>
+        buildHistory({ sessions: rows, companies: COMPANIES, filters, dailyTargetSeconds: target, today: TODAY });
+
+    it('answers "not known" rather than "not met" for every card', () => {
+        for (const group of withTarget(null).thisWeek) {
+            expect(group.goalMet, 'a day was judged against a target nobody read').toBeNull();
+        }
+    });
+
+    it('judges every card once the target has been read', () => {
+        expect(withTarget(6 * 3600).thisWeek.map((group) => group.goalMet)).toEqual([true, true]);
+    });
+
+    it('does not filter by a goal it cannot measure, rather than filtering by 28800', () => {
+        const achieved = { ...NO_FILTERS, goal: 'achieved' as const };
+        expect(withTarget(null, achieved).thisWeek).toHaveLength(2);
+        // The control: with a real target the same filter still narrows.
+        expect(withTarget(8 * 3600, achieved).thisWeek).toHaveLength(1);
+    });
+
+    it('is what the screen passes, and it says so when the read failed', () => {
+        const page = read('src/renderer/src/features/history/HistoryPage.tsx');
+        expect(page, 'a failed settings read still reported 28800 as the target')
+            .not.toContain('settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds');
+        expect(page).toContain('settings.isSuccess');
+        expect(page).toContain('settings.isError');
     });
 });

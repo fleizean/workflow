@@ -65,7 +65,12 @@ export interface SessionGroup {
     readonly totalSeconds: number;
     /** The whole day's total, across every company and every session in it (B7). */
     readonly dayTotalSeconds: number;
-    readonly goalMet: boolean;
+    /*
+     * WR-04: null when the daily target has not been read. A day cannot be judged against a target nobody has,
+     * and substituting DEFAULT_SETTINGS for one that FAILED to read marked met days unmet with nothing on screen
+     * to say the number was a stand-in.
+     */
+    readonly goalMet: boolean | null;
     readonly hasNotes: boolean;
     /** v1.2.1 drew a hairline where the date changed; true on every card but the first of its day. */
     readonly startsNewDay: boolean;
@@ -81,7 +86,8 @@ export interface HistoryInput {
     readonly sessions: readonly WorkSession[];
     readonly companies: readonly Company[];
     readonly filters: HistoryFilters;
-    readonly dailyTargetSeconds: number;
+    /** null while the settings read has not answered - see SessionGroup.goalMet (WR-04). */
+    readonly dailyTargetSeconds: number | null;
     readonly today: LocalDate;
 }
 
@@ -117,7 +123,7 @@ function matches(session: WorkSession, input: HistoryInput, totals: ReadonlyMap<
     if (min !== undefined && session.durationSeconds < min) return false;
     if (max !== undefined && session.durationSeconds > max) return false;
 
-    if (filters.goal !== 'all') {
+    if (filters.goal !== 'all' && dailyTargetSeconds !== null) {
         // B7: the DAY's total, not this session's. A day of four two-hour sessions is an eight-hour day.
         const met = (totals.get(session.date) ?? 0) >= dailyTargetSeconds;
         if (filters.goal === 'achieved' ? !met : met) return false;
@@ -176,7 +182,7 @@ export function buildHistory(input: HistoryInput): HistoryBuckets {
             sessions: [...rows].sort(byRecordedOrder),
             totalSeconds: rows.reduce((sum, row) => sum + row.durationSeconds, 0),
             dayTotalSeconds,
-            goalMet: dayTotalSeconds >= dailyTargetSeconds,
+            goalMet: dailyTargetSeconds === null ? null : dayTotalSeconds >= dailyTargetSeconds,
             hasNotes: rows.some((row) => (row.note ?? '').trim() !== ''),
             startsNewDay: false
         });

@@ -32,7 +32,6 @@ import WeekTotalCard from './components/WeekTotalCard';
 import { buildHistory, filtersAreActive, weekRangeLabel } from './grouping';
 import type { SessionGroup } from './grouping';
 import { useHistoryFilterStore } from './state/filters.store';
-import { DEFAULT_SETTINGS } from '@shared/constants/settings';
 import type { LocalDate, WorkSession } from '@shared/types';
 import FloatingAction from '@renderer/components/ui/FloatingAction';
 
@@ -72,8 +71,13 @@ export default function HistoryPage(): ReactElement {
 
     // One "today", read once per render, so two sections cannot disagree about which week it is.
     const today = formatLocalDate(new Date());
-    // B6: the user's own target. DEFAULT_SETTINGS is the seeded value, used only while the read is in flight.
-    const dailyTargetSeconds = settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds;
+    /*
+     * B6: the user's own target, and WR-04: nobody else's. Substituting DEFAULT_SETTINGS for a read that FAILED -
+     * and retry is false, so one transient failure is enough - measured every Goal pill and every goal filter
+     * against 28800 for as long as the user stayed here, with nothing on screen to say so. null is "not known",
+     * and buildHistory judges no day against it.
+     */
+    const dailyTargetSeconds = settings.isSuccess ? settings.data.dailyTargetSeconds : null;
     const companyRows = companies.data ?? [];
     const buckets = buildHistory({
         sessions: sessions.data ?? [],
@@ -173,6 +177,11 @@ export default function HistoryPage(): ReactElement {
 
                 {sessions.isPending ? <p className="text-sm text-slate-400">Loading...</p> : null}
                 {sessions.isError ? <p className="text-sm text-red-400">{sessions.error.message}</p> : null}
+                {settings.isError ? (
+                    <p className="text-sm text-amber-400">
+                        Your daily target could not be read, so no day below is marked met or unmet.
+                    </p>
+                ) : null}
                 {sessions.isSuccess && nothing ? (
                     <p className="text-slate-600 dark:text-slate-400 text-center py-16">
                         {filtersAreActive(filters)
