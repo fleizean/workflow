@@ -385,6 +385,7 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
      * leaving it behind as a rule about nothing that the next directory of that name inherits.
      */
     it('names a directory that still exists', () => {
+        expect(EXPIRING_EXCLUSIONS.length, 'nothing to check: the list is empty, which is the expected state since SPA-14').toBe(0);
         for (const ex of EXPIRING_EXCLUSIONS) {
             expect(
                 fs.existsSync(path.join(repoRoot, ex.dir)),
@@ -401,6 +402,7 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
      * does match - so the only way it can come back ignored is the ignore entry itself.
      */
     it('is actually ignored by eslint.config.js', async () => {
+        expect(EXPIRING_EXCLUSIONS.length, 'nothing to check: the list is empty, which is the expected state since SPA-14').toBe(0);
         for (const ex of EXPIRING_EXCLUSIONS) {
             const probe = path.join(repoRoot, ex.dir, '__lint_coverage_probe__.js');
             expect(

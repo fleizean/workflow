@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
 import { read, readAliases, repoRoot, resolveModuleFile, stripCommentsAndStrings } from './helpers/ts-imports';
+import { listV121 } from './helpers/v121-source';
 
 const RENDERER = 'src/renderer';
 const SRC = 'src/renderer/src';
@@ -301,8 +302,18 @@ describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragment
         expect(flatScripts, 'the v1.2.1 flat renderer scripts are back inside the v2 renderer root').toEqual([]);
     });
 
-    it('kept exactly the four pages Phase 8 ticks its parity checklist against', () => {
-        expect(fs.readdirSync(path.join(repoRoot, LEGACY_PAGES)).sort()).toEqual(LIVE_PAGES);
+    /*
+     * 08-F: SPA-14 deleted these. The claim is still worth making and is now two claims - the pages are gone
+     * from the worktree, and the four the checklist was ticked against are still reachable, because that is
+     * what keeps tests/inventory.test.ts able to recompute the counts it diffs. listV121 reads git when the
+     * worktree cannot answer.
+     */
+    it('deleted the four pages Phase 8 ticked its parity checklist against, and left them readable', () => {
+        expect(exists(LEGACY_PAGES), LEGACY_PAGES + ' is back in the worktree; SPA-14 deleted it').toBe(false);
+        expect(
+            listV121(LEGACY_PAGES).map((file) => file.slice(LEGACY_PAGES.length + 1)).sort(),
+            'the four v1.2.1 pages are no longer reachable in git either, so the behaviour inventory cannot be recomputed and the parity checklist cites files nobody can open'
+        ).toEqual(LIVE_PAGES);
     });
 
     it('deleted the four unreferenced page fragments rather than moving them', () => {
