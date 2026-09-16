@@ -20,6 +20,34 @@ export function describeSessionCount(count: number): string {
 }
 
 /*
+ * BL-03. `undefined` above means "this company has no rows in the list I was given"; it is the screen that has to
+ * decide whether that list is an answer at all. Two `?? 0`s used to make both cases zero, so a destructive
+ * confirmation over a company holding twelve sessions read exactly like one over a company holding none - while
+ * the session read was still in flight, after it had failed (retry is false), and whenever list() dropped rows the
+ * cascade deletes regardless.
+ *
+ * null is "not known", and it stays distinguishable all the way to the dialog and to the row.
+ */
+export function sessionCountFor(
+    counts: ReadonlyMap<number, number>,
+    companyId: number,
+    listed: boolean
+): number | null {
+    return listed ? counts.get(companyId) ?? 0 : null;
+}
+
+/** What a row shows where a number would go when there is no number to show. */
+export const UNKNOWN_SESSION_COUNT = '— sessions';
+
+export function describeRowCount(count: number | null): string {
+    return count === null ? UNKNOWN_SESSION_COUNT : describeSessionCount(count);
+}
+
+/** Said instead of opening a confirmation that cannot state what it would take. */
+export const DELETE_COUNT_UNKNOWN =
+    'The session list has not loaded, so this delete cannot say what it would take with it. Try again in a moment.';
+
+/*
  * COMP-05. The delete cascades, so the confirmation has to say what goes with the company - and it has to say it
  * before the call, because the channel can only report the count once the rows are gone. A user who reads
  * "This action cannot be undone" over an unnamed number of work sessions has not been warned about the thing that

@@ -17,7 +17,9 @@ import { useCreateCompany, useDeleteCompany, useUpdateCompany } from './api/useC
 import type { CompanyValues } from './api/useCompanyMutations';
 import CompanyForm from './components/CompanyForm';
 import CompanyRow from './components/CompanyRow';
-import { countSessionsByCompany, describeCompanyDelete, describeSessionCount } from './session-counts';
+import {
+    DELETE_COUNT_UNKNOWN, countSessionsByCompany, describeCompanyDelete, describeSessionCount, sessionCountFor
+} from './session-counts';
 import type { Company } from '@shared/types';
 import FloatingAction from '@renderer/components/ui/FloatingAction';
 
@@ -66,9 +68,16 @@ export default function CompaniesPage(): ReactElement {
     /*
      * COMP-05. The count is quoted from the list this screen already holds, and checked against what the delete
      * reports: if they disagree, the user was warned about the wrong number and is told so rather than congratulated.
+     *
+     * BL-03: and if the list has not answered, there is no count to quote. A destructive confirmation that cannot
+     * name what it takes is not a warning, so none is opened.
      */
     const confirmDelete = (company: Company): void => {
-        const expected = counts.get(company.id) ?? 0;
+        const expected = sessionCountFor(counts, company.id, sessions.isSuccess);
+        if (expected === null) {
+            pushToast('warning', DELETE_COUNT_UNKNOWN);
+            return;
+        }
         void openDialog({
             tone: 'error',
             icon: 'delete',
@@ -117,7 +126,7 @@ export default function CompaniesPage(): ReactElement {
                         <CompanyRow
                             key={company.id}
                             company={company}
-                            sessionCount={counts.get(company.id) ?? 0}
+                            sessionCount={sessionCountFor(counts, company.id, sessions.isSuccess)}
                             onEdit={setEditing}
                             onDelete={confirmDelete}
                         />

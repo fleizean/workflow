@@ -12,7 +12,7 @@
 
 import type { ReactElement } from 'react';
 import { formatCreatedOn } from '@renderer/lib/format';
-import { describeSessionCount } from '../session-counts';
+import { describeRowCount } from '../session-counts';
 import type { Company } from '@shared/types';
 
 const ROW_CLASS = 'group flex items-center gap-4 rounded-xl bg-white dark:bg-card-dark p-4 mb-3 shadow-xs ' +
@@ -27,7 +27,8 @@ const DELETE_CLASS = 'flex items-center justify-center w-9 h-9 rounded-lg bg-red
 
 interface CompanyRowProps {
     readonly company: Company;
-    readonly sessionCount: number;
+    /** null while the session list has not answered: unknown is not zero (BL-03). */
+    readonly sessionCount: number | null;
     readonly onEdit: (company: Company) => void;
     readonly onDelete: (company: Company) => void;
 }
@@ -41,7 +42,7 @@ export default function CompanyRow({ company, sessionCount, onEdit, onDelete }: 
             <div className="flex flex-1 flex-col justify-center overflow-hidden">
                 <p className={NAME_CLASS}>{company.name}</p>
                 <div className={META_CLASS}>
-                    <span>{describeSessionCount(sessionCount)}</span>
+                    <span>{describeRowCount(sessionCount)}</span>
                     <span>&bull;</span>
                     <span>{formatCreatedOn(company.createdAt)}</span>
                     {company.noteRequired ? <span>&bull;</span> : null}

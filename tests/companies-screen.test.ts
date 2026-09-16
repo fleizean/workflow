@@ -9,8 +9,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    countSessionsByCompany, describeCompanyDelete, describeSessionCount
+    DELETE_COUNT_UNKNOWN, UNKNOWN_SESSION_COUNT, countSessionsByCompany, describeCompanyDelete, describeRowCount,
+    describeSessionCount, sessionCountFor
 } from '@renderer/features/companies/session-counts';
+import { read } from './helpers/ts-imports';
 import type { LocalDate, WorkSession } from '@shared/types';
 
 const DAY = '2026-09-13' as LocalDate;
@@ -77,5 +79,52 @@ describe('describeCompanyDelete names what the delete takes with it', () => {
         const counts = countSessionsByCompany(sessions);
         expect(describeCompanyDelete(counts.get(7) ?? 0)).toContain('3 sessions');
         expect(describeCompanyDelete(counts.get(9) ?? 0)).toContain('1 session');
+    });
+});
+
+/*
+ * 08-REVIEW-SCREENS BL-03. countSessionsByCompany deliberately answers `undefined` for a company it has no rows
+ * for - the test above asserts exactly that - and CompaniesPage collapsed the distinction twice with `?? 0`. So a
+ * company holding twelve sessions could be deleted behind the wording written for a company holding none, and the
+ * row behind the dialog said "0 sessions".
+ *
+ * Three ways to get there, all reachable: the session list still in flight (nothing gates on isPending), the
+ * session list failed (retry is false, so one transient failure is enough, and the toast auto-dismisses), and a
+ * list that is short because sessions.repository.ts drops rows it cannot map while the cascade deletes them
+ * regardless.
+ *
+ * Unknown is not zero. These pin the vocabulary that keeps it separate all the way to the dialog.
+ */
+describe('BL-03: a count nobody has is not a count of nothing', () => {
+    it('reads a company with sessions and a company without, from a list that has loaded', () => {
+        const counts = countSessionsByCompany([session(1, 7)]);
+        expect(sessionCountFor(counts, 7, true)).toBe(1);
+        expect(sessionCountFor(counts, 9, true)).toBe(0);
+    });
+
+    it('answers null for every company while the session list has not loaded', () => {
+        const counts = countSessionsByCompany([]);
+        expect(sessionCountFor(counts, 7, false)).toBeNull();
+        expect(sessionCountFor(counts, 9, false)).toBeNull();
+    });
+
+    it('renders a dash rather than "0 sessions" for a count it does not have', () => {
+        expect(describeRowCount(null)).toBe(UNKNOWN_SESSION_COUNT);
+        expect(describeRowCount(null)).not.toContain('0');
+        expect(describeRowCount(0)).toBe('0 sessions');
+        expect(describeRowCount(3)).toBe('3 sessions');
+    });
+
+    it('refuses the destructive confirm rather than opening one over a number it cannot state', () => {
+        expect(DELETE_COUNT_UNKNOWN.toLowerCase()).toContain('not loaded');
+        expect(DELETE_COUNT_UNKNOWN.toLowerCase()).toContain('delete');
+    });
+
+    it('holds the screen to asking the session query whether it has an answer', () => {
+        const page = read('src/renderer/src/features/companies/CompaniesPage.tsx');
+        expect(page).toContain('sessions.isSuccess');
+        expect(page).toContain('DELETE_COUNT_UNKNOWN');
+        // The two `?? 0`s that discarded the distinction. Neither may come back.
+        expect(page).not.toContain('counts.get(company.id) ?? 0');
     });
 });
