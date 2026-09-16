@@ -13,6 +13,7 @@
  */
 
 import { POMODORO_SESSION_NAME } from '@shared/constants/sessions';
+import { formatElapsed } from '@renderer/lib/duration';
 import { dialDigits, ringOffsetFor } from './timer-view';
 import type { DialDigits } from './timer-view';
 import type { PomodoroInterval, PomodoroSnapshot, Settings, WorkSession } from '@shared/types';
@@ -155,6 +156,42 @@ export function autoStartSettingsOf(settings: Settings | undefined, fallback: Au
     return {
         pomodoroAutoStartBreaks: settings.pomodoroAutoStartBreaks,
         pomodoroAutoStartWork: settings.pomodoroAutoStartWork
+    };
+}
+
+/*
+ * CR-03. Abandon is the one control in the cycle that discards work, and it used to do it on a single unconfirmed
+ * click - `abort()` zeroes elapsedMs AND clears recordingFailed, so a completed interval whose write threw was the
+ * easiest thing on the screen to destroy. It sits directly under the red banner that says the time is still counted
+ * and nothing has been lost, which one click made untrue.
+ *
+ * The work timer's Reset has named the amount in a destructive confirm since slice C. This is the same question in
+ * the same words, with the held case saying the extra thing that is true of it.
+ */
+export interface AbandonWarning {
+    readonly tone: 'error';
+    readonly icon: string;
+    readonly title: string;
+    readonly body: string;
+    readonly dismissLabel: string;
+    readonly confirmLabel: string;
+    readonly destructive: true;
+}
+
+export function describeAbandon(snapshot: PomodoroSnapshot): AbandonWarning {
+    return {
+        tone: 'error',
+        icon: 'stop_circle',
+        title: 'Discard ' + formatElapsed(snapshot.elapsedSeconds) + '?',
+        body: snapshot.recordingFailed
+            ? 'This pomodoro finished but has not been written to the database yet. Abandoning it records it ' +
+                'nowhere, and it cannot be brought back. To keep it, cancel and start the cycle again to retry ' +
+                'the write.'
+            : 'This interval has not been recorded. Abandoning it records it nowhere, and it cannot be brought ' +
+                'back.',
+        dismissLabel: 'Cancel',
+        confirmLabel: 'Abandon',
+        destructive: true
     };
 }
 

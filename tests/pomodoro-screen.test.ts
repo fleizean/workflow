@@ -8,12 +8,14 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
     ANSWERED_WITH_NO_NOTE, AUTO_START_DELAY_SECONDS, attributionNote, countsLabel, cyclePosition,
-    describePomodoroDial, isBreakInterval, pendingAttributions, shouldAutoStart
+    describeAbandon, describePomodoroDial, isBreakInterval, pendingAttributions, shouldAutoStart
 } from '@renderer/features/timer/pomodoro-view';
 import { RING_CIRCUMFERENCE } from '@renderer/features/timer/timer-view';
 import { POMODORO_SESSION_NAME } from '@shared/constants/sessions';
+import { read, scriptKindFor } from './helpers/ts-imports';
 import type { LocalDate, PomodoroInterval, PomodoroSnapshot, PomodoroStatus, WorkSession } from '@shared/types';
 
 const ld = (text: string): LocalDate => text as LocalDate;
@@ -191,5 +193,72 @@ describe('POMO-08: the counts are readable', () => {
     it('names both numbers', () => {
         expect(countsLabel(5, 23)).toBe('5 today - 23 this week');
         expect(countsLabel(0, 0)).toBe('0 today - 0 this week');
+    });
+});
+
+/*
+ * 08-REVIEW-TIMER CR-03. Abandon was `onAbort={() => { autoStart.cancel(); abort.mutate(); }}` - no dialog, no
+ * confirm, no toast - and abort() sets elapsedMs to 0 AND recordingFailed to false, so it is the one path that
+ * throws away a completed-but-unwritten interval. The button sits in the control row directly under a red banner
+ * reading "Its time is still counted and nothing has been lost", and one click made that sentence false.
+ *
+ * The work timer's equivalent, Reset, has opened a confirm naming the amount since slice C. This is that.
+ */
+describe('CR-03: abandoning a pomodoro says what it costs first', () => {
+    it('names the amount, the way the work timer Reset confirm does', () => {
+        const warning = describeAbandon(snapshot({ status: 'running', elapsedSeconds: 1440 }));
+        expect(warning.title).toBe('Discard 00:24:00?');
+        expect(warning.confirmLabel).toBe('Abandon');
+        expect(warning.destructive).toBe(true);
+    });
+
+    it('says that a held interval was finished and has not been written yet', () => {
+        const held = describeAbandon(snapshot({ status: 'paused', elapsedSeconds: 60, recordingFailed: true }));
+        expect(held.title).toBe('Discard 00:01:00?');
+        expect(held.body).toContain('has not been written');
+        // The banner above the button promises the time is safe; this is what keeps the promise checkable.
+        expect(held.body).toContain('nowhere');
+    });
+
+    it('speaks differently for an interval that is merely in flight', () => {
+        const running = describeAbandon(snapshot({ status: 'running', elapsedSeconds: 60 }));
+        const held = describeAbandon(snapshot({ status: 'paused', elapsedSeconds: 60, recordingFailed: true }));
+        expect(running.body).not.toBe(held.body);
+        expect(running.body).toContain('nowhere');
+    });
+
+    it('asks about nothing it cannot name', () => {
+        expect(describeAbandon(snapshot({ elapsedSeconds: 0 })).title).toBe('Discard 00:00:00?');
+    });
+});
+
+describe('CR-03: the panel routes Abandon through the confirm', () => {
+    const PANEL = 'src/renderer/src/features/timer/components/PomodoroPanel.tsx';
+
+    const attributeText = (rel: string, name: string): string => {
+        const text = read(rel);
+        const source = ts.createSourceFile(rel, text, ts.ScriptTarget.ESNext, true, scriptKindFor(rel));
+        let found = '';
+        const walk = (node: ts.Node): void => {
+            if (ts.isJsxAttribute(node) && node.name.getText() === name && node.initializer !== undefined) {
+                found = node.initializer.getText();
+            }
+            ts.forEachChild(node, walk);
+        };
+        walk(source);
+        return found;
+    };
+
+    it('opens a dialog and only calls the channel on a confirmed answer', () => {
+        const handler = attributeText(PANEL, 'onAbort');
+        expect(handler).not.toBe('');
+        expect(handler).toContain('openDialog');
+        expect(handler).toContain('describeAbandon');
+        expect(handler).toContain('confirmed');
+    });
+
+    it('leaves Skip and the play button alone, because neither discards anything', () => {
+        expect(attributeText(PANEL, 'onSkipBreak')).not.toContain('openDialog');
+        expect(attributeText(PANEL, 'onToggle')).not.toContain('openDialog');
     });
 });

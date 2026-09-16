@@ -14,13 +14,14 @@
 
 import type { ReactElement } from 'react';
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
+import { useUiStore } from '@renderer/store/ui.store';
 import { useSettings } from '@renderer/features/settings';
 import {
     useAbortPomodoro, usePausePomodoro, usePomodoroCounts, usePomodoroSnapshot, useSkipBreak, useStartPomodoro
 } from '../api/usePomodoro';
 import { usePomodoroAutoStart } from '../api/usePomodoroAutoStart';
 import { usePomodoroStore } from '../state/pomodoro.store';
-import { countsLabel, describePomodoroDial } from '../pomodoro-view';
+import { countsLabel, describeAbandon, describePomodoroDial } from '../pomodoro-view';
 import PomodoroControls from './PomodoroControls';
 import TimerDial from './TimerDial';
 
@@ -42,6 +43,7 @@ export default function PomodoroPanel(): ReactElement {
     const snapshot = usePomodoroStore((state) => state.snapshot);
     const counts = usePomodoroCounts();
     const settings = useSettings();
+    const openDialog = useUiStore((state) => state.openDialog);
 
     const start = useStartPomodoro();
     const pause = usePausePomodoro();
@@ -120,7 +122,19 @@ export default function PomodoroPanel(): ReactElement {
                     start.mutate();
                 }}
                 onSkipBreak={() => { autoStart.cancel(); skip.mutate(); }}
-                onAbort={() => { autoStart.cancel(); abort.mutate(); }}
+                /*
+                  * CR-03: the one control here that discards work, and it now says what it costs first - the same
+                  * destructive confirm the work timer's Reset opens, naming the same amount. Nothing is abandoned
+                  * unless the answer was yes, so the red banner above can keep promising the time is safe.
+                  */
+                onAbort={() => {
+                    void openDialog(describeAbandon(snapshot)).then((confirmed) => {
+                        if (confirmed) {
+                            autoStart.cancel();
+                            abort.mutate();
+                        }
+                    });
+                }}
             />
         </>
     );
