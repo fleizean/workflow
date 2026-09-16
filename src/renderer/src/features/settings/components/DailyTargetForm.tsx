@@ -63,7 +63,7 @@ export default function DailyTargetForm(props: DailyTargetFormProps): ReactEleme
                         <span className="material-symbols-outlined text-primary text-3xl">flag</span>
                     </div>
                     <h2 id={titleId} className={TITLE_CLASS}>Daily Target</h2>
-                    <p className={LEAD_CLASS}>Set your daily work hour goal.</p>
+                    <p className={LEAD_CLASS}>Set your daily work hour goal, up to 24:00.</p>
                 </div>
             )}
         >

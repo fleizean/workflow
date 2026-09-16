@@ -303,3 +303,17 @@ describe('WR-04: an unread target is not a default target', () => {
         expect(page).toContain('settings.isError');
     });
 });
+
+/* NT-01: a company with id 0 and no company at all are two different cards. */
+describe('NT-01: the group key tells "no company" from company zero', () => {
+    it('keeps them apart on the same day', () => {
+        const noCompany = session('2026-09-16', 3600, null);
+        const companyZero = session('2026-09-16', 3600, 0);
+        const buckets = buildHistory({
+            sessions: [noCompany, companyZero], companies: COMPANIES, filters: NO_FILTERS,
+            dailyTargetSeconds: TARGET, today: TODAY
+        });
+        expect(buckets.thisWeek, 'both folded into one card labelled "No Company"').toHaveLength(2);
+        expect(new Set(buckets.thisWeek.map((group) => group.key)).size).toBe(2);
+    });
+});

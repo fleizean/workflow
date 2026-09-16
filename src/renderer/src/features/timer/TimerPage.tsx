@@ -13,7 +13,7 @@
  * onto a day the user had forgotten they picked.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { useUiStore } from '@renderer/store/ui.store';
 import { useCompanies } from '@renderer/features/companies';
@@ -93,9 +93,19 @@ export default function TimerPage(): ReactElement {
     // IN-03/WR-06: main counts on today. A dial for any other day is what that day's rows say, and nothing else.
     const showingToday = selectedDate === today;
 
+    /*
+     * IN-02. sessions:list is SELECT * FROM work_sessions with no bound, and this component re-renders on every
+     * timer:tick - so the day total was summed twice and the whole session list filtered, sliced and sorted once
+     * a second, over every session the user has ever recorded. Keyed on the list and the date, all three run when
+     * one of those changes and not when the clock moves.
+     */
+    const rows = sessions.data ?? [];
+    const loggedSeconds = useMemo(() => dayTotalOf(rows, selectedDate), [rows, selectedDate]);
+    const unattributed = useMemo(() => pendingAttributions(rows), [rows]);
+
     const dial = describeWorkDial({
         dailyTargetSeconds: settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds,
-        loggedSeconds: dayTotalOf(sessions.data ?? [], selectedDate),
+        loggedSeconds,
         elapsedSeconds,
         adjustmentSeconds,
         running,
@@ -198,7 +208,6 @@ export default function TimerPage(): ReactElement {
     };
 
     const pending = adjustmentLabel(adjustmentSeconds);
-    const unattributed = pendingAttributions(sessions.data ?? []);
     const attributing = attributionDeferred || dialog !== 'none' ? undefined : unattributed[0];
 
     /*
@@ -231,7 +240,7 @@ export default function TimerPage(): ReactElement {
             <div className="flex flex-1 flex-col gap-4 px-6 pt-4 pb-32">
                 <StatCards
                     dailyTargetSeconds={settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds}
-                    loggedSeconds={dayTotalOf(sessions.data ?? [], selectedDate)}
+                    loggedSeconds={loggedSeconds}
                     streakDays={streak.data?.days ?? 0}
                 />
 

@@ -156,7 +156,10 @@ export function buildHistory(input: HistoryInput): HistoryBuckets {
         if (!matches(session, input, totals)) {
             continue;
         }
-        const key = session.date + '|' + String(session.companyId ?? 0);
+        // NT-01: '|null' rather than '|0'. SQLite AUTOINCREMENT never issues 0, so this needs a hand-inserted
+        // row - but a null-company session and a companyId 0 session folding into one card labelled "No Company"
+        // costs nothing to make impossible.
+        const key = session.date + '|' + (session.companyId === null ? 'null' : String(session.companyId));
         const bucket = grouped.get(key);
         if (bucket === undefined) {
             grouped.set(key, [session]);
