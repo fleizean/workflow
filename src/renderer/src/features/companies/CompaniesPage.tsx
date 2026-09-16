@@ -18,7 +18,7 @@ import type { CompanyValues } from './api/useCompanyMutations';
 import CompanyForm from './components/CompanyForm';
 import CompanyRow from './components/CompanyRow';
 import {
-    DELETE_COUNT_UNKNOWN, countSessionsByCompany, describeCompanyDelete, describeSessionCount, sessionCountFor
+    DELETE_COUNT_UNKNOWN, countSessionsByCompany, describeCompanyDelete, describeCompanyDeleted, sessionCountFor
 } from './session-counts';
 import type { Company } from '@shared/types';
 import FloatingAction from '@renderer/components/ui/FloatingAction';
@@ -93,11 +93,10 @@ export default function CompaniesPage(): ReactElement {
             remove.mutate(company.id, {
                 onSuccess: (result) => {
                     const removed = result.deletedSessionCount;
+                    // WR-03: one condition decides both the colour and the words.
                     pushToast(
                         removed === expected ? 'success' : 'warning',
-                        removed === 0
-                            ? 'Company deleted successfully'
-                            : 'Company deleted, with ' + describeSessionCount(removed)
+                        describeCompanyDeleted(removed, expected)
                     );
                 }
             });

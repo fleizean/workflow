@@ -48,6 +48,20 @@ export const DELETE_COUNT_UNKNOWN =
     'The session list has not loaded, so this delete cannot say what it would take with it. Try again in a moment.';
 
 /*
+ * WR-03. What happened, said by the same condition that colours the toast. The tone was chosen on
+ * `removed === expected` and the wording on `removed === 0`, so a warning quoting three sessions over a cascade
+ * that removed none produced an orange toast reading "Company deleted successfully" - a mismatch in the words of a
+ * success, with neither figure in it.
+ */
+export function describeCompanyDeleted(removed: number, expected: number): string {
+    if (removed !== expected) {
+        return 'Company deleted. It took ' + describeSessionCount(removed) + ', not the ' +
+            describeSessionCount(expected) + ' the warning named.';
+    }
+    return removed === 0 ? 'Company deleted successfully' : 'Company deleted, with ' + describeSessionCount(removed);
+}
+
+/*
  * COMP-05. The delete cascades, so the confirmation has to say what goes with the company - and it has to say it
  * before the call, because the channel can only report the count once the rows are gone. A user who reads
  * "This action cannot be undone" over an unnamed number of work sessions has not been warned about the thing that

@@ -9,7 +9,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    DELETE_COUNT_UNKNOWN, UNKNOWN_SESSION_COUNT, countSessionsByCompany, describeCompanyDelete, describeRowCount,
+    DELETE_COUNT_UNKNOWN, UNKNOWN_SESSION_COUNT, countSessionsByCompany, describeCompanyDelete,
+    describeCompanyDeleted, describeRowCount,
     describeSessionCount, sessionCountFor
 } from '@renderer/features/companies/session-counts';
 import { read } from './helpers/ts-imports';
@@ -126,5 +127,37 @@ describe('BL-03: a count nobody has is not a count of nothing', () => {
         expect(page).toContain('DELETE_COUNT_UNKNOWN');
         // The two `?? 0`s that discarded the distinction. Neither may come back.
         expect(page).not.toContain('counts.get(company.id) ?? 0');
+    });
+});
+
+/*
+ * 08-REVIEW-SCREENS WR-03. The tone was chosen on `removed === expected` and the wording on `removed === 0`, so a
+ * warning that quoted three sessions over a cascade that removed none produced an orange toast reading "Company
+ * deleted successfully" - a mismatch reported with the words of a success, and without the real figure. 08-A and
+ * parity row 83 both claim the toast is "a warning naming the real figure rather than a success"; for that branch
+ * it was neither.
+ */
+describe('WR-03: the delete toast says the same thing its colour does', () => {
+    it('congratulates only when the cascade took what the warning named', () => {
+        expect(describeCompanyDeleted(0, 0)).toBe('Company deleted successfully');
+        expect(describeCompanyDeleted(3, 3)).toContain('3 sessions');
+        expect(describeCompanyDeleted(3, 3)).not.toContain('not the');
+    });
+
+    it('names both figures when they disagree, in either direction', () => {
+        const under = describeCompanyDeleted(0, 3);
+        expect(under).not.toContain('successfully');
+        expect(under).toContain('0 sessions');
+        expect(under).toContain('3 sessions');
+
+        const over = describeCompanyDeleted(5, 3);
+        expect(over).toContain('5 sessions');
+        expect(over).toContain('3 sessions');
+    });
+
+    it('is worded by the same condition that colours it', () => {
+        const page = read('src/renderer/src/features/companies/CompaniesPage.tsx');
+        expect(page).not.toContain('removed === 0');
+        expect(page).toContain('describeCompanyDeleted(removed, expected)');
     });
 });
