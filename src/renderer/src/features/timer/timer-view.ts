@@ -72,6 +72,13 @@ export interface WorkDialInput {
     readonly running: boolean;
     /** Only ever used to name a clock time; never to measure one. */
     readonly nowMs: number;
+    /*
+     * IN-03: whether the counted seconds belong to the day this dial is about. Main counts on today and tracks the
+     * day it counted on separately (timer.service.ts countedDay), so picking Yesterday used to subtract today's
+     * counted seconds from yesterday's target. savableSeconds is unaffected - what may be SAVED does not depend on
+     * which day is on screen - and WR-06's congratulation rides the same gate.
+     */
+    readonly countedOnSelectedDay: boolean;
 }
 
 /*
@@ -122,7 +129,7 @@ function metaLineFor(exceeded: boolean, running: boolean, remainingSeconds: numb
 export function describeWorkDial(input: WorkDialInput): WorkDial {
     const counted = savableSeconds(input.elapsedSeconds, input.adjustmentSeconds);
     const target = input.dailyTargetSeconds > 0 ? input.dailyTargetSeconds : 0;
-    const done = input.loggedSeconds + counted;
+    const done = input.loggedSeconds + (input.countedOnSelectedDay ? counted : 0);
     const remaining = target - done;
     const exceeded = remaining < 0;
     const progressPercent = target > 0 ? (done / target) * PERCENT : 0;
@@ -136,6 +143,35 @@ export function describeWorkDial(input: WorkDialInput): WorkDial {
         meta: metaLineFor(exceeded, input.running, remaining, input.nowMs),
         goalMet: target > 0 && done >= target,
         savableSeconds: counted
+    };
+}
+
+/*
+ * WR-03. The confirm used to name `savableSeconds` - the accumulator plus the pending correction - while
+ * `timer:reset` discards the accumulator, which the correction has never touched. That is the whole point of the
+ * Adjust redesign, and it made the dialog understate the loss whenever the correction was negative: -30 min with
+ * two hours counted offered to discard 90 minutes of the 120 it took.
+ */
+export interface ResetConfirm {
+    readonly tone: 'error';
+    readonly icon: string;
+    readonly title: string;
+    readonly body: string;
+    readonly dismissLabel: string;
+    readonly confirmLabel: string;
+    readonly destructive: true;
+}
+
+export function describeResetConfirm(elapsedSeconds: number): ResetConfirm {
+    return {
+        tone: 'error',
+        icon: 'restart_alt',
+        title: 'Discard ' + formatElapsed(elapsedSeconds) + '?',
+        body: 'This time has not been saved as a session. Discarding it records it nowhere, and it cannot be ' +
+            'brought back. To keep it, cancel and use Save instead.',
+        dismissLabel: 'Cancel',
+        confirmLabel: 'Discard',
+        destructive: true
     };
 }
 

@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import {
     RING_CIRCUMFERENCE, adjustmentLabel, dayTotalOf, describeWorkDial, dialDigits, headerDateLabel, ringOffsetFor,
-    ringToneFor, savableSeconds, streakLabel, streakTierOf
+    describeResetConfirm, ringToneFor, savableSeconds, streakLabel, streakTierOf
 } from '@renderer/features/timer/timer-view';
 import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
 import { read, scriptKindFor } from './helpers/ts-imports';
@@ -47,6 +47,7 @@ const dial = (over: Partial<Parameters<typeof describeWorkDial>[0]>): ReturnType
         adjustmentSeconds: 0,
         running: false,
         nowMs: NOON_MS,
+        countedOnSelectedDay: true,
         ...over
     });
 
@@ -227,5 +228,72 @@ describe('CR-01: the save form does not freeze the counted value at mount', () =
 
     it('reads the counted value during render instead, so the seed follows the clock', () => {
         expect(read(SAVE_FORM)).toContain('seedDuration(countedSeconds)');
+    });
+});
+
+/*
+ * 08-REVIEW-TIMER WR-03. The reset confirm named `dial.savableSeconds` - elapsed plus the pending correction -
+ * while `timer:reset` discards the ACCUMULATOR, which the correction has never touched. That is the whole point of
+ * the Adjust redesign, and it means a negative pending correction made the confirm understate the loss: press
+ * -30 min with two hours counted, then Reset, and the dialog offered to discard 90 minutes of the 120 it took.
+ */
+describe('WR-03: the reset confirm names what reset actually discards', () => {
+    it('names the accumulator, not the corrected duration a save would write', () => {
+        expect(describeResetConfirm(7200).title).toBe('Discard 02:00:00?');
+        expect(savableSeconds(7200, -1800), 'the control: a save would have written this instead').toBe(5400);
+    });
+
+    it('still says it cannot be brought back, and offers Save as the way to keep it', () => {
+        const confirm = describeResetConfirm(7200);
+        expect(confirm.body.toLowerCase()).toContain('cannot be brought back');
+        expect(confirm.body).toContain('Save');
+        expect(confirm.destructive).toBe(true);
+        expect(confirm.confirmLabel).toBe('Discard');
+    });
+
+    it('is what the screen asks with, and the correction does not outlive the mode it was made in', () => {
+        const page = read('src/renderer/src/features/timer/TimerPage.tsx');
+        expect(page).toContain('describeResetConfirm(elapsedSeconds)');
+        expect(page, 'the confirm named a number reset does not touch')
+            .not.toContain('formatElapsed(dial.savableSeconds)');
+        // A correction made on the work dial is invisible in pomodoro mode, so it may not survive the toggle.
+        expect(page).toContain('setAdjustmentSeconds(0)');
+        expect(page).toContain('}, [mode]);');
+    });
+});
+
+/*
+ * 08-REVIEW-TIMER WR-06 and IN-03, which are one gate.
+ *
+ * `loggedSeconds` is the SELECTED day's recorded total and `counted` is whatever main is holding, and main counts
+ * on today (timer.service.ts tracks countedDay separately so a run across midnight starts the new day at zero).
+ * Blending them meant picking Yesterday while the timer ran subtracted today's counted seconds from yesterday's
+ * target - and the congratulation that fires on the false-to-true transition then opened over a past date, saying
+ * "You have worked your target for today."
+ */
+describe('WR-06 / IN-03: a day that is not today is measured by what is on disk for it', () => {
+    it('leaves the counted seconds out of another day dial', () => {
+        const other = dial({ loggedSeconds: 3 * HOUR, elapsedSeconds: HOUR, countedOnSelectedDay: false });
+        expect(other.digits, 'today counted seconds were subtracted from another day target')
+            .toEqual(['05', '00', '00']);
+        expect(other.goalMet).toBe(false);
+    });
+
+    it('still reports what a save would write, because that does not depend on the day on screen', () => {
+        const other = dial({ elapsedSeconds: HOUR, adjustmentSeconds: 1800, countedOnSelectedDay: false });
+        expect(other.savableSeconds).toBe(HOUR + 1800);
+    });
+
+    it('counts them for today, which is the case it was always right for', () => {
+        expect(dial({ loggedSeconds: 3 * HOUR, elapsedSeconds: HOUR, countedOnSelectedDay: true }).digits)
+            .toEqual(['04', '00', '00']);
+    });
+
+    it('would not congratulate a past day, and forgets the transition when the date changes', () => {
+        const page = read('src/renderer/src/features/timer/TimerPage.tsx');
+        expect(page).toContain('countedOnSelectedDay');
+        expect(page).toContain('selectedDate === today');
+        // A date change is not a transition: without this, going back to Today re-arms the congratulation.
+        expect(page).toContain('goalWas.current = null;');
     });
 });

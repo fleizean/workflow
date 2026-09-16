@@ -40,7 +40,7 @@ import SaveSessionForm from './components/SaveSessionForm';
 import StatCards from './components/StatCards';
 import TimerControls from './components/TimerControls';
 import TimerDial from './components/TimerDial';
-import { adjustmentLabel, dayTotalOf, describeWorkDial } from './timer-view';
+import { adjustmentLabel, dayTotalOf, describeResetConfirm, describeWorkDial } from './timer-view';
 import { pendingAttributions } from './pomodoro-view';
 
 type OpenDialog = 'none' | 'date' | 'adjust' | 'save' | 'restore';
@@ -90,6 +90,9 @@ export default function TimerPage(): ReactElement {
     const mode = snapshot?.mode ?? 'work';
     const restored = snapshot?.restoredFromPreviousLaunch === true && elapsedSeconds > 0;
 
+    // IN-03/WR-06: main counts on today. A dial for any other day is what that day's rows say, and nothing else.
+    const showingToday = selectedDate === today;
+
     const dial = describeWorkDial({
         dailyTargetSeconds: settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds,
         loggedSeconds: dayTotalOf(sessions.data ?? [], selectedDate),
@@ -97,8 +100,16 @@ export default function TimerPage(): ReactElement {
         adjustmentSeconds,
         running,
         // Only ever used to NAME the clock time the target would be reached at; never to measure one.
-        nowMs: Date.now()
+        nowMs: Date.now(),
+        countedOnSelectedDay: showingToday
     });
+
+    /*
+     * WR-03: a correction made on the work dial is not on screen in pomodoro mode - the Adjust dialog is gone and
+     * the pill under the ring goes with it - but this component does not unmount on a mode change, so the pending
+     * value survived it invisibly, and the restore banner's Discard then named a number nobody could see.
+     */
+    useEffect(() => { setAdjustmentSeconds(0); }, [mode]);
 
     /*
      * The restore prompt is raised once per mount, when the flag first arrives. It is not raised again if the user
@@ -121,6 +132,16 @@ export default function TimerPage(): ReactElement {
     const goalWas = useRef<boolean | null>(null);
     const ready = settings.isSuccess && sessions.isSuccess;
     useEffect(() => {
+        /*
+         * WR-06: the effect fires on a false-to-true transition, and `goalMet` is measured against whatever day the
+         * header's picker last chose. Looking at Yesterday to check what was logged used to raise a success dialog
+         * saying "You have worked your target for today", and choosing Today again re-armed it. A date change is
+         * not a transition, so the remembered answer goes with the date.
+         */
+        if (!showingToday) {
+            goalWas.current = null;
+            return;
+        }
         if (!ready) {
             return;
         }
@@ -135,7 +156,7 @@ export default function TimerPage(): ReactElement {
                 dismissLabel: 'Great'
             });
         }
-    }, [ready, dial.goalMet, openDialog]);
+    }, [showingToday, ready, dial.goalMet, openDialog]);
 
     const close = (): void => { setDialog('none'); };
 
@@ -153,16 +174,8 @@ export default function TimerPage(): ReactElement {
      * is, and quitting restores it paused on the next launch (features/shell/quit-dialog.ts says so too).
      */
     const confirmReset = (): void => {
-        void openDialog({
-            tone: 'error',
-            icon: 'restart_alt',
-            title: 'Discard ' + formatElapsed(dial.savableSeconds) + '?',
-            body: 'This time has not been saved as a session. Discarding it records it nowhere, and it cannot be ' +
-                'brought back. To keep it, cancel and use Save instead.',
-            dismissLabel: 'Cancel',
-            confirmLabel: 'Discard',
-            destructive: true
-        }).then((confirmed) => {
+        // WR-03: the accumulator is what reset discards, and the pending correction has never touched it.
+        void openDialog(describeResetConfirm(elapsedSeconds)).then((confirmed) => {
             if (confirmed) {
                 reset.mutate(undefined, {
                     onSuccess: () => {
