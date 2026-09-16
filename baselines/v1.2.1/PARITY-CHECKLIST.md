@@ -11,6 +11,7 @@
 | Captured on | 2026-09-06 |
 | Source of truth | `src/**/*.{html,js}`, `preload.js`, `main.js` — source text only. No database was opened and the application was not launched. |
 | Moved 2026-09-13 | Phase 7 moved the v1.2.1 renderer from `src/pages/` and `src/renderer/*.js` to `legacy/pages/` and `legacy/renderer/`, and `src/styles/` to `legacy/styles/`. Every `src/…` citation below names the file as v1.2.1 shipped it; read it at its `legacy/…` path in this tree. The counts are unchanged — the four deleted page fragments contributed none of them. |
+| Deleted 2026-09-16 | Slice 08-F deleted `legacy/`, `main.js`, `preload.js` and `database/db.js` (SPA-14). Every `src/…` and `legacy/…` citation in this document still resolves - git has the files. `MANIFEST.md` section 5 has the one-line recipe for reading any of them, and the table of what each guard that pinned them reads now. The counts below were regenerated from git history after the deletion and are byte-identical. |
 
 | Count | Value | Artifact |
 |---|---|---|

@@ -37,7 +37,6 @@ const DATE_BANS = [
     'ObjectPattern > Property[key.name=/^(toISOString|toJSON|getUTCFullYear|getUTCMonth|getUTCDate|getUTCDay)$/]',
     "VariableDeclarator[init.name='Date'] > ObjectPattern > Property[key.name='parse']"
 ].map((selector) => ({ selector, message: DATE_MESSAGE }));
-const LEGACY_DATE_EXEMPT = ['main.js', 'database/db.js'];
 
 const PROCESS_ENV = { object: 'process', property: 'env', message: 'Read configuration from src/main/config.ts (D-23).' };
 const PROCESS_ARGV = { object: 'process', property: 'argv', message: 'Read launch flags from src/main/config.ts (D-23).' };
@@ -461,9 +460,6 @@ module.exports = [
             '.claude/**', '.gsd/**', '.planning/**'
         ]
     },
-    // EXPIRES IN PHASE 8: the retired v1.2.1 tree, kept until SPA-14 signs off parity and deletes it
-    // (tests/lint-coverage.test.ts tripwires it).
-    { ignores: ['legacy/**'] },
     { linterOptions: { reportUnusedDisableDirectives: 'error' } },
     js.configs.recommended,
     {
@@ -553,14 +549,6 @@ module.exports = [
         files: ['src/shared/utils/date.ts'],
         rules: {
             'no-restricted-syntax': ['error', CUSTODY_03, ...SQL_BANS]
-        }
-    },
-    // The two v1.2.1 files still at the repository root: they hold the SQL this milestone replaces, so they sit
-    // outside the SQL bans too. Phase 8 retires them with the rest of the legacy tree.
-    {
-        files: LEGACY_DATE_EXEMPT,
-        rules: {
-            'no-restricted-syntax': ['error', CUSTODY_03]
         }
     },
     {

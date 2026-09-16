@@ -17,6 +17,7 @@ import * as schema from '../src/lib/db/schema';
 import { executeV121Init } from './helpers/v121-sql';
 import { declaredContract, liveContract } from './helpers/schema-contract';
 import { read, repoRoot, stripCommentsAndStrings } from './helpers/ts-imports';
+import { readV121 } from './helpers/v121-source';
 
 // The names the v2 app surface gave the export. None may appear at all, comments included: nothing in src/shared,
 // src/main or src/lib has any reason to say them now.
@@ -41,7 +42,11 @@ const MIGRATION_RETIREMENT = 'src/lib/db/migrations/0002_sheets_retirement.sql';
 const SURVIVING_COMPANY_COLUMNS = ['id', 'name', 'created_at', 'updated_at', 'note_required'];
 const RETIRED_SETTINGS = ['script_url', 'export_half_hour_precision'];
 
-// Frozen until SPA-14 (D-01/D-04) and expected to keep every reference.
+/*
+ * The control: the scan must be able to FIND the export surface, or it could be passing because it
+ * looks nowhere. SPA-14 deleted all four in 08-F, so readV121() reads them out of the commit that
+ * last carried them - the same claim about the same bytes, read from history instead of the worktree.
+ */
 const LEGACY_FILES = ['main.js', 'database/db.js', 'legacy/pages/settings.html', 'legacy/pages/companies.html'];
 
 const COMPANY = { name: 'Northwind Fixture', excelColumn: 'D', noteColumn: 'E' };
@@ -104,7 +109,7 @@ function inCodeAndStrings(file: string, names: readonly string[]): string[] {
 }
 
 const inWholeText = (file: string, names: readonly string[]): string[] => {
-    const source = read(file);
+    const source = readV121(file);
     return occurrences(file, source, source, names).sort();
 };
 

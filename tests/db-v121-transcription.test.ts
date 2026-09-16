@@ -18,19 +18,24 @@ import {
     executeV121Init,
     runV121Downgrade
 } from './helpers/v121-sql';
+import { historyAvailable, readV121 } from './helpers/v121-source';
 import type { V121DowngradeResult } from './helpers/v121-sql';
 
 const SHAPE_IDS: readonly LegacyShapeId[] = ['A', 'B', 'C'];
-const DB_JS = path.join(repoRoot, 'database', 'db.js');
+const DB_JS = 'database/db.js';
 const REAL_SCHEMA = path.join(repoRoot, 'tests', 'fixtures', 'v121-real-schema.sql');
 const DB_METHODS: readonly string[] = ['exec', 'prepare', 'pragma'];
 const TODAY = '2026-01-05';
 
-// D-13/D-26: when Phase 7 deletes db.js the comparison cannot run, and a SHA-256 pin must replace it.
-const PHASE_7_NOTE =
-    'database/db.js is absent, so the transcription can no longer be pinned to its source. Phase 7 must ' +
-    'replace this comparison with a SHA-256 pin of tests/helpers/v121-sql.ts in the same change that ' +
-    'deletes the file (D-13, D-26).';
+/*
+ * D-13/D-26. SPA-14 deleted database/db.js in 08-F, so this no longer reads the worktree - readV121()
+ * takes the blob out of the last commit that carried it, which keeps the AST pin at full strength
+ * rather than degrading it to the SHA-256 pin the Phase 7 note proposed. A shallow clone can reach
+ * neither, and then this SKIPS rather than passes.
+ */
+const NO_SOURCE =
+    'database/db.js is neither in the worktree nor reachable in git history, so the transcription ' +
+    'cannot be pinned to its source. On a shallow clone, fetch the full history (D-13, D-26).';
 
 const tempDirs: string[] = [];
 
@@ -49,7 +54,7 @@ afterAll(() => {
 });
 
 function parseDbJs(): ts.SourceFile {
-    const source = fs.readFileSync(DB_JS, 'utf8');
+    const source = readV121(DB_JS);
     return ts.createSourceFile('db.js', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
 }
 
@@ -117,13 +122,13 @@ function downgrade(dbPath: string): V121DowngradeResult {
 
 describe('D-26: the transcription is pinned to database/db.js', () => {
     it('holds exactly the statements db.js executes, as a multiset', () => {
-        expect(fs.existsSync(DB_JS), PHASE_7_NOTE).toBe(true);
+        expect(historyAvailable(), NO_SOURCE).toBe(true);
         // Sorted: db.js repeats two texts verbatim (the Unassigned SELECT, the week-total SELECT).
         expect([...transcribed()].sort()).toEqual([...dbJsLiterals()].sort());
     });
 
     it('holds the 13 raw default settings in db.js order', () => {
-        expect(fs.existsSync(DB_JS), PHASE_7_NOTE).toBe(true);
+        expect(historyAvailable(), NO_SOURCE).toBe(true);
         const settings = dbJsDefaultSettings();
         expect(settings).toHaveLength(13);
         expect(V121_DEFAULT_SETTINGS).toEqual(settings);

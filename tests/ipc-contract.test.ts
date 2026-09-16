@@ -15,6 +15,7 @@ import type { Company, PomodoroSession, Settings, WorkSession } from '@shared/ty
 import { isLocalDate } from '@shared/utils/date';
 import type { LocalDate } from '@shared/utils/date';
 import { findAll, read, repoRoot, stripCommentsAndStrings } from './helpers/ts-imports';
+import { readV121 } from './helpers/v121-source';
 
 const CHANNELS = [
     'sessions:list', 'sessions:listByDateRange', 'sessions:listByDateAndCompany', 'sessions:create', 'sessions:update',
@@ -153,7 +154,7 @@ const snakeCaseStrings = (file: string, source: string): string[] =>
         .map((s) => file + ' ' + JSON.stringify(s.value));
 
 function v121SettingSeeds(): Map<string, string> {
-    const source = read('database/db.js');
+    const source = readV121('database/db.js');
     const start = source.indexOf('const defaultSettings = {');
     const end = source.indexOf('};', start);
     if (start < 0 || end < 0) throw new Error('database/db.js: the defaultSettings block moved; teach this test its shape');

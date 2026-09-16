@@ -93,18 +93,17 @@ interface ExpiringExclusion {
 
 /*
  * The expiring exclusions: directories of repository-authored code that lint deliberately does not
- * reach, each bound to the phase that deletes it. There is exactly one. A second is a second
- * silent exclusion in the making, and has to be argued for by editing the exactly-one assertion
- * below in review - not slipped in here.
+ * reach, each bound to the phase that deletes it.
+ *
+ * THE LIST IS EMPTY, and that is the tripwire below having fired as designed. Its one entry was the
+ * retired v1.2.1 renderer under legacy/, which SPA-14 deleted in 08-F; the ignore entry came out of
+ * eslint.config.js in the same commit rather than staying behind as a rule about nothing that the next
+ * directory of that name would inherit. Every line of repository-authored code is linted.
+ *
+ * A new entry is a new directory of repository code that lint does not read. It has to be argued for by
+ * editing the assertion below in review, not slipped in here.
  */
-const EXPIRING_EXCLUSIONS: ExpiringExclusion[] = [
-    {
-        dir: 'legacy',
-        expires: 'Phase 8',
-        why: 'the retired v1.2.1 renderer, whose inline-script defects are catalogued as B1-B13. Phase 7 moved it ' +
-            'out of src/ and out of the build; SPA-14 deletes it once the parity checklist is ticked (D-01, D-04)'
-    }
-];
+const EXPIRING_EXCLUSIONS: ExpiringExclusion[] = [];
 
 /*
  * Third-party bytes the repository carries but does not author: the Tailwind Play CDN script and
@@ -181,9 +180,7 @@ interface DateExemption {
 
 // Rule-level exemptions from the date bans (D-13), kept apart from EXPIRING_EXCLUSIONS, which lists ignored code.
 const DATE_EXEMPTIONS: Record<string, DateExemption> = {
-    'src/shared/utils/date.ts': { expires: 'permanent', why: 'the sanctioned home of the date constructs (D-05)' },
-    'main.js': { expires: 'Phase 8', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' },
-    'database/db.js': { expires: 'Phase 8', why: 'legacy v1.2.1 file that Phase 2 D-01 forbids editing' }
+    'src/shared/utils/date.ts': { expires: 'permanent', why: 'the sanctioned home of the date constructs (D-05)' }
 };
 
 const isDateExempt = (file: string): boolean => Object.hasOwn(DATE_EXEMPTIONS, file);
@@ -374,12 +371,12 @@ describe('BUILD-13 / D-04: lint reaches every source file this repository owns',
 });
 
 describe('D-04: the one remaining exclusion expires with its subject', () => {
-    it('has exactly one expiring exclusion', () => {
+    it('has no expiring exclusion left', () => {
         expect(
             EXPIRING_EXCLUSIONS.map((ex) => ex.dir),
-            'The expiring-exclusion list must hold exactly one entry, legacy. A second entry ' +
-            'is a second directory of repository code that lint does not read.'
-        ).toEqual(['legacy']);
+            'The expiring-exclusion list is empty since SPA-14 deleted legacy/. A new entry is a ' +
+            'directory of repository code that lint does not read, and needs arguing for here.'
+        ).toEqual([]);
     });
 
     /*
@@ -421,7 +418,7 @@ describe('the rules the rewrite must not lose', () => {
      * list that bans nothing still resolves at error. So the representative files are checked for
      * what the rules actually ban, on both halves of the tree.
      */
-    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/baseline/archive-real-db.mjs', 'database/db.js'];
+    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/baseline/archive-real-db.mjs', 'eslint.config.js'];
 
     it.each(REPRESENTATIVE)('CUSTODY-02 and CUSTODY-03 resolve, with their bans intact, for %s', async (file) => {
         const properties = await ruleEntry(file, 'no-restricted-properties');

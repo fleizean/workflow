@@ -395,3 +395,69 @@ style, not by pixels.
   nothing, because no name of any kind is recorded.
 - Every string rendered in the PNGs traces to `tools/baseline/seed-baseline-db.mjs`, and four
   screenshots spanning both extremes of the size matrix were reviewed directly.
+
+---
+
+## 5. The v1.2.1 source after SPA-14 (added by slice 08-F)
+
+Phase 8 slice F deleted the last of the v1.2.1 tree: `legacy/` (the renderer Phase 7 moved out of
+`src/`), and `main.js`, `preload.js` and `database/db.js`, which had stayed at the repository root
+because five guards pinned them by path. **Every citation of those paths in this repository — in
+this manifest, in `PARITY-CHECKLIST.md`, and in the comments throughout `src/` that name a file and
+a line number — still resolves.** Git has the files; only the worktree does not.
+
+### Reading any of them
+
+The commit to read from is not written down here, because a written-down SHA goes stale the moment
+anything is rebased. Ask git for it instead — `--diff-filter=d` drops the deletion itself, so `-1`
+lands on the last commit whose tree carried the path:
+
+```bash
+# One file, at the last commit that had it.
+git show "$(git log --format=%H --diff-filter=d -1 -- legacy):legacy/pages/index.html"
+git show "$(git log --format=%H --diff-filter=d -1 -- main.js):main.js"
+git show "$(git log --format=%H --diff-filter=d -1 -- database/db.js):database/db.js"
+
+# The whole v1.2.1 renderer into a directory, to grep or to read side by side.
+git archive "$(git log --format=%H --diff-filter=d -1 -- legacy)" legacy preload.js main.js \
+  | tar -x -C /some/scratch/dir
+```
+
+`tests/helpers/v121-source.ts` is the same resolution in TypeScript (`readV121`, `listV121`), and
+`tools/baseline/inventory.sh` uses the `git archive` form above when `legacy/` is not on disk.
+
+### What each guard does now, and why none of them was weakened
+
+Four of the five protect the Core Value, so none was retired. Every one reads the same bytes it read
+before; only the source changed from the worktree to git.
+
+| Guard | Pinned | Now |
+|---|---|---|
+| `tests/db-v121-transcription.test.ts` — the v1.2.1 SQL transcription, pinned to its source by AST (D-13, D-26) | `database/db.js` | reads it through `readV121`. **Unchanged strength.** The Phase 7 note proposed degrading this to a SHA-256 pin of the transcription; that was not needed. On a shallow clone it now *skips* rather than passes. |
+| `tests/db-legacy-shapes.test.ts` — the git-history shape walk (D-14) | `database/db.js` | **untouched.** It already read every historical blob with `git cat-file`, and `--diff-filter=d` excludes the deletion commit, so it enumerates exactly the same commits. |
+| `tests/inventory.test.ts` — the CUSTODY-09 behaviour inventory, which is what authorises this deletion | `legacy/**`, `preload.js`, `main.js` | reads them through `listV121` / `readV121`. **Unchanged strength:** it still *recomputes* all five counts from the v1.2.1 source and still diffs the committed artifacts against the recomputation. Repointing it at those artifacts instead would have been a test that compares a file with itself. |
+| `tests/ipc-parity.test.ts` — the IPC parity map | `baselines/v1.2.1/preload-surface.txt`, `ipc-channels.txt` | **untouched.** It already read the committed artifacts, and greps only the v2 tree. |
+| `tests/sheets-retirement.test.ts` — the Sheets retirement scan's *control* | `main.js`, `database/db.js`, two `legacy/pages/*.html` | reads them through `readV121`. The control matters: without it the scan could pass because it looks nowhere. |
+| `tests/ipc-contract.test.ts` — D-20, the setting defaults | `database/db.js` | reads it through `readV121`. Not one of the five Phase 7 named, and it protects the Core Value too: a drifted default silently changes a user's daily target. |
+
+`tests/packaging.test.ts` keeps its `legacy/`, `main.js`, `preload.js` and `database/` deny rules.
+They match synthetic paths rather than the filesystem, so they still run — and a rule that would
+catch the files if they ever came back is worth more than one retired for tidiness.
+
+### Proof, rather than the claim
+
+Run after the deletion, with no `legacy/` on disk:
+
+```
+$ bash tools/baseline/inventory.sh
+inventory.sh: reading the v1.2.1 source from 7d70f55 (deleted by SPA-14)
+handler_sites=106
+api_names=21
+api_call_sites=67
+preload_apis=25
+ipc_channels=25
+```
+
+The five counts are the pinned ones, and the four regenerated artifacts are **byte-identical** to
+the committed ones — `git status` reports nothing under `baselines/`. The inventory did not survive
+the deletion in name only.

@@ -50,8 +50,31 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 
-OUT="baselines/v1.2.1"
+OUT="$ROOT/baselines/v1.2.1"
 mkdir -p "$OUT"
+
+# SPA-14 (08-F) deleted legacy/, preload.js and main.js. This generator is what makes the four
+# artifacts REGENERABLE rather than frozen, and tests/inventory.test.ts recomputes the same counts
+# and diffs them - so it has to keep having something to read. Git still has the files, so when the
+# worktree does not, the last commit that carried them is materialised into a temp directory with the
+# SAME relative paths (handlers.tsv and api-calls.tsv record paths, so anywhere else would change the
+# artifact) and the scan runs there.
+SCAN="$ROOT"
+TMP=""
+if [ ! -d "$ROOT/legacy" ]; then
+    SHA="$(git -C "$ROOT" log --format=%H --diff-filter=d -1 -- legacy)"
+    if [ -z "$SHA" ]; then
+        echo "inventory.sh: legacy/ is neither in the worktree nor in git history." >&2
+        echo "On a shallow clone, fetch the full history: git fetch --unshallow" >&2
+        exit 2
+    fi
+    TMP="$(mktemp -d)"
+    trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT
+    git -C "$ROOT" archive "$SHA" legacy preload.js main.js | tar -x -C "$TMP"
+    SCAN="$TMP"
+    echo "inventory.sh: reading the v1.2.1 source from $SHA (deleted by SPA-14)" >&2
+fi
+cd "$SCAN"
 
 # grep -rn emits "<file>:<line>:<text>". File paths here contain no colon, so the
 # first two fields split unambiguously. The trailing [[:space:]]* trims the source

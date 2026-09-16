@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LEGACY_TREE, listV121, readV121 } from './helpers/v121-source';
 
 /*
  * Why these numbers are load-bearing.
@@ -57,7 +58,6 @@ const WINDOW_API_PREFIX = 'window.api.';
 
 // Where Phase 7 put the v1.2.1 renderer. The inventory records what v1.2.1 did, so it follows that code rather
 // than staying pointed at src/, which now holds the v2 tree.
-const LEGACY_TREE = 'legacy';
 
 // Mirrors of the generator's greps.
 //   grep -o "addEventListener"
@@ -69,19 +69,18 @@ const WINDOW_API_RE = /window\.api\.[A-Za-z0-9_]*/g;
 const PRELOAD_PROPERTY_RE = /^ {4}[A-Za-z0-9_]*:/gm;
 const IPC_CHANNEL_RE = /ipcMain\.(?:handle|on)\('([^']*)'/g;
 
-// grep -r --include=*.html --include=*.js legacy/
-const collectSources = (dir: string): string[] => {
-    const found: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) {
-            found.push(...collectSources(full));
-        } else if (entry.isFile() && (entry.name.endsWith('.html') || entry.name.endsWith('.js'))) {
-            found.push(full);
-        }
-    }
-    return found.sort();
-};
+/*
+ * grep -r --include=*.html --include=*.js legacy/ - over the v1.2.1 renderer WHEREVER IT LIVES.
+ *
+ * SPA-14 deleted it in 08-F. Repointing this file at baselines/v1.2.1/*.tsv would have destroyed the
+ * whole point of it: those artifacts are what the counts are compared AGAINST, and a test that reads
+ * the artifact and compares it with the artifact proves nothing at all. listV121/readV121 take the
+ * bytes out of the commit that last carried them instead, so every count below is still RECOMPUTED
+ * from the v1.2.1 source and still diffed against the committed artifact - which is exactly what makes
+ * a stale artifact impossible to mistake for an authoritative one.
+ */
+const collectSources = (dir: string): string[] =>
+    listV121(dir).filter((file) => file.endsWith('.html') || file.endsWith('.js'));
 
 const readRepoFile = (rel: string): string => fs.readFileSync(path.join(repoRoot, rel), 'utf8');
 
@@ -90,10 +89,10 @@ const readRepoFile = (rel: string): string => fs.readFileSync(path.join(repoRoot
 const readArtifactLines = (rel: string): string[] =>
     readRepoFile(rel).split(/\r?\n/).filter((line) => line !== '');
 
-const rendererFiles = collectSources(path.join(repoRoot, LEGACY_TREE));
-const rendererText = rendererFiles.map((f) => fs.readFileSync(f, 'utf8')).join('\n');
-const preloadSource = readRepoFile('preload.js');
-const mainSource = readRepoFile('main.js');
+const rendererFiles = collectSources(LEGACY_TREE);
+const rendererText = rendererFiles.map((file) => readV121(file)).join(String.fromCharCode(10));
+const preloadSource = readV121('preload.js');
+const mainSource = readV121('main.js');
 
 const countMatches = (text: string, pattern: RegExp): number => (text.match(pattern) ?? []).length;
 
