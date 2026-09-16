@@ -1,7 +1,15 @@
 /* All @import statements must come first. */
 @import "tailwindcss" source(none);
 @import "@fontsource-variable/inter/index.css";
-@import "material-symbols/outlined.css";
+/*
+ * layer(base) is load-bearing. material-symbols/outlined.css declares
+ * `.material-symbols-outlined { font-size: 24px; line-height: 1; letter-spacing: normal }`, and an UNLAYERED
+ * rule beats every layered one - so imported bare it outranked Tailwind's utilities layer and every icon in
+ * the app rendered at 24px whatever size its class asked for: the 48px streak glyph at half size, the 12px and
+ * 14px list glyphs at nearly double. The Play CDN generated its utilities after the Google Fonts @import, so
+ * v1.2.1 never had this. Found by the Phase 1 computed-style baselines, which is what they are for.
+ */
+@import "material-symbols/outlined.css" layer(base);
 
 /*
  * src/renderer/src/styles/globals.css - the renderer's one stylesheet, compiled at build time.

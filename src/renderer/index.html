@@ -20,7 +20,17 @@
         />
         <title>Workflow</title>
     </head>
-    <body>
+    <!--
+        The classes v1.2.1 carried on <body> (legacy/pages/*.html). They are here rather than only on AppShell
+        because #modal-root is a SIBLING of #root: every dialog portals outside the shell, so a font, a text
+        colour or an antialiasing setting applied to the shell alone never reaches one. Every modal in the app
+        was rendering in Chromium's default font.
+
+        selection: v1.2.1 wrote `selection:bg-primary/30` on three pages and `selection:bg-primary
+        selection:text-white` on index. One document now, so it is one value; the majority spelling is kept,
+        because per-page selection colours read as an inconsistency once the pages are one screen apart.
+    -->
+    <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased selection:bg-primary/30">
         <div id="root"></div>
         <!--
             Where components/ui/Modal renders. After #root on purpose: v1.2.1 appended its bottom navigation and

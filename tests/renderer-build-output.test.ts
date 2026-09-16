@@ -85,6 +85,33 @@ const walk = (absDir: string): string[] => {
 const stripHtmlComments = (html: string): string => html.replace(/<!--[\s\S]*?-->/g, '');
 const stripCssComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
+/*
+ * The name of the @layer block enclosing a position in a stylesheet, or null when it is unlayered.
+ * Unlayered beats layered in the cascade, which is the whole point of the assertion that uses it.
+ */
+const enclosingLayer = (css: string, at: number): string | null => {
+    const open: (string | null)[] = [];
+    for (let i = 0; i < at; i += 1) {
+        if (css[i] === '{') {
+            const head = css.slice(Math.max(0, i - 120), i);
+            const layer = /@layer\s+([A-Za-z0-9_-]+)\s*$/.exec(head);
+            open.push(layer === null ? null : layer[1] ?? null);
+        } else if (css[i] === '}') {
+            open.pop();
+        }
+    }
+    for (let i = open.length - 1; i >= 0; i -= 1) {
+        const name = open[i];
+        if (name !== undefined && name !== null) return name;
+    }
+    return null;
+};
+
+/* What v1.2.1 wrote on <body>, and what #modal-root has no other way to inherit. */
+const BODY_CLASSES = [
+    'dark:bg-background-dark', 'font-display', 'dark:text-white', 'antialiased', 'selection:bg-primary/30'
+];
+
 /** The content attribute of every Content-Security-Policy meta element outside a comment. */
 const cspMetaContents = (html: string): string[] => {
     const contents: string[] = [];
@@ -315,6 +342,65 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
                 .toContain('@keyframes ' + frames);
         }
     });
+
+    /*
+     * 08-F, found by the Phase 1 computed-style baselines. material-symbols/outlined.css declares
+     * `.material-symbols-outlined { font-size: 24px; line-height: 1; letter-spacing: normal }`. An UNLAYERED rule
+     * outranks every rule in a cascade layer, so while globals.css imported it bare it beat Tailwind's utilities
+     * layer and EVERY icon in the app rendered at 24px whatever its class said - the 48px streak glyph at half
+     * size, the 12px and 14px list glyphs at nearly double. v1.2.1 never had this: the Play CDN generated its
+     * utilities after the Google Fonts @import, so the utility won on order.
+     *
+     * The compat test compiles the classes and proves the CSS is emitted; that is a different claim from the CSS
+     * winning. This asserts the layer, which is the thing that decides.
+     */
+    it('the icon stylesheet is imported into a layer, so a size utility still wins', () => {
+        const sheets = emittedWith('.css').map(read);
+        const css = sheets.join('\n');
+        expect(css, 'the icon class is not in the emitted CSS at all').toContain('.material-symbols-outlined');
+
+        for (const sheet of sheets) {
+            const at = sheet.indexOf('.material-symbols-outlined {');
+            if (at === -1) continue;
+            const layer = enclosingLayer(sheet, at);
+            expect(
+                layer,
+                'the .material-symbols-outlined rule is ' +
+                (layer === null ? 'UNLAYERED' : 'in @layer ' + layer) +
+                ', so it outranks Tailwind\'s utilities and every icon renders at its 24px default. ' +
+                'Import it as `@import "material-symbols/outlined.css" layer(base);`'
+            ).toBe('base');
+        }
+
+        /* A negative control: the reader must be able to see the check fail on the shape it is looking for. */
+        expect(enclosingLayer('.material-symbols-outlined { font-size: 24px }', 0)).toBe(null);
+        expect(enclosingLayer('@layer utilities { .material-symbols-outlined { font-size: 24px } }', 18)).toBe('utilities');
+
+        /* And the utilities it has to beat are actually emitted - otherwise the layer claim is vacuous. */
+        for (const size of ['28px', '22px', '18px', '12px', '10px']) {
+            expect(css, 'no text-[' + size + '] rule was emitted, so nothing needs to outrank the icon default')
+                .toContain('.text-' + String.fromCharCode(92) + '[' + size + String.fromCharCode(92) + ']');
+        }
+    });
+
+    /*
+     * 08-F. #modal-root is a SIBLING of #root, so every dialog portals outside #app-shell - and the font, text
+     * colour and antialiasing that AppShell carries never reach one. Every modal in the app was rendering in
+     * Chromium's default font. v1.2.1 put these on <body> (legacy/pages/*.html) and appended its modals to
+     * document.body, so it never had the problem; the classes are back on <body> for the same reason.
+     */
+    it('the entry document carries on <body> what v1.2.1 carried there, so a portalled dialog inherits it', () => {
+        for (const [label, file] of [['source', SOURCE_ENTRY], ['built', BUILT_ENTRY]] as const) {
+            const body = read(file).match(/<body[^>]*class="([^"]*)"/);
+            expect(body, label + ' entry has no class on <body>').not.toBeNull();
+            const classes = (body?.[1] ?? '').split(/\s+/);
+            for (const required of BODY_CLASSES) {
+                expect(classes, label + ' <body> lost `' + required + '`, which #modal-root inherits from nowhere else')
+                    .toContain(required);
+            }
+        }
+    });
+
 
     it('the fonts are bundled: woff2 assets are emitted', () => {
         expect(emittedWith('.woff2').length, 'no .woff2 under ' + BUILT_DIR + ' - the fonts are not in the bundle').toBeGreaterThan(0);
