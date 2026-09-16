@@ -388,14 +388,18 @@ export function createContainer(input: ContainerInput): AppContainer {
 
     /*
      * WR-06: the insert and the discard as one transaction, in that order. The discard writes before it forgets
-     * (timer.resetPersisted), so every way this can fail leaves the session unwritten and the seconds still counted
+     * (timer.creditSaved), so every way this can fail leaves the session unwritten and the seconds still counted
      * - never a session on disk beside an accumulator the user is asked to save a second time, and never an
      * accumulator zeroed with nothing written. A crash mid-transaction is SQLite's rollback and the same answer.
+     *
+     * CR-01: what is dropped is what the session row took, not everything the clock was holding. The Save dialog
+     * reads the counted value when it opens and this clock keeps running under it, so zeroing regardless destroyed
+     * whatever was counted between opening the form and submitting it.
      */
     function stopAndSave(values: SessionValues): WorkSession {
         const written = transaction(() => {
             const session = sessions.create(values);
-            timer.resetPersisted();
+            timer.creditSaved(session.durationSeconds);
             return session;
         });
         // After the commit, so the day is measured against what is now on disk (services WR-01).

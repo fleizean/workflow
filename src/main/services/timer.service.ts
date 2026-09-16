@@ -71,11 +71,16 @@ export interface TimerService {
     /** The only path that discards what was counted. Nothing else may zero it (CORE-14). */
     reset(): TimerSnapshot;
     /**
-     * The same discard, refusing to happen unless it reached the disk: the write comes first, so a throw leaves
-     * every counted second exactly where it was. That is what lets a caller put this and a session insert in one
-     * transaction and have neither duplication nor loss on either side of a crash (WR-06).
+     * What a save leaves behind, refusing to happen unless it reached the disk: the write comes first, so a throw
+     * leaves every counted second exactly where it was. That is what lets a caller put this and a session insert
+     * in one transaction and have neither duplication nor loss on either side of a crash (WR-06).
+     *
+     * Only the seconds that reached a session row are dropped (CR-01). The Save dialog reads the counted value
+     * when it opens and this clock keeps running under it, so a caller that submits the number it read a minute
+     * ago used to have the remainder destroyed for it - five minutes of real work recorded nowhere, reproduced.
+     * Whatever was not written stays counted, paused, where the user can still save it.
      */
-    resetPersisted(): void;
+    creditSaved(savedSeconds: number): void;
     /** Changes the mode and nothing else - not the status, and above all not the accumulated time (CORE-14, CB-1). */
     setMode(mode: TimerMode): TimerSnapshot;
     /** powerMonitor suspend, handed over by the lifecycle module: nothing is credited until resume (CORE-06). */
@@ -217,7 +222,7 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         emit();
     }
 
-    /** Everything reset() and resetPersisted() agree on: the day counted is discarded with the seconds (CORE-14). */
+    /** Everything reset() and creditSaved() agree on: the day counted is discarded with the seconds (CORE-14). */
     function clearCounted(): void {
         stopRepeat();
         accumulatedMs = 0;
@@ -277,15 +282,28 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             return snapshot();
         },
 
-        resetPersisted() {
+        creditSaved(savedSeconds) {
+            const saved = Number.isFinite(savedSeconds) ? Math.max(Math.floor(savedSeconds), 0) : 0;
+            const remaining = Math.max(elapsedSeconds() - saved, 0);
             // The write before the forgetting, and deliberately unguarded: a discard that did not reach the disk
             // would be restored as unsaved time on the next launch, and the session it was just saved as would make
             // that a duplicate. A throw here leaves the accumulation untouched, which is the point.
-            store.write({ accumulatedSeconds: 0, mode });
-            writtenSeconds = 0;
+            store.write({ accumulatedSeconds: remaining, mode });
+            writtenSeconds = remaining;
             writtenMode = mode;
             persistFailing = false;
-            clearCounted();
+            if (remaining === 0) {
+                clearCounted();
+            } else {
+                stopRepeat();
+                accumulatedMs = remaining * TICK_MS;
+                // Never more than is still held: the seconds now on disk must not also be credited to the day.
+                countedDayMs = Math.min(countedDayMs, accumulatedMs);
+                status = 'paused';
+                restoredFromPreviousLaunch = false;
+                gated = false;
+                gatedTicks = 0;
+            }
             emit();
         },
 

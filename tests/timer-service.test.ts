@@ -625,6 +625,96 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
     });
 });
 
+/*
+ * 08-REVIEW-TIMER CR-01. resetPersisted() zeroed the accumulator whatever duration the caller had just written, and
+ * the Save dialog's duration is read when the dialog OPENS while this clock keeps running under it. So a form filled
+ * in over five minutes wrote the hour it read and destroyed the five minutes it did not.
+ *
+ * The rule the method now keeps is the one the pomodoro completion has kept since Phase 5's CR-01: seconds may be
+ * dropped only in exchange for seconds that reached the disk.
+ */
+describe('CR-01: a save drops only the seconds it wrote', () => {
+    it('keeps the remainder counted, paused, and on disk', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(3900);
+
+        h.service.creditSaved(3600);
+
+        expect(h.elapsed()).toBe(300);
+        expect(h.service.snapshot().status).toBe('paused');
+        expect(h.writes.at(-1)).toEqual({ accumulatedSeconds: 300, mode: 'work' });
+    });
+
+    it('clears everything when the save took everything', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(1800);
+
+        h.service.creditSaved(1800);
+
+        expect(h.elapsed()).toBe(0);
+        expect(h.service.snapshot()).toMatchObject({ status: 'idle', restoredFromPreviousLaunch: false });
+        expect(h.writes.at(-1)).toEqual({ accumulatedSeconds: 0, mode: 'work' });
+    });
+
+    it('cannot go negative when a pending correction wrote more than was counted', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(600);
+
+        h.service.creditSaved(5400);
+
+        expect(h.elapsed()).toBe(0);
+        expect(h.service.snapshot().status).toBe('idle');
+    });
+
+    it('stops ticking on the remainder, so nothing counts against a session already written', () => {
+        const h = harness();
+        h.service.start();
+        h.drive(3900);
+        h.service.creditSaved(3600);
+
+        const cancelled = h.counters.cancelled;
+        h.drive(60);
+
+        expect(h.counters.cancelled).toBeGreaterThan(cancelled - 1);
+        expect(h.elapsed(), 'the clock kept counting after a save').toBe(300);
+    });
+
+    it('writes before it forgets, so a refused write leaves every second where it was', () => {
+        const store: TimerStateStore = {
+            read: () => ({ accumulatedSeconds: 0, mode: 'work' }),
+            write: (state) => {
+                if (state.accumulatedSeconds < 3900) throw new Error('database or disk is full');
+            }
+        };
+        const h = harness({ store });
+        h.service.start();
+        h.drive(3900);
+
+        expect(() => { h.service.creditSaved(3600); }).toThrow(/disk is full/);
+        expect(h.elapsed()).toBe(3900);
+    });
+
+    it('restores the remainder on the next launch, paused and offered', () => {
+        const held: PersistedTimerState[] = [];
+        const store: TimerStateStore = {
+            read: () => held.at(-1) ?? { accumulatedSeconds: 0, mode: 'work' },
+            write: (state) => { held.push(state); }
+        };
+        const first = harness({ store });
+        first.service.start();
+        first.drive(3900);
+        first.service.creditSaved(3600);
+
+        const second = harness({ store, originMs: 999_000 });
+        expect(second.elapsed()).toBe(300);
+        expect(second.service.snapshot())
+            .toMatchObject({ status: 'paused', restoredFromPreviousLaunch: true });
+    });
+});
+
 describe('the tick the renderer mirrors', () => {
     it('emits a payload the declared event schema accepts, on every state change', () => {
         const h = harness();

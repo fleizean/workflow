@@ -86,7 +86,7 @@ function spyingServices(): Spy {
             pause: answer('timer.pause', TIMER),
             reset: answer('timer.reset', TIMER),
             setMode: answer('timer.setMode', TIMER),
-            resetPersisted: answer('timer.resetPersisted', undefined),
+            creditSaved: answer('timer.creditSaved', undefined),
             stopAndSave: answer('timer.stopAndSave', SESSION),
             suspend: answer('timer.suspend', undefined),
             resume: answer('timer.resume', undefined),

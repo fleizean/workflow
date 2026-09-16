@@ -10,11 +10,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import ts from 'typescript';
 import {
     RING_CIRCUMFERENCE, adjustmentLabel, dayTotalOf, describeWorkDial, dialDigits, headerDateLabel, ringOffsetFor,
     ringToneFor, savableSeconds, streakLabel, streakTierOf
 } from '@renderer/features/timer/timer-view';
 import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
+import { read, scriptKindFor } from './helpers/ts-imports';
 import type { LocalDate, WorkSession } from '@shared/types';
 
 const ld = (text: string): LocalDate => text as LocalDate;
@@ -189,5 +191,41 @@ describe('the pending correction is visible whenever it is set', () => {
         expect(adjustmentLabel(1800)).toBe('+30 min when you save');
         expect(adjustmentLabel(-1800)).toBe('-30 min when you save');
         expect(adjustmentLabel(3900)).toBe('+1h 05m when you save');
+    });
+});
+
+/*
+ * CR-01's renderer half, as a source claim, because nothing here renders a component.
+ *
+ * The defect was `useState((countedSeconds / 3600).toFixed(2))`: seeded once at mount from a PROP that is
+ * recomputed on every tick, so the field and the "Counted" line beside it visibly diverged while the dialog was
+ * open and the submit read the frozen one. The form may hold what the user typed; it may not hold a snapshot of a
+ * number that is still moving.
+ */
+describe('CR-01: the save form does not freeze the counted value at mount', () => {
+    const SAVE_FORM = 'src/renderer/src/features/timer/components/SaveSessionForm.tsx';
+
+    const initialisers = (rel: string): string[] => {
+        const text = read(rel);
+        const source = ts.createSourceFile(rel, text, ts.ScriptTarget.ESNext, true, scriptKindFor(rel));
+        const found: string[] = [];
+        const walk = (node: ts.Node): void => {
+            if (ts.isCallExpression(node) && node.expression.getText() === 'useState') {
+                found.push(node.arguments.map((argument) => argument.getText()).join(', '));
+            }
+            ts.forEachChild(node, walk);
+        };
+        walk(source);
+        return found;
+    };
+
+    it('seeds no piece of component state from the live counted value', () => {
+        for (const initialiser of initialisers(SAVE_FORM)) {
+            expect(initialiser, 'a tick moves this value under the form').not.toContain('countedSeconds');
+        }
+    });
+
+    it('reads the counted value during render instead, so the seed follows the clock', () => {
+        expect(read(SAVE_FORM)).toContain('seedDuration(countedSeconds)');
     });
 });

@@ -848,6 +848,59 @@ describe('the services the container composes', () => {
             expect(realLayer.readTimerState(connection).accumulatedSeconds).toBe(0);
         });
 
+        /*
+         * 08-REVIEW-TIMER CR-01. The Save dialog reads the counted value when it opens and the clock keeps running
+         * under it; whatever the user then submits, the accumulator used to be zeroed regardless. Counted 3600 at
+         * open, 3900 at submit, 3600 written, accumulator zeroed - five minutes of real work recorded nowhere.
+         *
+         * The rule is the one the pomodoro completion already follows: only seconds that reached a session row may
+         * be dropped. What a save did not write stays counted, on the clock, where the user can still save it.
+         */
+        it('keeps the seconds a save did not write, rather than zeroing the whole accumulator', async () => {
+            const dbPath = makeCleanFixture();
+            const { container, driver, connection } = await driven(dbPath);
+            const beforeToday = container.services.stats.today().totalSeconds;
+
+            container.services.timer.start();
+            driver.tick(3600);
+            // The dialog is open and holding 3600. Five more minutes are counted while the form is filled in.
+            driver.tick(300);
+
+            const written = container.services.timer.stopAndSave({ ...values, durationSeconds: 3600 });
+
+            expect(written.durationSeconds).toBe(3600);
+            expect(container.services.stats.today().totalSeconds - beforeToday).toBe(3600);
+            expect(container.services.timer.snapshot(), 'the remainder was destroyed')
+                .toMatchObject({ status: 'paused', elapsedSeconds: 300 });
+            expect(realLayer.readTimerState(connection).accumulatedSeconds,
+                'the remainder did not reach the disk, so a relaunch loses it').toBe(300);
+        });
+
+        it('still clears the accumulator when the save wrote everything that was counted', async () => {
+            const dbPath = makeCleanFixture();
+            const { container, driver, connection } = await driven(dbPath);
+            container.services.timer.start();
+            driver.tick(1800);
+
+            container.services.timer.stopAndSave(values);
+
+            expect(container.services.timer.snapshot())
+                .toMatchObject({ status: 'idle', elapsedSeconds: 0, restoredFromPreviousLaunch: false });
+            expect(realLayer.readTimerState(connection).accumulatedSeconds).toBe(0);
+        });
+
+        /* A correction that writes MORE than was counted still leaves nothing: the clock cannot go negative. */
+        it('leaves nothing counted when the save wrote more than the clock held', async () => {
+            const dbPath = makeCleanFixture();
+            const { container, driver } = await driven(dbPath);
+            container.services.timer.start();
+            driver.tick(600);
+
+            container.services.timer.stopAndSave({ ...values, durationSeconds: 2400 });
+
+            expect(container.services.timer.snapshot()).toMatchObject({ status: 'idle', elapsedSeconds: 0 });
+        });
+
         it('keeps the counted seconds when the session cannot be written', async () => {
             const dbPath = makeCleanFixture();
             const { container, driver, connection } = await driven(dbPath);
