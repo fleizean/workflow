@@ -344,7 +344,7 @@ export function run(options = {}) {
     return { design, geometry };
 }
 
-function renderReport(result) {
+export function renderReport(result) {
     const out = [];
     const settled = PAGES.flatMap((page) => result.design[page].settled);
     const unexplained = PAGES.flatMap((page) => result.design[page].unexplained);

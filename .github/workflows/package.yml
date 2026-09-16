@@ -197,6 +197,18 @@ jobs:
         if: matrix.smoke
         run: node tools/smoke-packaged.mjs
 
+      # Phase 8 criterion 2's second gate, and 08-REVIEW-TIMER WR-07 / 08-REVIEW-SCREENS WR-05: until this step
+      # existed, capture-v2.mjs and diff-computed.mjs were referenced by no script, no test and no workflow -
+      # so a register that documents itself as exiting non-zero on any unexplained difference exited non-zero at
+      # nobody, and the committed 29-difference report could not go stale in a way anything would notice. It
+      # runs here because it photographs the PACKAGED app, which only this job has.
+      #
+      # Windows only: baselines/v1.2.1/computed was captured on Windows, and font rasterisation and the default
+      # font stack differ enough on macOS to make a cross-platform diff a reading rather than a gate.
+      - name: Diff the shipped UI against the Phase 1 computed-style baselines (criterion 2)
+        if: matrix.smoke && runner.os == 'Windows'
+        run: npm run parity:check
+
       # A skip that prints its reason is a different thing from a check that silently did nothing.
       # These two artifacts are built, size-checked and allowlist-checked, and never executed.
       - name: Smoke launch skipped on a cross-architecture leg
