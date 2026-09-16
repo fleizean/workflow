@@ -13,12 +13,17 @@
  * shape. So the guards keep their exact strength and only change where they read from. `verify.yml`
  * checks out with `fetch-depth: 0`, which is what makes that available in CI.
  *
+ * 08-REVIEW-TIMER WR-08: git is the ONLY source. This used to prefer a file on disk at the same path,
+ * which was harmless while the four paths were tracked and became a hole the moment they were not -
+ * any file appearing at `main.js`, `preload.js` or `database/db.js` silently became the v1.2.1
+ * source of truth for the SQL transcription, the behaviour inventory, the IPC parity map, the Sheets
+ * retirement scan and the setting defaults. A blob is content-addressed, so reading from git IS the
+ * pin the review asked for, and the worktree can hold whatever it likes.
+ *
  * On a shallow clone there is no history to read and no file on disk. `available()` says so and the
  * callers skip rather than pass: a guard that cannot look must not report green.
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { repoRoot } from './ts-imports';
 
@@ -62,32 +67,13 @@ const commitFor = (rel: string): string => {
     return sha;
 };
 
-/**
- * A v1.2.1 file's bytes: from the worktree while it is still there, otherwise from the last commit
- * that carried it. The fallback is what keeps every pin working across the SPA-14 deletion, and
- * having both means this helper needs no flag day.
- */
+/** A v1.2.1 file's bytes, out of the last commit that carried it and out of nowhere else (WR-08). */
 export function readV121(rel: string): string {
-    const onDisk = path.join(repoRoot, rel);
-    if (fs.existsSync(onDisk)) return fs.readFileSync(onDisk, 'utf8');
     return gitBuffer(['cat-file', 'blob', commitFor(rel) + ':' + rel]).toString('utf8');
 }
 
-/** Every path under a v1.2.1 directory, repo-relative with forward slashes, sorted. */
+/** Every path under a v1.2.1 directory, repo-relative with forward slashes, sorted. From git only. */
 export function listV121(dir: string): string[] {
-    const onDisk = path.join(repoRoot, dir);
-    if (fs.existsSync(onDisk)) {
-        const out: string[] = [];
-        const walk = (absolute: string): void => {
-            for (const entry of fs.readdirSync(absolute, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
-                const child = path.join(absolute, entry.name);
-                if (entry.isDirectory()) walk(child);
-                else out.push(path.relative(repoRoot, child).split(path.sep).join('/'));
-            }
-        };
-        walk(onDisk);
-        return out;
-    }
     return git(['ls-tree', '-r', '--name-only', commitFor(dir), '--', dir])
         .split('\n')
         .map((line) => line.trim())
@@ -96,6 +82,6 @@ export function listV121(dir: string): string[] {
 }
 
 /** The commit each deleted path is being read out of, for a guard that wants to say so. */
-export function sourceCommit(rel: string): string | null {
-    return fs.existsSync(path.join(repoRoot, rel)) ? null : commitFor(rel);
+export function sourceCommit(rel: string): string {
+    return commitFor(rel);
 }
