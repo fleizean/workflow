@@ -27,6 +27,7 @@ import { formatLongDay } from '@renderer/lib/format';
 import {
     MAX_DURATION_HOURS, MINUTES_PER_HOUR, formatElapsed, reviewDuration, seedDuration
 } from '@renderer/lib/duration';
+import { noteToWrite } from '@renderer/lib/session-note';
 import type { DurationFields } from '@renderer/lib/duration';
 import { addDays } from '@shared/utils/date';
 import type { Company, LocalDate } from '@shared/types';
@@ -129,7 +130,8 @@ export default function SaveSessionForm(props: SaveSessionFormProps): ReactEleme
             durationSeconds,
             date,
             companyId,
-            note: trimmedNote === '' ? null : trimmedNote
+            // WR-01/WR-02: this form showed the note field, so an empty box is an answer. Only the cycle writes NULL.
+            note: noteToWrite(note, null, 'create')
         });
     };
 

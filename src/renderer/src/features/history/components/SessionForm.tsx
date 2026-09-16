@@ -24,6 +24,7 @@ import type { FormEvent, ReactElement } from 'react';
 import Modal from '@renderer/components/ui/Modal';
 import { formatLongDay } from '@renderer/lib/format';
 import { MAX_DURATION_HOURS, MINUTES_PER_HOUR, reviewDuration } from '@renderer/lib/duration';
+import { noteToWrite } from '@renderer/lib/session-note';
 import type { DurationFields, SeededDuration } from '@renderer/lib/duration';
 import { addDays } from '@shared/utils/date';
 import type { Company, LocalDate } from '@shared/types';
@@ -88,7 +89,8 @@ export interface SessionDraft {
     readonly duration: SeededDuration;
     readonly date: LocalDate;
     readonly companyId: number | null;
-    readonly note: string;
+    /** The note as the row holds it. NULL means nobody has been asked about it yet - see lib/session-note.ts. */
+    readonly note: string | null;
 }
 
 interface SessionFormProps {
@@ -109,7 +111,7 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
     const [fields, setFields] = useState<DurationFields>(initial.duration.fields);
     const [date, setDate] = useState<LocalDate>(initial.date);
     const [companyId, setCompanyId] = useState<number | null>(initial.companyId);
-    const [note, setNote] = useState(initial.note);
+    const [note, setNote] = useState(initial.note ?? '');
     const titleId = useId();
     const nameId = useId();
     const companySelectId = useId();
@@ -139,7 +141,7 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
             durationSeconds,
             date,
             companyId,
-            note: trimmedNote === '' ? null : trimmedNote
+            note: noteToWrite(note, initial.note, mode)
         });
     };
 

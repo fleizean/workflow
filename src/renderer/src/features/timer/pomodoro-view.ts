@@ -12,7 +12,7 @@
  * two halves of one screen.
  */
 
-import { POMODORO_SESSION_NAME } from '@shared/constants/sessions';
+import { POMODORO_ATTRIBUTION_EPOCH_MS, POMODORO_SESSION_NAME } from '@shared/constants/sessions';
 import { formatElapsed } from '@renderer/lib/duration';
 import { dialDigits, ringOffsetFor } from './timer-view';
 import type { DialDigits } from './timer-view';
@@ -97,7 +97,10 @@ function badgeTextFor(snapshot: PomodoroSnapshot): string {
 export function pendingAttributions(sessions: readonly WorkSession[]): WorkSession[] {
     return sessions
         .filter((session) =>
-            session.name === POMODORO_SESSION_NAME && session.companyId === null && session.note === null)
+            session.name === POMODORO_SESSION_NAME && session.companyId === null && session.note === null &&
+            // WR-02: three of these four columns are the user's to type. This one is not, and it excludes every
+            // row that existed before the cycle could have written one. See POMODORO_ATTRIBUTION_EPOCH_MS.
+            session.createdAt >= POMODORO_ATTRIBUTION_EPOCH_MS)
         .slice()
         .sort((left, right) => left.createdAt - right.createdAt || left.id - right.id);
 }

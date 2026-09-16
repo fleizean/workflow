@@ -51,7 +51,7 @@ const SECTION_TITLE_CLASS = 'text-slate-900 dark:text-white text-lg font-bold le
 const RANGE_CLASS = 'text-xs font-medium text-slate-500 dark:text-slate-400';
 
 const newDraft = (today: LocalDate): SessionDraft =>
-    ({ name: '', duration: seedDuration(0), date: today, companyId: null, note: '' });
+    ({ name: '', duration: seedDuration(0), date: today, companyId: null, note: null });
 
 export default function HistoryPage(): ReactElement {
     const sessions = useSessions();
@@ -208,7 +208,9 @@ export default function HistoryPage(): ReactElement {
                         duration: seedDuration(editing.durationSeconds),
                         date: editing.date,
                         companyId: editing.companyId,
-                        note: editing.note ?? ''
+                        // WR-01: the stored note travels with the draft, so an untouched empty box is not written
+                        // back as the NULL that means nobody has been asked about this row.
+                        note: editing.note
                     }}
                     companies={companyRows}
                     today={today}

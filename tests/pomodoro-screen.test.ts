@@ -14,7 +14,8 @@ import {
     describeAbandon, describePomodoroDial, isBreakInterval, pendingAttributions, shouldAutoStart
 } from '@renderer/features/timer/pomodoro-view';
 import { RING_CIRCUMFERENCE } from '@renderer/features/timer/timer-view';
-import { POMODORO_SESSION_NAME } from '@shared/constants/sessions';
+import { POMODORO_ATTRIBUTION_EPOCH_MS, POMODORO_SESSION_NAME } from '@shared/constants/sessions';
+import { noteToWrite } from '@renderer/lib/session-note';
 import { read, scriptKindFor } from './helpers/ts-imports';
 import type { LocalDate, PomodoroInterval, PomodoroSnapshot, PomodoroStatus, WorkSession } from '@shared/types';
 
@@ -41,7 +42,8 @@ const session = (over: Partial<WorkSession> = {}): WorkSession => ({
     date: DAY,
     companyId: null,
     note: null,
-    createdAt: 1_757_000_000_000,
+    // The cycle wrote these, so they are stamped after the day it first could (WR-02).
+    createdAt: POMODORO_ATTRIBUTION_EPOCH_MS + 39_600_000,
     ...over
 });
 
@@ -126,9 +128,9 @@ describe('POMO-02/POMO-04: which intervals still owe the user a question', () =>
 
     it('asks about the oldest first, so a queue drains in the order it was worked', () => {
         const rows = [
-            session({ id: 3, createdAt: 300 }),
-            session({ id: 1, createdAt: 100 }),
-            session({ id: 2, createdAt: 200 })
+            session({ id: 3, createdAt: POMODORO_ATTRIBUTION_EPOCH_MS + 300 }),
+            session({ id: 1, createdAt: POMODORO_ATTRIBUTION_EPOCH_MS + 100 }),
+            session({ id: 2, createdAt: POMODORO_ATTRIBUTION_EPOCH_MS + 200 })
         ];
         expect(pendingAttributions(rows).map((row) => row.id)).toEqual([1, 2, 3]);
     });
@@ -260,5 +262,74 @@ describe('CR-03: the panel routes Abandon through the confirm', () => {
     it('leaves Skip and the play button alone, because neither discards anything', () => {
         expect(attributeText(PANEL, 'onSkipBreak')).not.toContain('openDialog');
         expect(attributeText(PANEL, 'onToggle')).not.toContain('openDialog');
+    });
+});
+
+/*
+ * 08-REVIEW-TIMER WR-01 and WR-02: the sentinel, held by the code rather than by a comment in a third feature.
+ *
+ * WR-01, reproduced by the reviewer against the real repository: answer a pomodoro with "No Company" and nothing
+ * to say, so the row becomes ('Pomodoro', null, ''), then open it in Work History to correct its duration and
+ * save. History wrote `note: trimmedNote === '' ? null : trimmedNote`, so the untouched empty box went back as
+ * NULL and the prompt returned on every visit to Home and every launch - undone again by the next edit.
+ *
+ * WR-02: the same NULL was written by the save form for an ordinary session, so a user who typed "Pomodoro" as a
+ * session name with no company and no note created a row the prompt could not tell from one the cycle wrote.
+ */
+describe('WR-01: an empty note written by a form is an answer, not an absence', () => {
+    it('writes an empty string when a form that showed the field was left blank', () => {
+        expect(noteToWrite('', null, 'create')).toBe('');
+        expect(noteToWrite('   ', null, 'create')).toBe('');
+        expect(noteToWrite('', '', 'edit')).toBe('');
+    });
+
+    it('does not widen an answered empty note back to NULL on an edit', () => {
+        // The reproduction: ('Pomodoro', null, '') edited and saved with the note box untouched.
+        const row = { ...session({ note: ANSWERED_WITH_NO_NOTE }), durationSeconds: 1400 };
+        const written = { ...row, note: noteToWrite('', row.note, 'edit') };
+        expect(written.note).toBe('');
+        expect(pendingAttributions([written])).toEqual([]);
+    });
+
+    it('leaves a row nobody has answered still owing its question', () => {
+        // Correcting the duration of a pending pomodoro is not an answer to the prompt.
+        const row = session({ note: null });
+        const written = { ...row, note: noteToWrite('', row.note, 'edit') };
+        expect(written.note).toBeNull();
+        expect(pendingAttributions([written]).map((r) => r.id)).toEqual([1]);
+    });
+
+    it('clears a real note to an empty string rather than to NULL', () => {
+        expect(noteToWrite('', 'drafted the report', 'edit')).toBe('');
+    });
+
+    it('is the only rule either form applies', () => {
+        for (const rel of [
+            'src/renderer/src/features/history/components/SessionForm.tsx',
+            'src/renderer/src/features/timer/components/SaveSessionForm.tsx'
+        ]) {
+            const text = read(rel);
+            expect(text).toContain('noteToWrite');
+            expect(text, 'the sentinel is decided in one place').not.toContain("=== '' ? null :");
+        }
+    });
+});
+
+describe('WR-02: a hand-typed session is not a pending pomodoro', () => {
+    it('ignores a row written before the cycle could have written one', () => {
+        // v1.2.1's work-history form wrote `value.trim() || null` and required a note only when the company did,
+        // so ('Pomodoro', No Company, no note) was routine there. v1.2.1's cycle touched the database nowhere.
+        const legacy = session({ createdAt: POMODORO_ATTRIBUTION_EPOCH_MS - 1 });
+        expect(pendingAttributions([legacy])).toEqual([]);
+    });
+
+    it('still finds one the cycle wrote', () => {
+        expect(pendingAttributions([session({ createdAt: POMODORO_ATTRIBUTION_EPOCH_MS })]).map((r) => r.id))
+            .toEqual([1]);
+    });
+
+    it('cannot be created by this app, because both forms write a string', () => {
+        const typed = { ...session({ name: POMODORO_SESSION_NAME }), note: noteToWrite('', null, 'create') };
+        expect(pendingAttributions([typed])).toEqual([]);
     });
 });

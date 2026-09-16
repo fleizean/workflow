@@ -23,6 +23,7 @@ import { instantFromEpochMs } from '../src/shared/utils/date';
 import {
     ANSWERED_WITH_NO_NOTE, pendingAttributions
 } from '@renderer/features/timer/pomodoro-view';
+import { noteToWrite } from '@renderer/lib/session-note';
 import type { AppPorts, NotificationRequest } from '../src/main/ports';
 import type { IpcEventChannel, SoundId } from '../src/shared/types';
 import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
@@ -492,6 +493,50 @@ describe('the services the container composes', () => {
      * transaction committed before the completion callback returned, so there is nothing else in flight. A real
      * SIGKILL mid-write is tests/db-kill.test.ts's job.
      */
+    /*
+     * 08-REVIEW-TIMER WR-01, over the real repository. The sentinel is carried in user data and read by a second
+     * feature, so a comment in a third cannot enforce it: History's edit form wrote an untouched empty note back as
+     * NULL, which is the value that means "nobody has been asked", and the prompt returned for ever - undone again
+     * by the next edit. The rule now lives in lib/session-note.ts and this drives the same edit through it.
+     */
+    it('does not re-arm the attribution prompt when an answered pomodoro is edited in Work History', async () => {
+        const dbPath = makeCleanFixture();
+        const { container, driver } = await driven(dbPath);
+        container.services.settings.update({ pomodoroWorkSeconds: 60 });
+        container.services.pomodoro.start();
+        driver.tick(60);
+
+        const asked = pendingAttributions(container.services.sessions.list());
+        const row = asked[0];
+        expect(row, 'the interval the cycle wrote was not found').toBeDefined();
+
+        // Answered with "No Company" and nothing to say.
+        container.services.sessions.update(row?.id ?? 0, {
+            name: row?.name ?? '',
+            durationSeconds: row?.durationSeconds ?? 0,
+            date: row?.date ?? ld(TODAY_FOR_DRIVER),
+            companyId: null,
+            note: ANSWERED_WITH_NO_NOTE
+        });
+        expect(pendingAttributions(container.services.sessions.list())).toEqual([]);
+
+        // Later: the same row opened in Work History to correct its duration, note box untouched.
+        const answered = container.services.sessions.list().find((session) => session.id === row?.id);
+        expect(answered).toBeDefined();
+        container.services.sessions.update(answered?.id ?? 0, {
+            name: answered?.name ?? '',
+            durationSeconds: 1400,
+            date: answered?.date ?? ld(TODAY_FOR_DRIVER),
+            companyId: null,
+            note: noteToWrite('', answered?.note ?? null, 'edit')
+        });
+
+        expect(
+            pendingAttributions(container.services.sessions.list()),
+            'an ordinary edit put the question back and there is no way to stop it being asked'
+        ).toEqual([]);
+    });
+
     it('still owes the user the attribution question after the process stops at the prompt', async () => {
         const dbPath = makeCleanFixture();
         const first = await driven(dbPath);

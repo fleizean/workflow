@@ -33,3 +33,18 @@ export const MAX_SESSION_NOTE_LENGTH = 2_000;
  * So a v1.2.1 database holds no unattributed pomodoro sessions to be mistaken for a pending prompt.
  */
 export const POMODORO_SESSION_NAME = 'Pomodoro';
+
+/*
+ * WR-02: the earliest a row this app wrote could be a pending pomodoro - 2026-09-15T00:00:00Z, the day the cycle
+ * first wrote a session (Phase 8 slice D). The predicate above reads three columns a user controls, and the name
+ * is an ordinary word somebody might type; this bounds it to rows that could have come from the cycle at all.
+ *
+ * What it bounds, and what it does not, stated rather than implied. v1.2.1's own Work History form wrote
+ * `value.trim() || null` and demanded a note only when the company did, so a session called Pomodoro with No
+ * Company and no note was routine in a v1.2.1 database - and every one of those rows predates this instant.
+ * lib/session-note.ts closes the other half by making v2's own forms write a string rather than NULL, so this app
+ * cannot create such a row. What is left over is narrow and real: a user still on v1.2.1 who types that exact row
+ * after this date and then migrates. A durable marker - an app_state key, or a session_id on pomodoro_sessions -
+ * would remove it, and it costs a migration this review pass is not the place for.
+ */
+export const POMODORO_ATTRIBUTION_EPOCH_MS = 1_789_430_400_000;
