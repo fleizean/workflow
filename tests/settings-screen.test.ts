@@ -18,7 +18,23 @@ import type { NumberField, SettingsDraft } from '@renderer/features/settings/set
 import { DEFAULT_SETTINGS, SETTINGS_BOUNDS } from '@shared/constants/settings';
 import { SettingsValidationError, validateSettingsPatch } from '@main/services/settings.service';
 import { RENDERER_DESTRUCTIVE_TESTID } from '@main/config';
-import { read, stripCommentsAndStrings } from './helpers/ts-imports';
+import ts from 'typescript';
+import { read, scriptKindFor, stripCommentsAndStrings } from './helpers/ts-imports';
+
+/** One JSX attribute's whole initialiser, however many blocks it grows (NT-06). */
+function jsxAttribute(rel: string, name: string): string {
+    const text = read(rel);
+    const file = ts.createSourceFile(rel, text, ts.ScriptTarget.ESNext, true, scriptKindFor(rel));
+    let found = '';
+    const walk = (node: ts.Node): void => {
+        if (ts.isJsxAttribute(node) && node.name.getText() === name && node.initializer !== undefined) {
+            found = node.initializer.getText();
+        }
+        ts.forEachChild(node, walk);
+    };
+    walk(file);
+    return found;
+}
 import type { Settings } from '@shared/types';
 
 // Criterion 3: the validator this file checks the screen against must pass with electron refusing to load.
@@ -269,8 +285,14 @@ describe('criterion 4: the pomodoro toggle announces itself with the switch, and
         ).not.toMatch(/openDialog\(\s*\{/);
     });
 
+    /*
+     * NT-06: parsed, not matched. The regular expression this replaces captured only as far as the second `}`, so
+     * a handler that grew a second block would be captured truncated and the three not.toContain assertions below
+     * would pass vacuously over the part that was cut off. The claim is criterion 4's "no spurious dialog", so it
+     * is worth parsing - renderer-structure.test.ts already carries a TypeScript-parser scan next door.
+     */
     it('hands the toggle a handler that only asks for the mode', () => {
-        const handler = /onTogglePomodoro=\{([^}]*\}[^}]*)\}/.exec(source(PAGE))?.[1] ?? '';
+        const handler = jsxAttribute(PAGE, 'onTogglePomodoro');
         expect(handler, PAGE + ' no longer passes onTogglePomodoro').not.toBe('');
         expect(handler, 'the toggle stopped going through the one writer of the pair').toContain('setMode.mutate');
         for (const forbidden of ['openDialog', 'pushToast', 'update.mutate']) {

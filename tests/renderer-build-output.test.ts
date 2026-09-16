@@ -218,7 +218,7 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
         const declared = cspMetaContents(read(SOURCE_ENTRY));
         expect(declared.length, SOURCE_ENTRY + ' has no Content-Security-Policy <meta> element').toBe(1);
         expect(
-            builtHtml.includes(declared[0] ?? ' '),
+            builtHtml.includes(declared[0] ?? '<no meta csp declared>'),
             'The policy in ' + BUILT_ENTRY + ' differs from the one in ' + SOURCE_ENTRY + '. Either ' +
             'the bundler rewrote it, or the build is stale - run `' + BUILD_SCRIPT + '` and re-run.'
         ).toBe(true);

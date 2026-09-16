@@ -47,6 +47,9 @@ export default function NumberSettingCard(props: NumberSettingCardProps): ReactE
             </div>
             <input
                 id={inputId}
+                // NT-05: what the packaged probe counts. It counted input[type="number"] under #root, which
+                // answered 4 for any four unrelated number inputs (src/main/smoke.ts).
+                data-field="pomodoro-duration"
                 type="number"
                 inputMode="numeric"
                 min={bound.min}

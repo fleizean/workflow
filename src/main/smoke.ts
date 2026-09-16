@@ -881,7 +881,9 @@ const settingsProbeScript = (testid: string, legacySelector: string): string => 
         handle: root.querySelectorAll(${JSON.stringify('[data-testid="' + testid + '"]')}).length,
         legacy: root.querySelectorAll(${JSON.stringify(legacySelector)}).length,
         switchJustify: track === null ? 'none' : getComputedStyle(track).justifyContent,
-        durations: root.querySelectorAll('input[type="number"]').length
+        // NT-05: by the marker the four cards carry, not by input type - the old count answered 4 for any four
+        // unrelated number inputs, so SMOKE_SETTINGS_DURATIONS did not mean what parity row 71 says it means.
+        durations: root.querySelectorAll('[data-field="pomodoro-duration"]').length
     };
 })()`;
 
