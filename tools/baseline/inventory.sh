@@ -45,7 +45,7 @@
 # artifacts element-wise. A source change that is not regenerated fails CI rather than
 # leaving a stale file that still looks authoritative (threat T-01-11).
 
-set -eu
+set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
@@ -69,8 +69,17 @@ if [ ! -d "$ROOT/legacy" ]; then
         exit 2
     fi
     TMP="$(mktemp -d)"
-    trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT
+    # WR-09: the previous trap tested TMP for emptiness before removing it, and that test returns non-zero
+    # when TMP is empty - which under set -e can change what this script reports. This form cannot.
+    trap 'rm -rf "${TMP:-}"' EXIT
     git -C "$ROOT" archive "$SHA" legacy preload.js main.js | tar -x -C "$TMP"
+    # WR-09: set -e does not fail a pipeline on a non-zero LEFT side without pipefail, which is now set above -
+    # and this says so a second time, because the four artifacts below are what authorises a deletion nobody can
+    # undo. A tar that succeeded on empty input would regenerate all four as empty files.
+    if [ ! -d "$TMP/legacy" ] || [ ! -f "$TMP/main.js" ] || [ ! -f "$TMP/preload.js" ]; then
+        echo "inventory.sh: the archive did not materialise the v1.2.1 source" >&2
+        exit 2
+    fi
     SCAN="$TMP"
     echo "inventory.sh: reading the v1.2.1 source from $SHA (deleted by SPA-14)" >&2
 fi

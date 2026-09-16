@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LEGACY_TREE, listV121, readV121 } from './helpers/v121-source';
+import { execFileSync } from 'node:child_process';
+import { read } from './helpers/ts-imports';
 
 /*
  * Why these numbers are load-bearing.
@@ -167,5 +169,51 @@ describe('CUSTODY-09: the v1.2.1 behavior inventory is complete and regenerable'
         // before the better-sqlite3 barrier (plan 01-07) and safe to commit to a public repo.
         expect(rendererFiles.every((f) => f.endsWith('.html') || f.endsWith('.js'))).toBe(true);
         expect(rendererFiles.some((f) => f.endsWith('.db'))).toBe(false);
+    });
+});
+
+/*
+ * 08-REVIEW-TIMER WR-09. The generator behind four artifacts whose whole purpose is to be authoritative about a
+ * tree nobody can open any more could produce them empty: `set -e` does not fail a pipeline on a non-zero LEFT
+ * side without `set -o pipefail`, so a `git archive` that failed - a partial clone, a bad SHA, an unreadable
+ * object - left `tar` succeeding on empty input, $SCAN an empty directory, and handlers.tsv, api-calls.tsv,
+ * preload-surface.txt and ipc-channels.txt regenerated as empty files.
+ *
+ * The assertions above would catch the committed result, so this is a fragility rather than a hole - but a
+ * generator should not be able to produce a silently empty artifact at all.
+ */
+describe('WR-09: the inventory generator cannot regenerate an empty artifact', () => {
+    const script = read('tools/baseline/inventory.sh');
+
+    it('fails the pipeline when git archive does, rather than tarring nothing', () => {
+        expect(script).toContain('set -euo pipefail');
+        expect(script, 'set -e alone lets a failed left-hand side through').not.toMatch(/^set -eu$/m);
+    });
+
+    it('checks the v1.2.1 source really materialised before it scans', () => {
+        expect(script).toContain('did not materialise');
+        for (const marker of ['/legacy', 'main.js', 'preload.js']) {
+            expect(script).toContain(marker);
+        }
+    });
+
+    it('is a real difference, not a spelling: the control shows what set -eu alone lets through', () => {
+        const run = (flags: string): number => {
+            try {
+                execFileSync('bash', [flags, '-c', 'false | true'], { stdio: 'ignore' });
+                return 0;
+            } catch (error) {
+                return (error as { status?: number }).status ?? -1;
+            }
+        };
+        expect(run('-eu'), 'set -eu already failed a pipeline, so pipefail changes nothing').toBe(0);
+        expect(run('-euo')).not.toBe(0);
+    });
+
+    it('cleans up with a trap that cannot itself change the exit status', () => {
+        // `trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT` returns non-zero when TMP is empty, which under set -e
+        // can alter what the script reports.
+        expect(script).not.toContain('[ -n "$TMP" ] && rm -rf');
+        expect(script).toContain('trap \'rm -rf "${TMP:-}"\' EXIT');
     });
 });
