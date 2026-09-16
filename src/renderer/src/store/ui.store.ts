@@ -38,12 +38,20 @@ interface UiState {
     readonly toasts: readonly Toast[];
     /** A queue, so a second request waits rather than replacing a dialog whose caller is still awaiting an answer. */
     readonly dialogs: readonly Dialog[];
+    /*
+     * WR-05: how many dialogs are on screen, published by Modal because it is what marks #app-shell inert. A
+     * control inside the shell cannot be clicked while this is above zero, so anything that would otherwise run
+     * uncancellable has to be able to see it. Global UI state in the strict sense: no feature owns it and the
+     * database never sees it.
+     */
+    readonly modalsOpen: number;
     // Function-valued properties rather than methods: an action is selected off the store and called on its own.
     readonly pushToast: (tone: Tone, message: string) => void;
     readonly dismissToast: (id: number) => void;
     readonly removeToast: (id: number) => void;
     readonly openDialog: (request: DialogRequest) => Promise<boolean>;
     readonly closeDialog: (id: number, confirmed: boolean) => void;
+    readonly setModalsOpen: (count: number) => void;
 }
 
 let nextId = 0;
@@ -55,6 +63,7 @@ const answers = new Map<number, (confirmed: boolean) => void>();
 export const useUiStore = create<UiState>((set) => ({
     toasts: [],
     dialogs: [],
+    modalsOpen: 0,
 
     pushToast: (tone, message) => {
         nextId += 1;
@@ -82,5 +91,9 @@ export const useUiStore = create<UiState>((set) => ({
         set((state) => ({ dialogs: state.dialogs.filter((dialog) => dialog.id !== id) }));
         // After the removal: a caller that opens the next dialog from its own continuation finds this one gone.
         answer?.(confirmed);
+    },
+
+    setModalsOpen: (count) => {
+        set({ modalsOpen: count });
     }
 }));

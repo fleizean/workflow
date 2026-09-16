@@ -16,6 +16,7 @@
  */
 
 import { useEffect, useRef } from 'react';
+import { useUiStore } from '@renderer/store/ui.store';
 import { AUTO_START_DELAY_SECONDS, shouldAutoStart } from '../pomodoro-view';
 import type { AutoStartSettings } from '../pomodoro-view';
 import { usePomodoroStore } from '../state/pomodoro.store';
@@ -61,6 +62,23 @@ export function usePomodoroAutoStart(autoStartBreaks: boolean, autoStartWork: bo
             cancel();
         }
     }, [snapshot, autoStartBreaks, autoStartWork, arm, cancel]);
+
+    /*
+     * WR-05. Modal marks #app-shell inert while any dialog is open, and the countdown's own Cancel button is
+     * inside it - so the banner was on screen offering an answer the user could not give. These two things happen
+     * on the same event: a completed work interval writes the session, which opens the attribution prompt, AND
+     * changes the interval while going idle, which arms the countdown. pomodoroAutoStartBreaks is true by default,
+     * so POMO-07's "is cancellable" was false in the one situation auto-start fires by itself.
+     *
+     * A dialog opening stands the countdown down. Under-counting beats starting work the user cannot stop, which
+     * is the direction this project chooses every time.
+     */
+    const modalsOpen = useUiStore((state) => state.modalsOpen);
+    useEffect(() => {
+        if (modalsOpen > 0) {
+            cancel();
+        }
+    }, [modalsOpen, cancel]);
 
     const armed = pending !== null;
     useEffect(() => {

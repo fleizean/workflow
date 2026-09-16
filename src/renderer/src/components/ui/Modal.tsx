@@ -7,6 +7,8 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useUiStore } from '@renderer/store/ui.store';
+import { isTopmostModal, openModalCount, popModal, pushModal } from './modal-stack';
 import type { MouseEvent, ReactElement, ReactNode } from 'react';
 
 /*
@@ -26,8 +28,6 @@ import type { MouseEvent, ReactElement, ReactNode } from 'react';
 const PORTAL_ID = 'modal-root';
 /** AppShell's root. Everything outside the dialog, which is what aria-modal below claims is inert. */
 const SHELL_ID = 'app-shell';
-/** Module-level: how many Modals are mounted, so the inner one closing does not wake the shell up. */
-let openModals = 0;
 
 const OVERLAY_CLASS = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 py-6';
 /*
@@ -64,6 +64,17 @@ interface ModalProps {
 
 export default function Modal({ labelledBy, onDismiss, header, children }: ModalProps): ReactElement {
     const panel = useRef<HTMLDivElement>(null);
+    const setModalsOpen = useUiStore((state) => state.setModalsOpen);
+
+    /*
+     * SCREENS WR-02: every caller passes a freshly created onDismiss, so naming it in the effect's dependencies
+     * tore the whole thing down and put it back on EVERY parent render - removing the listener, un-inerting the
+     * shell, calling opener.focus(), then re-inerting the shell around the element it had just focused. A
+     * background refetch (a pomodoro completing on main's scheduler announces `sessions, stats`) therefore took
+     * the caret out of the note the user was typing. Read through a ref, the effect runs once per open.
+     */
+    const dismiss = useRef(onDismiss);
+    dismiss.current = onDismiss;
 
     /*
      * WR-05: aria-modal="true" tells assistive technology that everything outside this panel is inert, and Tab used
@@ -83,10 +94,16 @@ export default function Modal({ labelledBy, onDismiss, header, children }: Modal
         // WR-05: focus fell to document.body when the panel unmounted, so cancelling a confirm meant tabbing from
         // the top of the app again. Captured before anything inside takes focus, restored on the way out.
         const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const handle = pushModal();
 
         const onKeyDown = (event: KeyboardEvent): void => {
             if (event.key === 'Escape') {
-                onDismiss();
+                // WR-04: the topmost dialog answers, and nothing else does. One keystroke used to dismiss every
+                // mounted Modal at once, so clearing a congratulation raised over the Save dialog discarded the
+                // session name, note and date that had been typed into the form underneath it.
+                if (isTopmostModal(handle)) {
+                    dismiss.current();
+                }
                 return;
             }
             if (event.key !== 'Tab') return;
@@ -117,20 +134,27 @@ export default function Modal({ labelledBy, onDismiss, header, children }: Modal
          * one closes; and StrictMode's mount/unmount/mount in development nets out at one.
          */
         const shell = document.getElementById(SHELL_ID);
-        openModals += 1;
         shell?.setAttribute('inert', '');
+        /*
+         * WR-05: the shell contains the pomodoro auto-start banner's Cancel button, and a completed work interval
+         * both opens the attribution prompt and arms the countdown - with pomodoroAutoStartBreaks true by default,
+         * so POMO-07's "cancellable" was false in the one situation it fires by itself. Saying out loud how many
+         * dialogs are open lets a countdown inside the inert shell stand down rather than run uncancellable.
+         */
+        setModalsOpen(openModalCount());
 
         document.addEventListener('keydown', onKeyDown);
         return () => {
             document.removeEventListener('keydown', onKeyDown);
-            openModals -= 1;
-            if (openModals === 0) {
+            popModal(handle);
+            setModalsOpen(openModalCount());
+            if (openModalCount() === 0) {
                 // Before the focus below: focus cannot land inside an inert subtree.
                 shell?.removeAttribute('inert');
             }
             opener?.focus();
         };
-    }, [onDismiss, focusable]);
+    }, [focusable, setModalsOpen]);
 
     // mousedown, not click: a drag that starts inside the panel and ends on the backdrop is not a dismissal.
     // IN-07: the primary button only - a right-click on the backdrop answered the quit confirm.
