@@ -4,8 +4,8 @@ import type { DataDomain } from '@shared/types';
 
 /*
  * SPA-07: the first segment of every key is the domain main announces a change in, so invalidating a whole domain
- * is invalidating a key prefix. tests/renderer-data-path.test.ts holds that true - a key whose first segment is not
- * a domain is a cache nothing in main could ever refresh.
+ * is invalidating a key prefix. tests/renderer-data-path.test.ts holds that true - a key whose first segment is
+ * not a domain is a cache nothing in main could ever refresh.
  */
 export const queryKeys = {
     companies: ['companies'] as const,

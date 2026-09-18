@@ -1,17 +1,14 @@
 /*
  * POMO-07: the next interval starts by itself, after a countdown, and the countdown can be stopped.
  *
- * It lives in the renderer because it is a UI affordance, not accounting: the service never starts anything on its
- * own, and nothing here counts a second of work - `pomodoro:start` is a request to main, which owns the clock. A
- * countdown that runs late because the window is hidden and Chromium throttled its timer therefore starts the next
- * interval late, which under-counts rather than inventing anything.
+ * It lives in the renderer because it is a UI affordance, not accounting: nothing here counts a second of work, and
+ * `pomodoro:start` is a request to main, which owns the clock. A countdown that runs late because Chromium throttled
+ * a hidden window's timer starts the next interval late, which under-counts rather than inventing anything.
  *
  * "Cannot stack" is structural rather than careful: the pending start is a single field in the store, arming it
- * replaces whatever was there, and exactly one interval handle exists while it is armed. v1.2.1 called
- * `setTimeout(() => this.start(), 1000)` from inside its completion handler and kept no handle at all
- * (legacy/renderer/timer.js:167, :180), so it could neither be cancelled nor prevented from queueing twice.
- *
- * Leaving Home cancels it. That is deliberate: the alternative is an app that silently starts counting work on a
+ * replaces whatever was there. v1.2.1 called `setTimeout(() => this.start(), 1000)` from inside its completion
+ * handler and kept no handle (legacy/renderer/timer.js:167, :180), so it could neither be cancelled nor prevented
+ * from queueing twice. Leaving Home cancels it: the alternative is an app that silently starts counting work on a
  * screen the user cannot see it on.
  */
 
@@ -64,14 +61,10 @@ export function usePomodoroAutoStart(autoStartBreaks: boolean, autoStartWork: bo
     }, [snapshot, autoStartBreaks, autoStartWork, arm, cancel]);
 
     /*
-     * WR-05. Modal marks #app-shell inert while any dialog is open, and the countdown's own Cancel button is
-     * inside it - so the banner was on screen offering an answer the user could not give. These two things happen
-     * on the same event: a completed work interval writes the session, which opens the attribution prompt, AND
-     * changes the interval while going idle, which arms the countdown. pomodoroAutoStartBreaks is true by default,
-     * so POMO-07's "is cancellable" was false in the one situation auto-start fires by itself.
-     *
-     * A dialog opening stands the countdown down. Under-counting beats starting work the user cannot stop, which
-     * is the direction this project chooses every time.
+     * WR-05. Modal marks #app-shell inert while any dialog is open, and the countdown's own Cancel button is inside
+     * it - so the banner offered an answer the user could not give. Both happen on the same event: a completed work
+     * interval writes the session, opening the attribution prompt, AND changes the interval while going idle, arming
+     * the countdown. A dialog opening stands the countdown down: under-counting beats starting work nobody can stop.
      */
     const modalsOpen = useUiStore((state) => state.modalsOpen);
     useEffect(() => {

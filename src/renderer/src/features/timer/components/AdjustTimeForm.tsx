@@ -2,18 +2,15 @@
  * legacy/pages/index.html:1057-1130's Adjust Time dialog: the six quick buttons, the manual-minutes field and the
  * Close button, field for field.
  *
- * What it adjusts is the one thing that changed, and it matters.
+ * What it adjusts is the one thing that changed. v1.2.1's Adjust wrote straight into the elapsed counter
+ * (timer.addSeconds -> this.elapsedSeconds += seconds), so a tap added thirty minutes of work nobody had done to a
+ * clock that then claimed to have counted it. The clock lives in main now and has no channel that adds seconds to
+ * it, deliberately: a channel that adds time to the clock is a channel that invents work.
  *
- * v1.2.1's Adjust wrote straight into the elapsed counter (timer.addSeconds -> this.elapsedSeconds += seconds), so
- * a tap added thirty minutes of work that nobody had done, to a clock that then claimed to have counted it. The
- * clock lives in main now and has no channel that adds seconds to it, deliberately: a channel that adds time to the
- * clock is a channel that invents work, and this milestone exists so that time the user did not work is never
- * recorded.
- *
- * So the correction applies to the SESSION about to be written rather than to the clock. It is shown on Home under
- * the dial while it is pending, it is folded into the Save dialog's duration - which is editable, so anything these
- * six buttons cannot reach is still reachable - and it is discarded by Reset, by a save, and by leaving the screen.
- * It is never counted time and it never survives a quit, which means it can only ever lose invented seconds.
+ * So the correction applies to the SESSION about to be written rather than to the clock. It is shown under the dial
+ * while pending, folded into the Save dialog's duration - which is editable, so anything these six buttons cannot
+ * reach still is - and discarded by Reset, by a save, and by leaving the screen. It never survives a quit, which
+ * means it can only ever lose invented seconds.
  */
 
 import { useId, useState } from 'react';

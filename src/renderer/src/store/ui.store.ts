@@ -41,8 +41,7 @@ interface UiState {
     /*
      * WR-05: how many dialogs are on screen, published by Modal because it is what marks #app-shell inert. A
      * control inside the shell cannot be clicked while this is above zero, so anything that would otherwise run
-     * uncancellable has to be able to see it. Global UI state in the strict sense: no feature owns it and the
-     * database never sees it.
+     * uncancellable has to be able to see it.
      */
     readonly modalsOpen: number;
     // Function-valued properties rather than methods: an action is selected off the store and called on its own.

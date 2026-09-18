@@ -1,15 +1,12 @@
 /*
  * The renderer's one door to the preload bridge (ARCH-03). Only a feature's api folder and app/providers open it.
  *
- * The bridge resolves every call to an IpcResult and never rejects, which is right for a wire format and wrong
- * for a caller: `const rows = await window.api['sessions:list']()` hands back a discriminated union that a
- * forgetful call site renders as an empty screen instead of an error. invoke() unwraps it, so a failure is a
- * rejected promise - which is what TanStack Query needs in order to have an error state at all (SPA-05).
+ * The bridge resolves every call to an IpcResult and never rejects, which is right for a wire format and wrong for
+ * a caller: a forgetful call site renders the discriminated union as an empty screen instead of an error. invoke()
+ * unwraps it, so a failure is a rejected promise - what TanStack Query needs to have an error state (SPA-05).
  *
- * The bridge is read off globalThis rather than off `window`. contextBridge.exposeInMainWorld puts the key on the
- * renderer's global object, and in a document those are the same object - but only one of the two spellings lets
- * this module load in the node process the test suite runs in, which is what makes SPA-05 provable by running it
- * rather than by reading it.
+ * The bridge is read off globalThis rather than `window`: in a document those are the same object, but only one
+ * spelling lets this module load in the node process the test suite runs in, which is what makes SPA-05 provable.
  */
 
 import { API_BRIDGE_KEY } from '@shared/constants/bridge';

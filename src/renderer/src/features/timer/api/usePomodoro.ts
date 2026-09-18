@@ -1,14 +1,11 @@
 /*
- * The cycle's reads and writes. Every one of them is a request to main, which owns the clock, the state machine and
- * the one transaction that records a completed interval (POMO-01).
+ * The cycle's reads and writes. Every one is a request to main, which owns the clock, the state machine and the one
+ * transaction that records a completed interval (POMO-01). None invalidates anything - main announces the domains a
+ * successful call changed and DataSyncProvider invalidates on that (SPA-07) - and none raises its own error toast.
  *
- * None of them invalidates anything - main announces the domains a successful call changed and DataSyncProvider
- * invalidates on that (SPA-07) - and none raises its own error toast, because QueryProvider's MutationCache raises
- * one for every failed write in the app.
- *
- * There is deliberately no "record a pomodoro" call here, and there must not be one. The session row and the
- * pomodoro_sessions row are written together by the container when the interval reaches its target, before anything
- * on this side is told about it; a renderer that also wrote one would record the same work twice.
+ * There is deliberately no "record a pomodoro" call here, and there must not be one: the session row and the
+ * pomodoro_sessions row are written together by the container before anything on this side is told, so a renderer
+ * that also wrote one would record the same work twice.
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -82,11 +79,9 @@ export interface AttributionValues {
 
 /*
  * POMO-02. Attribution is an ordinary session update, because the session already exists - the time was written
- * before the question was asked. So there is no path here that can destroy it: the worst a failed update does is
- * leave the row exactly as the transaction wrote it, and the prompt asks again.
- *
- * The note is a string and never null: see ANSWERED_WITH_NO_NOTE in pomodoro-view.ts. A null note is what marks a
- * row as never having been asked, so writing null back would re-arm the prompt the user just answered.
+ * before the question was asked. The worst a failed update does is leave the row exactly as the transaction wrote
+ * it, and the prompt asks again. The note is a string and never null: a null note marks a row as never having been
+ * asked, so writing null back would re-arm the prompt the user just answered (see ANSWERED_WITH_NO_NOTE).
  */
 export function useAttributeSession(): UseMutationResult<WorkSession, Error, AttributionValues> {
     return useMutation({

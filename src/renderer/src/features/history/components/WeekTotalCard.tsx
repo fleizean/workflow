@@ -1,10 +1,8 @@
 /*
  * legacy/pages/work-history.html:44-63, carried over: the primary-coloured card, its two blurred decorations, the
- * label, the total and the trending_up badge.
- *
- * v1.2.1 also computed a percentage change against last week and wrote it into an element selected as
- * `.flex.items-center.gap-1.rounded-full span:nth-child(2)` - which does not exist in this header's markup, so
- * nothing ever rendered. Not carried: the parity reference is what v1.2.1 showed, and it showed nothing here.
+ * label, the total and the trending_up badge. v1.2.1 also computed a percentage change against last week and wrote
+ * it into an element selected as `.flex.items-center.gap-1.rounded-full span:nth-child(2)`, which does not exist in
+ * this header's markup - so nothing ever rendered, and the parity reference is what v1.2.1 showed.
  */
 
 import type { ReactElement } from 'react';

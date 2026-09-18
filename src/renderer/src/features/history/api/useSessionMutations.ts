@@ -1,12 +1,9 @@
 /*
- * HIST-05/06: adding, editing and deleting a past session.
+ * HIST-05/06: adding, editing and deleting a past session. None invalidates anything and none raises its own error
+ * toast: main announces sessions and stats on a successful write and DataSyncProvider invalidates on that (SPA-07),
+ * and QueryProvider's MutationCache raises one error toast for every failed write.
  *
- * None of them invalidates anything and none raises its own error toast: main announces sessions and stats on a
- * successful write and DataSyncProvider invalidates on that (SPA-07), and QueryProvider's MutationCache raises one
- * error toast for every failed write in the app.
- *
- * The bounds are the contract's - WR-07 refuses a duration above a day and a name of nothing at the boundary - so a
- * form that gets past the checks here still cannot write an absurd row.
+ * The bounds are the contract's - WR-07 refuses a duration above a day and a name of nothing at the boundary.
  */
 
 import { useMutation } from '@tanstack/react-query';

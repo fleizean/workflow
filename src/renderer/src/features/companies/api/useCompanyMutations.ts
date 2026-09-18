@@ -1,10 +1,8 @@
 /*
- * COMP-01..05's three writes. None of them invalidates anything: main announces what a successful call changed on
- * `data:changed` and app/providers/DataSyncProvider invalidates on that (SPA-07), so a mutation that also
- * invalidated would be the second, quieter refresh path the contract exists to rule out.
- *
- * Nor does any of them raise its own error toast. QueryProvider's MutationCache onError raises one for every failed
- * write in the app, which is what makes a forgotten error branch harmless rather than silent.
+ * COMP-01..05's three writes. None invalidates anything: main announces what a successful call changed on
+ * `data:changed` and DataSyncProvider invalidates on that (SPA-07), so a mutation that also invalidated would be
+ * the second, quieter refresh path the contract rules out. Nor does any raise its own error toast - QueryProvider's
+ * MutationCache onError raises one for every failed write in the app.
  */
 
 import { useMutation } from '@tanstack/react-query';

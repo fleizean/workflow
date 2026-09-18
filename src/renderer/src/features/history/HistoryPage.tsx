@@ -4,10 +4,9 @@
  *
  * The whole list is one value from buildHistory and one React commit. v1.2.1 wrote
  * `thisWeekContainer.innerHTML += cardHtml` once per card, so the browser reparsed everything already rendered on
- * every iteration, and then walked the result again to attach a click handler to each card.
+ * every iteration, then walked the result again to attach a click handler to each card.
  *
- * The Day End export button that sat beside the Companies shortcut is gone with the Google Sheets export the owner
- * removed; the Companies button it shared a row with is kept, now the width of the row.
+ * The Day End export button is gone with the Google Sheets export the owner removed.
  */
 
 import { useState } from 'react';
@@ -74,8 +73,7 @@ export default function HistoryPage(): ReactElement {
     /*
      * B6: the user's own target, and WR-04: nobody else's. Substituting DEFAULT_SETTINGS for a read that FAILED -
      * and retry is false, so one transient failure is enough - measured every Goal pill and every goal filter
-     * against 28800 for as long as the user stayed here, with nothing on screen to say so. null is "not known",
-     * and buildHistory judges no day against it.
+     * against 28800 for as long as the user stayed here. null is "not known", and buildHistory judges no day by it.
      */
     const dailyTargetSeconds = settings.isSuccess ? settings.data.dailyTargetSeconds : null;
     const companyRows = companies.data ?? [];

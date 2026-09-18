@@ -1,9 +1,7 @@
 /*
- * The only route table (ARCH-02). v1.2.1 changed screens by asking the main process to loadFile() a different HTML
- * document; there is one document now and it never changes, so a screen change is this table picking an element.
- *
- * An unknown hash falls back to Home rather than rendering an empty outlet: a blank content area is the exact
- * failure this shell exists to rule out. AppShell wraps every route, so the chrome renders once, not per route.
+ * The only route table (ARCH-02). v1.2.1 changed screens by asking main to loadFile() a different HTML document;
+ * there is one document now, so a screen change is this table picking an element. An unknown hash falls back to
+ * Home rather than rendering an empty outlet: a blank content area is what this shell exists to rule out.
  */
 
 import type { ReactElement } from 'react';

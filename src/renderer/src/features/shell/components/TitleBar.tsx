@@ -1,21 +1,17 @@
 /*
  * The frameless window's titlebar, ported from legacy/renderer/titlebar.js. The window has frame: false, so without
- * this the app cannot be moved, hidden or quit at all.
+ * this the app cannot be moved, hidden or quit at all. legacy/styles/titlebar.css's two rules - a drag region on
+ * the bar, no-drag on the buttons - are Tailwind arbitrary properties here rather than a second stylesheet (ARCH-05).
  *
- * legacy/styles/titlebar.css carried the two rules that make it work - a drag region on the bar and no-drag on the
- * buttons inside it. They are Tailwind arbitrary properties here rather than a second stylesheet (ARCH-05).
- *
- * Two things are deliberately not v1.2.1's: the trailing border-r, which v1.2.1 put on the last button as well as
- * the first and which looked like a divider to nothing, and the close button's hover, which now reads as the
- * destructive action it became when X started ending the process (owner decision 2026-09-13).
+ * Two things are deliberately not v1.2.1's: the trailing border-r, which looked like a divider to nothing, and the
+ * close button's hover, which now reads as the destructive action X became (owner decision 2026-09-13).
  */
 
 import type { ReactElement } from 'react';
 /*
  * The 64px icon, not the 1024px one. Vite fingerprints whatever is imported here into out/renderer/assets, so
- * importing icon.png shipped a SECOND copy of the same 1.84 MB file beside the one the tray already needs in
- * out/main - the duplicate PNG Phase 10 criterion 8 names, in the installer rather than in the repository - and
- * decoded a megapixel image to draw it 24 CSS pixels wide.
+ * importing icon.png shipped a SECOND copy of the same 1.84 MB file beside the one the tray needs - the duplicate
+ * PNG Phase 10 criterion 8 names - and decoded a megapixel image to draw it 24 CSS pixels wide.
  */
 import iconUrl from '@assets/icon-64.png';
 import { useShellControls } from '../api/useShellControls';

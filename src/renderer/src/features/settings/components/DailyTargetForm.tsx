@@ -1,9 +1,7 @@
 /*
  * The daily-target picker: legacy/pages/settings.html:580-620, which built its markup with innerHTML and read its
- * answer back out of the DOM. Six one-tap hours, or an hours/minutes pair.
- *
- * The hours box accepts 24 rather than v1.2.1's 23: the service caps the target at 86400 seconds, and a picker
- * that could not express its own cap would make the cap unreachable.
+ * answer back out of the DOM. The hours box accepts 24 rather than v1.2.1's 23: the service caps the target at
+ * 86400 seconds, and a picker that could not express its own cap would make the cap unreachable.
  */
 
 import { useId, useState } from 'react';

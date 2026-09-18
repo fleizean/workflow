@@ -1,14 +1,11 @@
 /*
  * legacy/pages/index.html:303-325: the date button on the left and the Pomodoro toggle on the right, with the
- * hidden "Work Timer" heading between them.
- *
- * Three differences:
+ * hidden "Work Timer" heading between them. Three differences:
  *  - the heading is sr-only rather than `hidden`. `hidden` takes it out of the accessibility tree too, so the one
  *    screen with no visible title had no title at all;
- *  - the toggle's colour and background come from a lookup of whole class strings rather than from inline styles
- *    written on the element (ARCH-05, and a class assembled from a colour name emits no CSS at all - C3);
- *  - it is sticky, with the same backdrop the other three screens' headers carry, because AppShell owns the one
- *    scroller now and v1.2.1's header sat outside its page's scroll area.
+ *  - the toggle's colour comes from a lookup of whole class strings rather than inline styles (ARCH-05, and a
+ *    class assembled from a colour name emits no CSS at all - C3);
+ *  - it is sticky, because AppShell owns the one scroller now and v1.2.1's header sat outside its page's.
  */
 
 import type { ReactElement } from 'react';

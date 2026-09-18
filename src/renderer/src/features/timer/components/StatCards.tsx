@@ -1,11 +1,8 @@
 /*
- * The three cards across the top of Home - legacy/pages/index.html:331-372 - with the same icons, the same accent
- * colours, the same hover wash and the same wording.
- *
- * Two differences, both deliberate:
+ * The three cards across the top of Home - legacy/pages/index.html:331-372 - with the same icons, accent colours,
+ * hover wash and wording. Two differences, both deliberate:
  *  - the streak card has no click handler. v1.2.1's cycled the card through 6, 15 and 25 to demo the tier effects
- *    and wrote "(TEST)" into the label, then restored the real value three seconds later (:1474-1481). That is
- *    TIMER-09, and it is closed by deleting the handler rather than by hiding it.
+ *    and wrote "(TEST)" into the label (:1474-1481). That is TIMER-09, closed by deleting the handler.
  *  - cursor-pointer is on the Logged card only. v1.2.1 put it on all three while only that one did anything.
  */
 
@@ -36,8 +33,7 @@ const VALUE = 'text-xl font-bold leading-none tracking-tight relative z-10 white
 /*
  * The three tier looks, written out in full. legacy/pages/index.html declared them as .streak-tier-1/2/3 rules in a
  * page <style> block; each gradient, background-size, border and animation is the same value, now as utilities and
- * @theme animation tokens (ARCH-05). Tiers 2 and 3 replace the plain surface rather than sitting on top of it,
- * which is what the class rules did by winning the cascade.
+ * @theme animation tokens (ARCH-05). Tiers 2 and 3 replace the plain surface, as the class rules did by winning.
  */
 const STREAK_CARD: Record<StreakTier, string> = {
     0: SHELL + SURFACE,

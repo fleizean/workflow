@@ -1,9 +1,7 @@
 /*
- * The words the titlebar's two buttons ask with. Pure functions of what main last reported, so that what they claim
- * about counted time is something a test can check rather than something a reader has to trust.
- *
- * formatElapsed is imported relatively rather than through @renderer: vitest resolves @main, @lib and @shared only
- * (D-21), and tests/shell-controls.test.ts reads these two.
+ * The words the titlebar's two buttons ask with, as pure functions of what main last reported, so what they claim
+ * about counted time is checkable. formatElapsed is imported relatively rather than through @renderer: vitest
+ * resolves @main, @lib and @shared only (D-21), and tests/shell-controls.test.ts reads these two.
  */
 
 import type { TimerSnapshot } from '@shared/types';
@@ -21,9 +19,8 @@ export interface ShellDialog {
 }
 
 /*
- * Shown before the first hide and never again. The tray is named first because that is where the window goes
- * whenever there is a tray to go to; with none, main minimises to the taskbar instead (WR-03), which is why the
- * taskbar is named too.
+ * Shown before the first hide and never again. The tray is named first because that is where the window goes when
+ * there is one; with none, main minimises to the taskbar instead (WR-03), which is why that is named too.
  */
 export const HIDE_NOTICE: ShellDialog = {
     tone: 'info',
@@ -43,15 +40,11 @@ const QUIT = {
 } as const;
 
 /**
- * What quitting costs, told truthfully.
- *
- * Counted time survives a quit: app.quit() runs will-quit, which credits and flushes the accumulator
- * (timer.service.ts dispose) and the next launch restores it *paused* (G3/G4, readTimerState). So the dialog says so
- * rather than warning about a loss that does not happen - a false warning about the one guarantee this project is
- * built on would be worse than no dialog at all.
- *
- * The exception is real and is named: while persistFailing is set, the writes that make that true are failing, and
- * the promise cannot be made.
+ * What quitting costs, told truthfully. Counted time survives a quit: app.quit() runs will-quit, which credits and
+ * flushes the accumulator (timer.service.ts dispose) and the next launch restores it *paused* (G3/G4). So the dialog
+ * says so rather than warning about a loss that does not happen - a false warning about the one guarantee this
+ * project is built on would be worse than no dialog. The exception is real and named: while persistFailing is set,
+ * the writes that would make the promise true are failing.
  */
 export function quitDialogFor(snapshot: TimerSnapshot | null): ShellDialog {
     const counted = snapshot?.elapsedSeconds ?? 0;

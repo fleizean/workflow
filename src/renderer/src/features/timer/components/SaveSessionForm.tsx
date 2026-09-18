@@ -5,19 +5,17 @@
  * Four differences from v1.2.1, each a defect it shipped:
  *
  *  - TIMER-03 (B11). v1.2.1 rejected an empty note from EVERY company (`if (!note) showAlert(...)`, :1218), so the
- *    note-required flag it stored was ignored on this screen in both directions: companies that did not require one
- *    demanded it anyway. The flag decides it here, and the service refuses it again below IPC whatever a screen says.
+ *    note-required flag was ignored on this screen in both directions. The flag decides it here, and the service
+ *    refuses it again below IPC whatever a screen says.
  *  - TIMER-04 (B10). v1.2.1's header date picker changed which day the Logged card measured and then saved with
- *    `date: getCurrentDate()` (:1229) - today, always. A session picked as Yesterday was written to today. The date
- *    the screen is showing is the date that is written, and it is on the form where it can be seen and changed.
+ *    `date: getCurrentDate()` (:1229) - today, always. A session picked as Yesterday was written to today.
  *  - the company select carries "No Company". v1.2.1's held companies only and read it back with parseInt, so with
  *    no companies at all it wrote NaN into the row.
- *  - the duration is editable. v1.2.1 showed it as text. It is the same field History's form has, and it is the
- *    answer for a timer left running across a weekend, which counts past the one-day bound the contract enforces.
+ *  - the duration is editable. v1.2.1 showed it as text. It is the answer for a timer left running across a
+ *    weekend, which counts past the one-day bound the contract enforces.
  *
  * CR-01/CR-02: the duration is whole hours and whole minutes over an integer second count, and the pair re-seeds
- * from the live counted value until the user types into it - so the number this dialog holds cannot drift away from
- * the number the clock holds, and a save nobody re-typed writes the counted seconds verbatim.
+ * from the live counted value until the user types into it - so a save nobody re-typed writes the seconds verbatim.
  */
 
 import { useId, useState } from 'react';
@@ -93,8 +91,8 @@ export default function SaveSessionForm(props: SaveSessionFormProps): ReactEleme
     const [companyId, setCompanyId] = useState<number | null>(companies[0]?.id ?? null);
     /*
      * CR-01: the pair follows the clock until the user types into it. `countedSeconds` is recomputed every tick, so
-     * a value frozen at mount is a promise about a number that has already moved on - five minutes of counted work
-     * went unrecorded that way, reproduced. Null until a box changes, and only then does the form stop tracking.
+     * a value frozen at mount promises a number that has already moved on - five minutes of counted work went
+     * unrecorded that way, reproduced. Null until a box changes, and only then does the form stop tracking.
      */
     const [typed, setTyped] = useState<DurationFields | null>(null);
     const [date, setDate] = useState<LocalDate>(props.date);

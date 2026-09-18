@@ -1,17 +1,14 @@
 /*
- * Everything Work History decides, as one pure function over the rows.
- *
- * It is a module rather than a hook because this is where three shipped defects lived and there is no jsdom here to
- * render a screen in:
+ * Everything Work History decides, as one pure function over the rows. A module rather than a hook because this is
+ * where three shipped defects lived and there is no jsdom here to render a screen in:
  *
  *  - B8. legacy/renderer/shared.js:27 defined groupSessionsByWeek() and a repository-wide grep finds no caller.
  *    legacy/pages/work-history.html:558-570 blanked and hid the Last Week and Older sections on every render and
  *    :700 appended every card to thisWeekContainer, so the three headings were decoration over one list.
- *  - B6. The daily target was `const dailyTarget = 28800;` at :571, next to code that had just read the user's own
- *    target out of the database for the goal filter and then not used it for the badge.
+ *  - B6. The daily target was a literal 28800 at :571, next to code that had just read the user's own target out of
+ *    the database for the goal filter and then not used it for the badge.
  *  - B7. The goal filter compared a SINGLE session against the target (:465-471), so a day made of four two-hour
- *    sessions never counted as met, however long the day was. The badge on the card got this right; the filter
- *    beside it did not, and the two answers came from the same screen.
+ *    sessions never counted as met. The badge on the card got this right; the filter beside it did not.
  *
  * The day totals are computed from every session, before any filter runs. Filtering by company would otherwise
  * change whether a day met its target, which is a different question from the one the badge asks.
@@ -66,9 +63,8 @@ export interface SessionGroup {
     /** The whole day's total, across every company and every session in it (B7). */
     readonly dayTotalSeconds: number;
     /*
-     * WR-04: null when the daily target has not been read. A day cannot be judged against a target nobody has,
-     * and substituting DEFAULT_SETTINGS for one that FAILED to read marked met days unmet with nothing on screen
-     * to say the number was a stand-in.
+     * WR-04: null when the daily target has not been read. Substituting DEFAULT_SETTINGS for one that FAILED to read
+     * marked met days unmet with nothing on screen to say the number was a stand-in.
      */
     readonly goalMet: boolean | null;
     readonly hasNotes: boolean;

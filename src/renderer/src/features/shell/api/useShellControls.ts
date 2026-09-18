@@ -21,10 +21,10 @@ export function useShellControls(): ShellControls {
     }, []);
 
     /*
-     * WR-02: the sequence runs at most once at a time. A second click while the first round trip is in flight
-     * used to start a second one, whose claim answered "not due" and which hid the window at once - and the first
-     * then drew the notice behind a window that was no longer there, with the flag spent. It is a database row,
-     * so it never re-arms: the user who most needs the explanation is the one who never gets it.
+     * WR-02: the sequence runs at most once at a time. A second click while the first round trip was in flight
+     * started a second one, whose claim answered "not due" and which hid the window at once - and the first then
+     * drew the notice behind a window that was no longer there, with the flag spent. It is a database row, so it
+     * never re-arms: the user who most needs the explanation is the one who never gets it.
      */
     const hideOnce = useMemo(() => once(async () => {
         // Claimed before the window goes: a notice raised after it would be behind a window that is not there.

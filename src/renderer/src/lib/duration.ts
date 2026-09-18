@@ -29,9 +29,8 @@ export function formatElapsed(totalSeconds: number): string {
  * invented up to 18 s on every save; the edit form moved a session by up to three minutes when the user had only
  * changed the note, and refused anything under three minutes outright.
  *
- * A duration is an integer number of seconds. The boxes are whole hours and whole minutes, so nothing the user can
- * type is a float, and a pair of boxes nobody typed into writes the seeded seconds back byte-identical - the same
- * rule settings-view.ts's reviewDraft follows for every other field.
+ * A duration is an integer number of seconds. Whole hours and whole minutes, so nothing typable is a float and a
+ * pair nobody typed into writes the seeded seconds back byte-identical.
  */
 export interface DurationFields {
     readonly hours: string;
@@ -96,10 +95,9 @@ export const DURATION_REFUSALS = {
 } as const;
 
 /**
- * What a form should write, given what is in its boxes and what seeded them.
- *
- * The first branch is the whole point: a pair of boxes identical to the pair the stored value produced is a pair
- * nobody typed into, so the stored seconds go back exactly as they came - including the seconds no box can show.
+ * What a form should write, given what is in its boxes and what seeded them. The first branch is the point: a pair
+ * identical to the pair the stored value produced is a pair nobody typed into, so the stored seconds go back exactly
+ * as they came - including the seconds no box can show.
  */
 export function reviewDuration(typed: DurationFields, seeded: SeededDuration): DurationReview {
     const untouched = typed.hours === seeded.fields.hours && typed.minutes === seeded.fields.minutes;

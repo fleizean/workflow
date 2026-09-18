@@ -1,9 +1,7 @@
 /*
- * The live timer snapshot, in Zustand rather than in TanStack Query (ARCH-03).
- *
- * Main pushes a whole snapshot once a second (IPC-06). Writing that into the query cache would invalidate and
- * re-render every consumer of a database-backed key every second; this store is the separate place high-frequency
- * state belongs. The renderer stores what it is told and computes nothing - there is no second clock here.
+ * The live timer snapshot, in Zustand rather than TanStack Query (ARCH-03). Main pushes a whole snapshot once a
+ * second (IPC-06); writing that into the query cache would invalidate every database-backed key every second. The
+ * renderer stores what it is told and computes nothing - there is no second clock here.
  */
 
 import { create } from 'zustand';

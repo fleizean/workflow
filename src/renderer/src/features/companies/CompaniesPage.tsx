@@ -1,9 +1,7 @@
 /*
- * COMP-01..04. The screen legacy/pages/companies.html drew, with the same header, the same empty state, the same
- * rows and the same floating action button - and none of the string-built markup underneath them.
- *
- * The session count each row shows is counted here rather than asked for: there is no count-by-company channel, and
- * the list this screen already needs for COMP-05's warning answers both questions.
+ * COMP-01..04. The screen legacy/pages/companies.html drew, with the same header, empty state, rows and floating
+ * action button - and none of the string-built markup underneath them. The session count each row shows is counted
+ * here rather than asked for: there is no count-by-company channel, and the list COMP-05 needs answers both.
  */
 
 import { useState } from 'react';
@@ -66,11 +64,9 @@ export default function CompaniesPage(): ReactElement {
     };
 
     /*
-     * COMP-05. The count is quoted from the list this screen already holds, and checked against what the delete
-     * reports: if they disagree, the user was warned about the wrong number and is told so rather than congratulated.
-     *
-     * BL-03: and if the list has not answered, there is no count to quote. A destructive confirmation that cannot
-     * name what it takes is not a warning, so none is opened.
+     * COMP-05. The count is quoted from the list this screen already holds and checked against what the delete
+     * reports: if they disagree, the user was warned about the wrong number and is told so. BL-03: and if the list
+     * has not answered there is no count to quote, so no confirmation is opened at all.
      */
     const confirmDelete = (company: Company): void => {
         const expected = sessionCountFor(counts, company.id, sessions.isSuccess);

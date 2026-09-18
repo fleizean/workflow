@@ -1,11 +1,10 @@
 /*
  * The one alert and the one confirm, both drawn by Modal and both raised through useUiStore.openDialog. v1.2.1
- * defined showAlert twice (legacy/pages/index.html:514 and settings.html:387) and wrote each confirm by hand, which
- * is the duplication criterion 5 removes.
+ * defined showAlert twice (legacy/pages/index.html:514 and settings.html:387) and wrote each confirm by hand,
+ * which is the duplication criterion 5 removes.
  *
- * Each tone's classes are written out in full. v1.2.1 built them as bg-${color}-100, and a class name that only
- * exists after a concatenation is one Tailwind's scanner never saw: under build-time Tailwind the icon circle would
- * have no colour at all (C3).
+ * Each tone's classes are written out in full. v1.2.1 built them as bg-${color}-100, and under build-time Tailwind
+ * a name that only exists after a concatenation leaves the icon circle with no colour at all (C3).
  */
 
 import type { ReactElement } from 'react';

@@ -1,14 +1,11 @@
 /*
  * The renderer bootstrap: install the stylesheet, mount the composition root.
  *
- * The first import is load-bearing and must stay first. In development, @vitejs/plugin-react injects its React
- * Refresh preamble as an INLINE script in the entry document, and the Content-Security-Policy's script-src 'self'
- * blocks inline script - correctly, that is the policy doing its job. Without the preamble every component module
- * throws "can't detect preamble" in dev. The virtual module below delivers the same preamble as a same-origin
- * module instead, and it must run before React or any component loads. In a production build it is an empty
- * module. Do not "fix" the dev error by loosening script-src.
- *
- * The stylesheet import is what puts Tailwind's build-time output into the bundle instead of a CDN fetch.
+ * The first import is load-bearing and must stay first. In development @vitejs/plugin-react injects its React
+ * Refresh preamble as an INLINE script, which the CSP's script-src 'self' blocks - correctly. Without the preamble
+ * every component module throws "can't detect preamble" in dev. The virtual module below delivers the same
+ * preamble as a same-origin module and must run before React loads; in production it is empty. Do not "fix" the
+ * dev error by loosening script-src.
  */
 
 import '@vitejs/plugin-react/preamble';

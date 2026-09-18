@@ -7,16 +7,14 @@
  *  - note-required is honoured here too. v1.2.1 checked it on the ADD form only, so editing a session belonging to
  *    a company that requires a note could clear the note;
  *  - the company list carries "No Company". v1.2.1's select held companies only and read it back with
- *    parseInt(value), so a session attributed to nothing could not be edited without silently acquiring a company -
- *    and an empty list wrote NaN;
- *  - the quick dates are three buttons in this form rather than a second modal on top of the first. The nested
- *    date-picker overlay is not carried.
+ *    parseInt(value), so a session attributed to nothing could not be edited without acquiring a company - and an
+ *    empty list wrote NaN;
+ *  - the quick dates are three buttons rather than a second modal on top of the first.
  *
  * BL-01/BL-02: the duration is whole hours and whole minutes over an integer second count. It used to be a
  * one-decimal hours string, so saving THIS FORM rewrote the duration of a session whose note was the only thing
- * touched (4980 s -> 5040 s), and its step="0.5" inside a real <form> refused the submit for every duration that
- * was not a multiple of thirty minutes. A pair of boxes nobody typed into now writes the stored seconds back
- * byte-identical, and every attribute below states a bound this file actually enforces.
+ * touched (4980 s -> 5040 s), and its step="0.5" inside a real <form> refused the submit for every duration that was
+ * not a multiple of thirty minutes.
  */
 
 import { useId, useState } from 'react';
@@ -161,9 +159,8 @@ export default function SessionForm(props: SessionFormProps): ReactElement {
         >
             {/*
               * noValidate (BL-02): with native validation on, step="0.5" made Chromium refuse the submit for every
-              * duration this app writes, so onSubmit never ran and the only way forward was one of the two values
-              * the browser offered. The attributes above state the bounds; reviewDuration is what enforces them,
-              * and sessions.service.ts refuses again below IPC.
+              * duration this app writes, so onSubmit never ran. The attributes above state the bounds;
+              * reviewDuration enforces them, and sessions.service.ts refuses again below IPC.
               */}
             <form onSubmit={submit} noValidate className="flex flex-col gap-4">
                 <div>

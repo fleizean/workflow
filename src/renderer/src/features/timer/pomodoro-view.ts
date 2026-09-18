@@ -1,14 +1,11 @@
 /*
  * Everything the Pomodoro half of Home decides, as pure functions over the snapshot main pushed and the rows the
  * database holds. Like timer-view.ts it reads no clock and holds no counter: the cycle's position comes from
- * `completedToday`, which the service reads back out of the database on every question that could have changed it
- * (CORE-12), and which nothing in this renderer may cache - v1.2.1's count lived in renderer memory and every
- * restart and every mode toggle zeroed it (legacy/renderer/timer.js:16, :114, :124).
+ * `completedToday`, which the service reads back out of the database (CORE-12) and which nothing here may cache -
+ * v1.2.1's count lived in renderer memory and every restart and mode toggle zeroed it (timer.js:16, :114, :124).
  *
- * Pomodoro lives inside features/timer rather than in a feature of its own on purpose. It is the same screen, it
- * shares the dial, the control geometry and the header toggle, and it rides the same exclusivity rule in the
- * composition root - at most one accumulator counts at a time. Splitting it would mean features/timer importing
- * features/pomodoro's panel and features/pomodoro importing features/timer's dial, which is a module cycle between
+ * Pomodoro lives inside features/timer rather than a feature of its own on purpose: it is the same screen, shares
+ * the dial and the header toggle, and rides the same exclusivity rule. Splitting it would be a module cycle between
  * two halves of one screen.
  */
 
@@ -44,10 +41,8 @@ const HEADLINE: Record<PomodoroInterval, string> = {
 export const isBreakInterval = (interval: PomodoroInterval): boolean => interval !== 'work';
 
 /**
- * How many work intervals of the current run of `sessionsUntilLongBreak` are already done.
- *
- * Derived from the day's completed count, never counted here. v1.2.1's badge read an in-memory counter that only
- * ever agreed with reality inside one uninterrupted app session.
+ * How many work intervals of the current run of `sessionsUntilLongBreak` are done. Derived from the day's completed
+ * count, never counted here: v1.2.1's badge read an in-memory counter that only agreed with reality inside one run.
  */
 export function cyclePosition(completedToday: number, sessionsUntilLongBreak: number): number {
     if (sessionsUntilLongBreak <= 0) {
@@ -87,12 +82,9 @@ function badgeTextFor(snapshot: PomodoroSnapshot): string {
 /*
  * POMO-02/POMO-04: the intervals that are on disk and have not been attributed.
  *
- * The time is already safe before this function has anything to answer - the container writes the work session and
- * the pomodoro_sessions row in ONE transaction, before the completion callback returns and therefore before any
- * prompt opens (container.ts recordCompletion). So what this drives is a question, never a rescue: killing the app
- * at the prompt loses nothing, and the next launch finds the same rows and asks again.
- *
- * Oldest first, so a queue of them drains in the order they were worked.
+ * The time is already safe before this has anything to answer - the container writes the work session and the
+ * pomodoro_sessions row in ONE transaction, before any prompt opens (container.ts recordCompletion). So this drives
+ * a question, never a rescue: killing the app at the prompt loses nothing. Oldest first, so a queue drains in order.
  */
 export function pendingAttributions(sessions: readonly WorkSession[]): WorkSession[] {
     return sessions
@@ -106,11 +98,9 @@ export function pendingAttributions(sessions: readonly WorkSession[]): WorkSessi
 }
 
 /*
- * What an answered-with-nothing attribution writes into the note.
- *
- * Not null: null is the state that means "nobody has been asked yet", and pendingAttributions above is what reads
- * it. A user who worked a pomodoro for no company and has nothing to write still deserves to be asked once rather
- * than on every launch until the end of time, and an empty string is how the row records that it was asked.
+ * What an answered-with-nothing attribution writes into the note. Not null: null means "nobody has been asked yet",
+ * and pendingAttributions above is what reads it. A user who worked a pomodoro for no company and has nothing to
+ * write deserves to be asked once rather than on every launch, and an empty string is how the row records that.
  */
 export const ANSWERED_WITH_NO_NOTE = '';
 
@@ -119,16 +109,15 @@ export function attributionNote(typed: string): string {
 }
 
 /*
- * POMO-07. The cycle service never starts anything by itself - a completion leaves it idle on the next interval -
- * so auto-start is a decision this screen makes, out loud, with a countdown the user can stop.
+ * POMO-07. The cycle service never starts anything by itself, so auto-start is a decision this screen makes, out
+ * loud, with a countdown the user can stop.
  *
- * The trigger is the interval CHANGING while the cycle is idle, which is what a completion and a skipped break both
- * look like and what an abort deliberately does not: abort leaves the interval where it was, so an abandoned
- * pomodoro never auto-starts anything. A held interval - one whose write failed - never auto-starts either; the
- * user has to ask for the retry.
+ * The trigger is the interval CHANGING while the cycle is idle - what a completion and a skipped break both look
+ * like, and what an abort deliberately does not, so an abandoned pomodoro never auto-starts anything. A held
+ * interval never auto-starts either; the user has to ask for the retry.
  *
  * v1.2.1 called setTimeout(() => this.start(), 1000) from inside completePomodoroSession with nothing holding the
- * handle (legacy/renderer/timer.js:167, :180), so nothing could cancel it and two completions in flight queued two.
+ * handle (legacy/renderer/timer.js:167, :180), so nothing could cancel it and two completions queued two.
  */
 export const AUTO_START_DELAY_SECONDS = 5;
 
@@ -164,12 +153,9 @@ export function autoStartSettingsOf(settings: Settings | undefined, fallback: Au
 
 /*
  * CR-03. Abandon is the one control in the cycle that discards work, and it used to do it on a single unconfirmed
- * click - `abort()` zeroes elapsedMs AND clears recordingFailed, so a completed interval whose write threw was the
- * easiest thing on the screen to destroy. It sits directly under the red banner that says the time is still counted
- * and nothing has been lost, which one click made untrue.
- *
- * The work timer's Reset has named the amount in a destructive confirm since slice C. This is the same question in
- * the same words, with the held case saying the extra thing that is true of it.
+ * click - abort() zeroes elapsedMs AND clears recordingFailed, so a completed interval whose write threw was the
+ * easiest thing on the screen to destroy. It sits directly under the red banner saying the time is still counted,
+ * which one click made untrue. The same question the work timer's Reset asks, in the same words.
  */
 export interface AbandonWarning {
     readonly tone: 'error';

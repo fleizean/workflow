@@ -3,9 +3,9 @@
  * main pushes a whole snapshot on every tick, and writing that into the query cache would invalidate every
  * database-backed key once a second.
  *
- * The snapshot is stored, never computed. There is no interval counter here, no elapsed accumulator and above all
- * no completed-today count: CORE-12 is the rule that the cycle's position is a question asked of the database, and
- * a renderer-side copy of it is exactly the bug v1.2.1 shipped.
+ * The snapshot is stored, never computed. No interval counter, no elapsed accumulator and above all no
+ * completed-today count: CORE-12 is the rule that the cycle's position is a question asked of the database, and a
+ * renderer-side copy of it is exactly the bug v1.2.1 shipped.
  */
 
 import { create } from 'zustand';

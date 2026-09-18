@@ -1,11 +1,10 @@
 /*
  * The one toast. v1.2.1 had a single showToast() in legacy/renderer/shared.js that injected a <style> element and
- * built its markup with innerHTML; this is the same appearance expressed as utilities on components, with the text
- * escaped by React rather than interpolated into HTML (S2).
+ * built its markup with innerHTML; this is the same appearance as utilities on components, with the text escaped
+ * by React rather than interpolated into HTML (S2).
  *
- * Each tone's classes are written out in full rather than assembled from a colour name. A class built by
- * concatenation produces no CSS at all under build-time Tailwind, because the scanner only ever sees source text
- * (C3), and this is the file where that temptation is strongest.
+ * Each tone's classes are written out in full rather than assembled from a colour name: a class built by
+ * concatenation produces no CSS at all under build-time Tailwind (C3).
  */
 
 import { useEffect } from 'react';

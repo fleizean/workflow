@@ -1,15 +1,14 @@
 /*
  * POMO-02: which company that pomodoro was for.
  *
- * The thing to understand about this dialog is that it cannot lose anything. By the time it opens, the completed
- * interval is already a work session AND a pomodoro_sessions row, written in one transaction by the composition
- * root before the completion callback returned (container.ts recordCompletion). So this is an edit to a row that
- * exists, and every way out of it - Escape, the backdrop, Not now, closing the window, killing the process - leaves
- * that row exactly as the transaction wrote it, still counted, still in the day's total, and still waiting to be
+ * This dialog cannot lose anything. By the time it opens, the completed interval is already a work session AND a
+ * pomodoro_sessions row, written in one transaction before the completion callback returned (container.ts
+ * recordCompletion). So this is an edit to a row that exists, and every way out - Escape, the backdrop, Not now,
+ * killing the process - leaves that row exactly as the transaction wrote it, still counted and still waiting to be
  * asked about on the next launch.
  *
- * The only button that writes is Save, and what it writes is an ordinary sessions:update - so a company that
- * requires a note refuses it below IPC, exactly as it would on any other screen (COMP-04).
+ * The only button that writes is Save, and it writes an ordinary sessions:update - so a company that requires a
+ * note refuses it below IPC, as on any other screen (COMP-04).
  */
 
 import { useId, useState } from 'react';

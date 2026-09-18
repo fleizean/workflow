@@ -1,9 +1,7 @@
 /*
  * The header v1.2.1 rebuilt at the top of every page: a back chevron, a centred title, and one slot on the right.
- * Carried over as classes rather than as markup, and written once rather than four times.
- *
- * v1.2.1's header sat outside the scrolling <main>, so it stayed put while the list moved under it. AppShell owns
- * the one scroller here and the route renders inside it, so the same behaviour is `sticky top-0`.
+ * v1.2.1's sat outside the scrolling <main> so it stayed put while the list moved under it; AppShell owns the one
+ * scroller here and the route renders inside it, so the same behaviour is `sticky top-0`.
  */
 
 import type { ReactElement, ReactNode } from 'react';

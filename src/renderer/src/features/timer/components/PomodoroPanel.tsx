@@ -1,15 +1,13 @@
 /*
  * POMO-03/05/06/07/08/09: the cycle, on the same dial the work timer uses.
  *
- * The panel holds no state about the cycle. Every number on it - which interval, how far in, how many pomodoros
- * today, how many before the long break - comes from the snapshot main pushes, and main derives the count from the
- * database on every question (CORE-12). That is why the long break arrives in the right place after a restart
- * without anything here remembering anything.
+ * The panel holds no state about the cycle. Every number on it comes from the snapshot main pushes, and main
+ * derives the count from the database on every question (CORE-12) - which is why the long break arrives in the
+ * right place after a restart without anything here remembering anything.
  *
- * Completion is not this panel's business either: it happens on main's scheduler, writes the session and the
- * pomodoro row in one transaction, and raises the sound and the system notification from main - so it works with
- * the window hidden in the tray, which is the half of it v1.2.1 could never do from a renderer that was not running
- * (POMO-03).
+ * Completion is not this panel's business either: it happens on main's scheduler and raises the sound and the
+ * notification from main, so it works with the window hidden in the tray - the half v1.2.1 could never do from a
+ * renderer that was not running (POMO-03).
  */
 
 import type { ReactElement } from 'react';
@@ -70,9 +68,8 @@ export default function PomodoroPanel(): ReactElement {
         <>
             {/*
               * CR-01 made visible. The interval reached its target and the write that would have preserved it threw,
-              * so the service is holding the seconds rather than discarding them and has paused on the interval that
-              * earned them. Saying so is the whole point: a user whose disk is full must be told, not left with a
-              * cycle that silently stopped.
+              * so the service is holding the seconds and has paused on the interval that earned them. A user whose
+              * disk is full must be told, not left with a cycle that silently stopped.
               */}
             {snapshot.recordingFailed ? (
                 <p className={FAILED_CLASS}>
@@ -123,9 +120,8 @@ export default function PomodoroPanel(): ReactElement {
                 }}
                 onSkipBreak={() => { autoStart.cancel(); skip.mutate(); }}
                 /*
-                  * CR-03: the one control here that discards work, and it now says what it costs first - the same
-                  * destructive confirm the work timer's Reset opens, naming the same amount. Nothing is abandoned
-                  * unless the answer was yes, so the red banner above can keep promising the time is safe.
+                  * CR-03: the one control here that discards work, and it says what it costs first - the same
+                  * destructive confirm the work timer's Reset opens, naming the same amount.
                   */
                 onAbort={() => {
                     void openDialog(describeAbandon(snapshot)).then((confirmed) => {

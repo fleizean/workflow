@@ -1,13 +1,11 @@
 /*
- * The ring, the digits, the status badge and the meta pill - legacy/pages/index.html:379-430, class for class.
- *
- * It draws a value and decides nothing: the offset, the colour, the digits and the meta line all arrive computed
- * from timer-view.ts, which is the only place any of it can be run by a test.
+ * The ring, the digits, the status badge and the meta pill - legacy/pages/index.html:379-430, class for class. It
+ * draws a value and decides nothing: everything arrives computed from timer-view.ts.
  *
  * Two carried oddities, both v1.2.1's and both flagged in 08-C-SUMMARY.md rather than quietly corrected:
  *  - the <svg> is rotated -90 AND the progress circle another -90, so the arc starts at nine o'clock;
- *  - the badge stays on screen while paused. v1.2.1 hid it on pause through an inline style; the ping animation
- *    carries the running state here instead.
+ *  - the badge stays on screen while paused. v1.2.1 hid it through an inline style; the ping animation carries the
+ *    running state here instead.
  */
 
 import type { ReactElement } from 'react';
@@ -31,15 +29,13 @@ const HEADLINE_CLASS: Record<'normal' | 'exceeded', string> = {
 /*
  * Phase 10 criterion 3: the ring is sized from the height available instead of being pinned at 300px.
  *
- * v1.2.1 wrote `max-w-[300px]`, which is a phone-shaped window's number. Dragged short it pushed the controls
- * below the fold; dragged to 1920x1080 it stayed the same 300px in the middle of a screen with room for far
- * more. `aspect-square` with `w-full` is what keeps it circular: the width is min(column, the clamp below) and
- * the height follows it, so no axis is set independently and the ring cannot become an ellipse.
+ * v1.2.1 wrote `max-w-[300px]`, a phone-shaped window's number. Dragged short it pushed the controls below the
+ * fold; at 1920x1080 it stayed 300px in the middle of a screen with room for more. `aspect-square` with `w-full`
+ * keeps it circular: the width is min(column, the clamp below) and the height follows, so no axis is independent.
  *
- * 32vh is chosen rather than a slope of 1, so that the DEFAULT window (430x932, where MAIN_WINDOW opens) lands
- * on 298px - within two pixels of what v1.2.1 drew, which is the size the Phase 1 baselines were captured at.
- * The floor keeps the digits legible at the 600px minimum and the ceiling stops a 4K window drawing a dinner
- * plate. Measured across all 15 matrix cells by tools/baseline/responsive-matrix.mjs.
+ * 32vh rather than a slope of 1, so the DEFAULT window (430x932) lands on 298px - within two pixels of what v1.2.1
+ * drew, which is what the Phase 1 baselines were captured at. The floor keeps the digits legible at the 600px
+ * minimum and the ceiling stops a 4K window drawing a dinner plate. Measured across all 15 matrix cells.
  */
 const RING_BOX_CLASS =
     'relative w-full max-w-[clamp(9rem,32vh,22rem)] aspect-square flex items-center justify-center';

@@ -1,15 +1,13 @@
 /*
  * The brushstroke fire behind the streak card at tiers 2 and 3 - legacy/pages/index.html:596-700's
- * StreakFireAnimation, as a component. The palette, the particle counts, the speeds, the lifespans and the
- * brushstroke path are carried over unchanged.
+ * StreakFireAnimation, as a component. The palette, particle counts, speeds, lifespans and path are unchanged.
  *
- * Three things the v1.2.1 class did not do, all of them Phase 10 criterion 4 and all of them cheaper to do here
- * than to come back for:
+ * Three things the v1.2.1 class did not do, all of them Phase 10 criterion 4:
  *  - it sized the bitmap in CSS pixels, so on a 150% display the canvas drew at two thirds of the resolution it was
  *    painted at and the flame was soft;
  *  - it never resized, so a window drag left the bitmap at the old size and the drawing stretched;
- *  - it cancelled its frame loop only when another tier replaced it, never on teardown, so navigating away from the
- *    screen left requestAnimationFrame running for the life of the process.
+ *  - it cancelled its frame loop only when another tier replaced it, never on teardown, so navigating away left
+ *    requestAnimationFrame running for the life of the process.
  */
 
 import { useEffect, useRef } from 'react';
@@ -103,15 +101,12 @@ function drawBrushstroke(
 }
 
 /*
- * h-full w-full is load-bearing, not tidiness. A canvas is a REPLACED element with an intrinsic size - the
- * width and height content attributes, which default to 300x150 - so `inset-0` alone never stretched it: for an
- * absolutely positioned replaced element, `width: auto` resolves to the intrinsic width and the `right` offset is
- * then simply ignored. The flame has therefore always been drawn 300x150 inside a card about a third that wide,
- * with `overflow-hidden` on the card cropping it to its top-left corner, and resize() measured that 300x150 and
- * wrote it straight back - so the bitmap tracked the ATTRIBUTE rather than the card, at every window size and
- * every display scale. Two CSS lengths override the intrinsic size and the box finally follows the card.
- * Measured by tools/baseline/responsive-matrix.mjs, which found it as a 300px-wide element hanging 174px past
- * the right edge of a 380px window.
+ * h-full w-full is load-bearing, not tidiness. A canvas is a REPLACED element with an intrinsic size - the width and
+ * height content attributes, default 300x150 - so `inset-0` alone never stretched it: for an absolutely positioned
+ * replaced element `width: auto` resolves to the intrinsic width and the `right` offset is ignored. The flame was
+ * therefore always drawn 300x150 inside a card about a third that wide, and resize() measured that 300x150 and wrote
+ * it back, so the bitmap tracked the ATTRIBUTE rather than the card. Measured by responsive-matrix.mjs, which found
+ * it as a 300px-wide element hanging 174px past the right edge of a 380px window.
  */
 const CANVAS_CLASS = 'absolute inset-0 h-full w-full pointer-events-none rounded-2xl';
 
@@ -181,11 +176,10 @@ export default function StreakFireCanvas({ intensity }: { readonly intensity: Fi
         observer.observe(canvas);
 
         /*
-         * A ResizeObserver fires on a CSS-size change and on nothing else, so dragging the window onto a monitor at
-         * a different Windows display scale changes devicePixelRatio while the card stays exactly as many CSS
-         * pixels wide - and the bitmap would keep the old ratio, which is the soft flame this component exists to
-         * fix. A resolution media query is the one thing that reports that transition; it resolves against the
-         * current ratio, so it is re-armed after every change.
+         * A ResizeObserver fires on a CSS-size change and nothing else, so dragging the window onto a monitor at a
+         * different display scale changes devicePixelRatio while the card stays exactly as many CSS pixels wide -
+         * the soft flame this component exists to fix. A resolution media query is the one thing that reports that
+         * transition; it resolves against the current ratio, so it is re-armed after every change.
          */
         let scaleQuery: MediaQueryList | undefined;
         const watchScale = (): void => {

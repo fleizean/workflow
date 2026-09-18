@@ -1,12 +1,10 @@
 /*
  * What the Settings screen decides, in one place a test can run. There is no jsdom here, so this is where SET-01..05
- * are actually provable.
+ * are provable.
  *
- * The one decision the rest of the file follows from: the settings service REFUSES a value outside its bounds, it
- * does not clamp one (Phase 5). A clamp is a silent edit to something the user typed, so the screen has to be able
- * to say what is wrong with a number before it sends it - and it says so out of @shared/constants/settings, which is
- * the same declaration main enforces. It also refuses the whole patch rather than half of it, because that is what
- * the service does with one bad key.
+ * The decision the rest of the file follows from: the settings service REFUSES a value outside its bounds, it does
+ * not clamp one (Phase 5). So the screen has to be able to say what is wrong with a number before it sends it, out
+ * of @shared/constants/settings - the same declaration main enforces. It refuses the whole patch, as the service does.
  */
 
 import { SETTINGS_BOUNDS } from '@shared/constants/settings';
@@ -135,9 +133,8 @@ export function reviewDraft(draft: SettingsDraft, stored: Settings): DraftReview
     const errors: Partial<Record<NumericSettingKey, string>> = {};
     const patch: Record<string, number | boolean> = {};
     /*
-     * A field is compared as TEXT against what the stored value reads as, not as a number: 90 stored seconds show
-     * as 2 minutes, and writing 120 back over a value nobody touched is the silent edit the service refuses to make
-     * on the user's behalf. Only a field that was actually typed into is written.
+     * A field is compared as TEXT against what the stored value reads as, not as a number: 90 stored seconds show as
+     * 2 minutes, and writing 120 back over a value nobody touched is the silent edit the service refuses to make.
      */
     const baseline = draftFrom(stored);
 
@@ -200,9 +197,8 @@ export interface SettingsDialog {
 
 /*
  * The one irreversible action in the app, and the reason the button carries DESTRUCTIVE_ACTION_ID:
- * legacy/pages/settings.html:659 reached this button with document.querySelector('.mt-8.mb-8 button'), so a spacing
- * tweak detached the handler from the delete-all-data control - or, worse, attached it to whatever button a later
- * edit put first inside those margins.
+ * legacy/pages/settings.html:659 reached it with document.querySelector('.mt-8.mb-8 button'), so a spacing tweak
+ * detached the handler from the delete-all-data control - or attached it to whatever button a later edit put first.
  */
 export const RESET_ALL_CONFIRM: SettingsDialog = {
     tone: 'error',
@@ -223,9 +219,8 @@ export function describeDeleteAll(deletedSessionCount: number): string {
 }
 
 /*
- * v1.2.1's About row opened github.com in a browser through window.open. The renderer refuses window.open now
- * (WR-01, proved in the packaged smoke) and there is no channel for opening a URL, so the address is shown as text
- * rather than offered as a link that would do nothing.
+ * v1.2.1's About row opened github.com through window.open. The renderer refuses window.open now (WR-01, proved in
+ * the packaged smoke) and there is no channel for opening a URL, so the address is shown as text.
  */
 export const ABOUT: SettingsDialog = {
     tone: 'info',

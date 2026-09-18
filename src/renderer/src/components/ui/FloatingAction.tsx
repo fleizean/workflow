@@ -3,9 +3,7 @@
  *
  * It hangs off a rail that is max-w-app and centred, not off the window: `fixed right-6` pins to the viewport edge,
  * which v1.2.1 got away with because its window was phone-shaped. On a wide window the button drifted to the far
- * right while everything else stayed in the 448 px column. Same family as the bottom navigation's alignment.
- *
- * The rail ignores the pointer so it cannot swallow clicks across the width it spans; the button takes it back.
+ * right while everything else stayed in the 448 px column. The rail ignores the pointer; the button takes it back.
  */
 
 import type { ReactElement } from 'react';

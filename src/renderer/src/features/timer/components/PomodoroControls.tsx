@@ -1,9 +1,7 @@
 /*
  * The cycle's controls. Same geometry as the work timer's - legacy/pages/index.html:434-470 - because it is the
- * same row on the same screen, with the two secondary buttons saying what they mean in a cycle.
- *
- * v1.2.1 had no cycle controls at all on this screen beyond the shared play button: skipBreak() existed on the
- * timer class (legacy/renderer/timer.js:189) and nothing ever called it, which is POMO-05.
+ * same row on the same screen. v1.2.1 had no cycle controls beyond the shared play button: skipBreak() existed on
+ * the timer class (legacy/renderer/timer.js:189) and nothing ever called it, which is POMO-05.
  */
 
 import type { ReactElement } from 'react';

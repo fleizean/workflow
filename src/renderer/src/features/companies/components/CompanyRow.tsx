@@ -2,12 +2,10 @@
  * One company. The classes are legacy/pages/companies.html:117-152 carried over unchanged.
  *
  * What is gone is how it was built: v1.2.1 wrote this row with innerHTML and hung the two buttons off
- * onclick="editCompany(1, 'NAME')", escaping exactly one character of the name. A company called
- * <img src=x onerror=alert(1)> ran. Here the name is a JSX child and the handlers are functions, so there is no
- * string for it to be part of (S2).
+ * onclick="editCompany(1, 'NAME')", escaping exactly one character of the name, so a company called
+ * <img src=x onerror=alert(1)> ran. Here the name is a JSX child and the handlers are functions (S2).
  *
- * The "Note required" line is the one addition: v1.2.1 let the flag be set and then showed it nowhere, so nobody
- * could tell which companies carried it without opening each one.
+ * The "Note required" line is the one addition: v1.2.1 let the flag be set and then showed it nowhere.
  */
 
 import type { ReactElement } from 'react';
@@ -20,10 +18,9 @@ const ROW_CLASS = 'group flex items-center gap-4 rounded-xl bg-white dark:bg-car
 const ICON_CLASS = 'flex shrink-0 items-center justify-center rounded-lg bg-primary/10 dark:bg-primary/20 h-14 w-14';
 const NAME_CLASS = 'truncate text-base font-semibold text-slate-900 dark:text-white';
 /*
- * flex-wrap, which v1.2.1 did not have. The column this line sits in is `overflow-hidden` (so the long name above
- * it can truncate), and at the 380px minimum the meta line measures 188px inside a 146px box - so "Note required",
- * the bullet before it and the tail of the created-on date were cut off with no ellipsis and no way to reach them.
- * Wrapping costs one extra line at the narrowest width and changes nothing above it, where the line already fits.
+ * flex-wrap, which v1.2.1 did not have. The column this line sits in is overflow-hidden so the long name above can
+ * truncate, and at the 380px minimum the meta line measures 188px inside a 146px box - so "Note required", the
+ * bullet before it and the tail of the created-on date were cut off with no ellipsis and no way to reach them.
  * Found by tools/baseline/responsive-matrix.mjs at 380x600.
  */
 const META_CLASS = 'flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400';

@@ -1,10 +1,9 @@
 /*
  * The 51x31 switch legacy/pages/settings.html drew four times, as one component.
  *
- * Two changes to its markup, both so the control is honest about itself: the whole row is the <label>, so clicking
- * the text toggles the switch and the pointer cursor and hover highlight v1.2.1 drew are true rather than
- * decorative; and the checked state is written `peer-checked:` rather than `has-[:checked]:`, because that needs
- * the input to be the switch's own sibling.
+ * Two changes to its markup, both so the control is honest about itself: the whole row is the <label>, so the
+ * pointer cursor and hover highlight v1.2.1 drew are true rather than decorative; and the checked state is written
+ * `peer-checked:` rather than `has-[:checked]:`, which needs the input to be the switch's own sibling.
  *
  * Each tint is a whole class string. Built as `bg-${tint}-100` it would be a name Tailwind's scanner never sees,
  * and the circle would have no colour at all (C3).
@@ -24,15 +23,12 @@ const CIRCLE_CLASS: Record<ToggleTint, string> = {
 };
 
 /*
- * `relative` is what keeps the hidden checkbox in the row it belongs to.
- *
- * Tailwind's `sr-only` is `position: absolute` with no offsets, so the input below is laid out at its static
- * position but takes its CONTAINING BLOCK from the nearest positioned ancestor. With none on the row, that was
- * #app-shell - outside AppShell's scrolling <main> - so the real focusable control of every toggle sat in a
- * layer that does not scroll with the list, escaped main's clipping, and stretched the shell's own scrollable
- * overflow 33px past a 600px window. A keyboard user tabbing down Settings was focusing a control the browser
- * could not scroll into view, because the box it would have scrolled was not the box the row was in.
- * Found by tools/baseline/responsive-matrix.mjs as a clipped-content report against #app-shell itself.
+ * `relative` is what keeps the hidden checkbox in the row it belongs to. Tailwind's `sr-only` is `position:
+ * absolute` with no offsets, so the input is laid out at its static position but takes its CONTAINING BLOCK from
+ * the nearest positioned ancestor. With none on the row that was #app-shell - outside AppShell's scrolling <main> -
+ * so the real focusable control of every toggle sat in a layer that does not scroll with the list, escaped main's
+ * clipping, and stretched the shell's scrollable overflow 33px past a 600px window. A keyboard user tabbing down
+ * Settings was focusing a control the browser could not scroll into view. Found by responsive-matrix.mjs.
  */
 const ROW_CLASS: Record<'card' | 'row', string> = {
     card: 'relative flex items-center gap-4 justify-between cursor-pointer bg-white dark:bg-surface-dark ' +

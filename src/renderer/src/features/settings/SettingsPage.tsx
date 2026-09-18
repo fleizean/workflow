@@ -1,13 +1,12 @@
 /*
  * SET-01..05. legacy/pages/settings.html's screen, over the settings service that refuses rather than clamps.
  *
- * Three things it does differently from v1.2.1, each because v1.2.1 was wrong rather than because this is nicer:
+ * Three things it does differently from v1.2.1, each because v1.2.1 was wrong:
  *  - the pomodoro toggle raises no dialog. It saved everything and then announced it, over a switch the user had
  *    just watched move (criterion 4);
  *  - the delete-all button is reached by an identifier. legacy/pages/settings.html:659 found it with
  *    document.querySelector('.mt-8.mb-8 button'), so a spacing tweak detached the handler from the one
- *    irreversible action in the app - or attached it to whatever button a later edit put first inside those
- *    margins;
+ *    irreversible action in the app;
  *  - the delete reports how many sessions went, because the channel says and "Success!" does not.
  */
 
@@ -48,8 +47,8 @@ export default function SettingsPage(): ReactElement {
 
     /*
      * The service refuses a whole patch rather than writing part of one, so a refused form writes nothing and says
-     * where to look. The messages themselves are on the fields; this is the one line that says the Save did not
-     * happen, because a Save button that appears to do nothing is the worst of the three answers.
+     * where to look. The messages are on the fields; this is the one line that says the Save did not happen,
+     * because a Save button that appears to do nothing is the worst of the three answers.
      */
     const save = (review: DraftReview): void => {
         if (isRefused(review)) {
@@ -114,8 +113,8 @@ export default function SettingsPage(): ReactElement {
                 {/*
                   * my-8, not v1.2.1's `mt-8 mb-8`: the same 2rem above and below, written as one utility so that
                   * `.mt-8.mb-8 button` - the selector settings.html:659 reached this exact button with - resolves
-                  * to nothing at all. The packaged smoke asks for both halves, and it found this one the first
-                  * time it ran, because the markup was ported verbatim.
+                  * to nothing. The packaged smoke found this one the first time it ran, because the markup was
+                  * ported verbatim.
                   */}
                 <div className="my-8">
                     <button

@@ -1,9 +1,7 @@
 /*
  * The control panel - legacy/pages/index.html:434-470 - with its three buttons and the full-width reset under them.
- *
  * `shadow-glow` and `hover:bg-primary-dark` are not carried: v1.2.1 wrote both on the play button and its Tailwind
- * config (legacy/renderer/tailwind-config.js) declares neither, so the CDN emitted no CSS for either and neither
- * rendered. The hover is the white wash inside the button, which is what actually drew.
+ * config declares neither, so the CDN emitted no CSS for either and neither rendered.
  */
 
 import type { ReactElement } from 'react';

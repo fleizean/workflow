@@ -3,9 +3,8 @@
  * (ARCH-03).
  *
  * v1.2.1 kept it in localStorage under `sessionFilters`, so it survived a restart. It does not any more: web
- * storage is banned in this renderer because main cannot read it and a cleared profile forgets it, and a filter is
- * not durable user data - it is what the user is looking at right now. It survives every route change, which is
- * what v1.2.1's persistence was actually doing for it, because in v1.2.1 every route change was a page load.
+ * storage is banned in this renderer, and a filter is not durable user data. It survives every route change, which
+ * is what v1.2.1's persistence was actually doing for it, because there every route change was a page load.
  */
 
 import { create } from 'zustand';

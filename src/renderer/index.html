@@ -2,13 +2,11 @@
 <!--
     The single renderer entry point. electron-vite discovers it by convention.
 
-    The Content-Security-Policy below forbids every remote origin: scripts, styles, fonts, images,
-    media and connections all come from the app bundle. v1.2.1 loaded Tailwind and its fonts from
-    remote origins and so rendered icons as literal words when offline. Never add a remote URL here.
+    The Content-Security-Policy below forbids every remote origin. v1.2.1 loaded Tailwind and its fonts remotely and
+    so rendered icons as literal words when offline. Never add a remote URL here.
 
-    This file sits under src/ with an .html extension, so tools/baseline/inventory.sh and
-    tests/inventory.test.ts scan it. It must carry no DOM event-registration call and no reference
-    to the legacy preload bridge, or the Phase 1 inventory pins change.
+    tools/baseline/inventory.sh and tests/inventory.test.ts scan this file: it must carry no DOM
+    event-registration call and no reference to the legacy preload bridge, or the Phase 1 inventory pins change.
 -->
 <html class="dark" lang="en">
     <head>
@@ -21,21 +19,19 @@
         <title>Workflow</title>
     </head>
     <!--
-        The classes v1.2.1 carried on <body> (legacy/pages/*.html). They are here rather than only on AppShell
-        because #modal-root is a SIBLING of #root: every dialog portals outside the shell, so a font, a text
-        colour or an antialiasing setting applied to the shell alone never reaches one. Every modal in the app
-        was rendering in Chromium's default font.
+        The classes v1.2.1 carried on <body>. They are here rather than only on AppShell because #modal-root is a
+        SIBLING of #root: every dialog portals outside the shell, so a font applied to the shell alone never
+        reaches one, and every modal in the app was rendering in Chromium's default font.
 
-        selection: v1.2.1 wrote `selection:bg-primary/30` on three pages and `selection:bg-primary
-        selection:text-white` on index. One document now, so it is one value; the majority spelling is kept,
-        because per-page selection colours read as an inconsistency once the pages are one screen apart.
+        selection: v1.2.1 wrote selection:bg-primary/30 on three pages and selection:bg-primary selection:text-white
+        on index. One document now, so it is one value; the majority spelling is kept.
     -->
     <body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-white antialiased selection:bg-primary/30">
         <div id="root"></div>
         <!--
             Where components/ui/Modal renders. After #root on purpose: v1.2.1 appended its bottom navigation and
-            then each modal to document.body, so a modal painted over the bar at the same z-index. DOM order settles
-            that here too, rather than a z-index race between two components that do not know about each other.
+            then each modal to document.body, so a modal painted over the bar at the same z-index. DOM order
+            settles that here, rather than a z-index race between components that do not know about each other.
         -->
         <div id="modal-root"></div>
         <script type="module" src="/src/app/main.tsx"></script>

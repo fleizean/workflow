@@ -2,10 +2,10 @@
  * SET-01..05: the form half of legacy/pages/settings.html, section for section and class for class, minus the
  * Timesheet Integration block the owner removed with the Google Sheets export (criterion 6).
  *
- * The draft is seeded once, at mount, from what the database holds, and it is TEXT rather than numbers: an empty
- * box is not a zero. Nothing is written until Save - except the pomodoro toggle, which is a mode change as well as
- * a preference and takes effect at once. v1.2.1's toggle also saved, and then raised a "Settings saved
- * successfully!" modal over a switch the user had just watched move (criterion 4); the switch is the feedback.
+ * The draft is seeded once at mount and is TEXT rather than numbers: an empty box is not a zero. Nothing is written
+ * until Save - except the pomodoro toggle, which is a mode change as well as a preference. v1.2.1's toggle also
+ * saved, then raised a "Settings saved successfully!" modal over a switch the user had just watched move
+ * (criterion 4); the switch is the feedback.
  */
 
 import { useId, useState } from 'react';
@@ -70,10 +70,8 @@ export default function SettingsForm(props: SettingsFormProps): ReactElement {
     /*
      * noValidate (WR-01). NumberSettingCard carries min/max and a number input's default step of 1, so Chromium
      * refused the submit for exactly the two refusal classes this screen exists to explain - out of range, and not
-     * a whole number. reviewDraft never ran, the hint line never turned red, aria-invalid was never set and the
-     * "Nothing was saved" toast never appeared; the user got a bubble instead. The attributes stay, because they
-     * still drive the spinner and state the real bounds; the screen's own review is the authority, and
-     * settings.service.ts refuses again below IPC.
+     * a whole number. reviewDraft never ran, the hint never turned red and the "Nothing was saved" toast never
+     * appeared; the user got a bubble instead. The attributes stay because they still state the real bounds.
      */
     return (
         <form onSubmit={submit} noValidate>

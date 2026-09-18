@@ -1,14 +1,12 @@
 /*
- * Everything the Home screen decides, as pure functions over what main reported. The components below it read a
- * value and draw it; nothing in them computes a time.
+ * Everything the Home screen decides, as pure functions over what main reported. The components below read a value
+ * and draw it; nothing in them computes a time.
  *
- * This exists for the reason features/history/grouping.ts does: there is no jsdom in this project and no test
- * renders a component, so a decision left inside JSX is a decision nothing can run. The ring's offset, the headline,
- * the meta line, the streak tier and - above all - what number gets written into a session row are decided here and
- * asserted in tests/timer-screen.test.ts.
+ * A module for the reason features/history/grouping.ts is one: there is no jsdom here and no test renders a
+ * component, so a decision left inside JSX is a decision nothing can run.
  *
- * No clock is read in this file. The wall clock arrives as `nowMs` and is used only to NAME a finish time; the
- * seconds themselves always come from the snapshot main pushed (X1).
+ * No clock is read in this file. The wall clock arrives as `nowMs` and only ever NAMES a finish time; the seconds
+ * come from the snapshot main pushed (X1).
  */
 
 import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
@@ -17,10 +15,9 @@ import { formatElapsed } from '@renderer/lib/duration';
 import type { LocalDate, WorkSession } from '@shared/types';
 
 /**
- * The Logged card: one day's recorded total, from the session list every screen already holds.
- *
- * A whole day, never one session - the distinction B7 was about. v1.2.1 asked main for the day's rows and summed
- * them the same way (legacy/pages/index.html:585); the sum is here so it can be run.
+ * The Logged card: one day's recorded total, from the session list every screen already holds. A whole day, never
+ * one session - the distinction B7 was about. v1.2.1 summed the same rows (legacy/pages/index.html:585); the sum is
+ * here so it can be run.
  */
 export function dayTotalOf(sessions: readonly WorkSession[], date: LocalDate): number {
     let total = 0;
@@ -75,19 +72,16 @@ export interface WorkDialInput {
     /*
      * IN-03: whether the counted seconds belong to the day this dial is about. Main counts on today and tracks the
      * day it counted on separately (timer.service.ts countedDay), so picking Yesterday used to subtract today's
-     * counted seconds from yesterday's target. savableSeconds is unaffected - what may be SAVED does not depend on
-     * which day is on screen - and WR-06's congratulation rides the same gate.
+     * counted seconds from yesterday's target. savableSeconds is unaffected; WR-06's congratulation rides this gate.
      */
     readonly countedOnSelectedDay: boolean;
 }
 
 /*
- * What a save is allowed to write.
- *
- * Bounded at both ends, and the bound is the contract's own (WR-07): a negative correction cannot take a session
- * below zero, and the total cannot exceed a day - which is reachable in one honest way, a timer left running across
- * a weekend with the app open. The save form's duration field is editable precisely so that case has an answer
- * other than a refusal the user can do nothing about.
+ * What a save is allowed to write, bounded at both ends by the contract's own bounds (WR-07): a negative correction
+ * cannot take a session below zero, and the total cannot exceed a day - reachable in one honest way, a timer left
+ * running across a weekend with the app open. The save form's duration field is editable precisely so that case has
+ * an answer other than a refusal the user can do nothing about.
  */
 export function savableSeconds(elapsedSeconds: number, adjustmentSeconds: number): number {
     const total = Math.floor(elapsedSeconds) + Math.floor(adjustmentSeconds);
@@ -111,10 +105,9 @@ export function ringToneFor(progressPercent: number): RingTone {
 }
 
 /*
- * v1.2.1's three answers, kept: the clock time the day's target would be reached at while the timer runs, a note
- * that it has already been passed, and otherwise that nothing is counting. The fourth branch at
- * legacy/pages/index.html:950 was `isExceeded ? ... : 'Not running'` inside the else of `if (isExceeded)`, so its
- * first arm was unreachable; parity is with what rendered.
+ * v1.2.1's three answers, kept: the clock time the target would be reached at while the timer runs, a note that it
+ * has been passed, and otherwise that nothing is counting. The fourth branch at legacy/pages/index.html:950 was
+ * `isExceeded ? ... : 'Not running'` inside the else of `if (isExceeded)`, so its first arm was unreachable.
  */
 function metaLineFor(exceeded: boolean, running: boolean, remainingSeconds: number, nowMs: number): string {
     if (exceeded) return 'Goal Exceeded!';
@@ -148,9 +141,8 @@ export function describeWorkDial(input: WorkDialInput): WorkDial {
 
 /*
  * WR-03. The confirm used to name `savableSeconds` - the accumulator plus the pending correction - while
- * `timer:reset` discards the accumulator, which the correction has never touched. That is the whole point of the
- * Adjust redesign, and it made the dialog understate the loss whenever the correction was negative: -30 min with
- * two hours counted offered to discard 90 minutes of the 120 it took.
+ * `timer:reset` discards the accumulator, which the correction has never touched. It made the dialog understate the
+ * loss whenever the correction was negative: -30 min with two hours counted offered to discard 90 of the 120.
  */
 export interface ResetConfirm {
     readonly tone: 'error';
@@ -176,9 +168,9 @@ export function describeResetConfirm(elapsedSeconds: number): ResetConfirm {
 }
 
 /*
- * TIMER-09. v1.2.1 drew three tiers off the streak value (legacy/pages/index.html:717-736) and then wired a click
- * handler that overwrote the card with 6, 15 and 25 in turn and appended "(TEST)" to the label (:1474-1481). The
- * tiers are kept; the debug override is not, and there is no click handler on the card at all.
+ * TIMER-09. v1.2.1 drew three tiers off the streak value (legacy/pages/index.html:717-736) and wired a click handler
+ * that overwrote the card with 6, 15 and 25 in turn and appended "(TEST)" to the label (:1474-1481). The tiers are
+ * kept; the debug override is not, and there is no click handler on the card at all.
  */
 export type StreakTier = 0 | 1 | 2 | 3;
 const TIER_1_DAYS = 5;

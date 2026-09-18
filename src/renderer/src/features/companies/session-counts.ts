@@ -20,13 +20,11 @@ export function describeSessionCount(count: number): string {
 }
 
 /*
- * BL-03. `undefined` above means "this company has no rows in the list I was given"; it is the screen that has to
- * decide whether that list is an answer at all. Two `?? 0`s used to make both cases zero, so a destructive
- * confirmation over a company holding twelve sessions read exactly like one over a company holding none - while
- * the session read was still in flight, after it had failed (retry is false), and whenever list() dropped rows the
- * cascade deletes regardless.
- *
- * null is "not known", and it stays distinguishable all the way to the dialog and to the row.
+ * BL-03. `undefined` above means "this company has no rows in the list I was given"; the screen has to decide
+ * whether that list is an answer at all. Two `?? 0`s used to make both cases zero, so a destructive confirmation
+ * over a company holding twelve sessions read exactly like one over a company holding none - while the read was in
+ * flight, after it had failed, and whenever list() dropped rows the cascade deletes regardless. null is "not known",
+ * and it stays distinguishable all the way to the dialog and the row.
  */
 export function sessionCountFor(
     counts: ReadonlyMap<number, number>,
@@ -49,9 +47,8 @@ export const DELETE_COUNT_UNKNOWN =
 
 /*
  * WR-03. What happened, said by the same condition that colours the toast. The tone was chosen on
- * `removed === expected` and the wording on `removed === 0`, so a warning quoting three sessions over a cascade
- * that removed none produced an orange toast reading "Company deleted successfully" - a mismatch in the words of a
- * success, with neither figure in it.
+ * `removed === expected` and the wording on `removed === 0`, so a warning quoting three sessions over a cascade that
+ * removed none produced an orange toast reading "Company deleted successfully", with neither figure in it.
  */
 export function describeCompanyDeleted(removed: number, expected: number): string {
     if (removed !== expected) {
@@ -62,10 +59,9 @@ export function describeCompanyDeleted(removed: number, expected: number): strin
 }
 
 /*
- * COMP-05. The delete cascades, so the confirmation has to say what goes with the company - and it has to say it
- * before the call, because the channel can only report the count once the rows are gone. A user who reads
- * "This action cannot be undone" over an unnamed number of work sessions has not been warned about the thing that
- * actually happens, which is that tracked time is deleted.
+ * COMP-05. The delete cascades, so the confirmation has to say what goes with the company, and it has to say it
+ * before the call because the channel can only report the count once the rows are gone. A user who reads "This
+ * action cannot be undone" over an unnamed number of work sessions has not been warned that tracked time is deleted.
  */
 export function describeCompanyDelete(count: number): string {
     if (count === 0) {

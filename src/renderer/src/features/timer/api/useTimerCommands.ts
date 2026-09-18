@@ -1,19 +1,15 @@
 /*
  * TIMER-01/02/06: the four things the Home screen can ask of the clock, and the one composition it cannot do for
- * itself.
+ * itself. None of them invalidates anything - main announces what a successful call changed on `data:changed` and
+ * DataSyncProvider invalidates on that (SPA-07) - and none raises its own error toast.
  *
- * None of them invalidates anything - main announces what a successful call changed on `data:changed` and
- * DataSyncProvider invalidates on that (SPA-07) - and none raises its own error toast, because QueryProvider's
- * MutationCache raises one for every failed write in the app.
+ * `timer:stopAndSave` is deliberately the only way this screen records work. `sessions:create` followed by
+ * `timer:reset` is two invokes and two invokes cannot be atomic: killed between them, the first order leaves the
+ * session on disk with the seconds still counted and G3/G4 offers the same work again, and the second zeroes the
+ * accumulator with nothing written (WR-06). Nothing here may reintroduce the two-call shape.
  *
- * `timer:stopAndSave` is deliberately the only way this screen records work. Phase 5 added the channel because
- * `sessions:create` followed by `timer:reset` is two invokes and two invokes cannot be atomic: killed between them,
- * the first order leaves the session on disk with the seconds still counted and G3/G4 offers the same work again,
- * and the second zeroes the accumulator with nothing written. Both are the Core Value, so the pairing lives below
- * IPC in one transaction (WR-06). Nothing here may reintroduce the two-call shape.
- *
- * The mode toggle is NOT here. Settings toggles the same mode, and the pair of writes it takes must stay a pair,
- * so it lives in features/settings/api/useTimerMode.ts where both screens reach the one caller.
+ * The mode toggle is NOT here: Settings toggles the same mode and the pair of writes must stay a pair, so it lives
+ * in features/settings/api/useTimerMode.ts.
  */
 
 import { useMutation } from '@tanstack/react-query';

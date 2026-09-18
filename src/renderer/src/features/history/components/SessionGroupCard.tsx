@@ -1,13 +1,12 @@
 /*
- * One date and one company: legacy/pages/work-history.html:601-696, carried over with its date badge, its Goal pill,
- * its note marker, its fold-out session list and the hairline it drew where the date changed.
+ * One date and one company: legacy/pages/work-history.html:601-696, carried over with its date badge, Goal pill,
+ * note marker, fold-out session list and the hairline it drew where the date changed.
  *
- * Two differences, both small and both deliberate:
+ * Two deliberate differences:
  *  - the header is a real <button>, so the card opens from the keyboard and announces aria-expanded. v1.2.1 put a
  *    click handler on a <div> and guarded it with e.target.closest('button');
  *  - the chevron is shown on every card rather than only on cards with more than one session. v1.2.1 expanded any
- *    card that was clicked, but only advertised it on some - and the edit and delete buttons live inside the fold,
- *    so on a single-session card they were reachable only by guessing.
+ *    card that was clicked but only advertised it on some, and the edit and delete buttons live inside the fold.
  *
  * The chevron's rotation is a class rather than the inline style.transform v1.2.1 assigned (ARCH-05).
  */

@@ -1,13 +1,9 @@
 /*
  * Both clocks' opening values and every value after them, mounted once for the app (CR-01).
  *
- * The work timer's were mounted by TimerPage, which is one of four routes - so the titlebar, which is live on all
- * four, read a store that only Home kept current. The subscriptions and the queries belong beside DataSyncProvider
- * for the same reason data:changed does: a subscriber inside a screen stops when that screen unmounts (SPA-07).
- *
- * The pomodoro feed is here for a sharper version of the same reason: an interval completes on main's scheduler
- * while the user may be anywhere in the app, and the snapshot that arrives is what says the cycle moved - including
- * that a write failed and the interval is being held.
+ * The work timer's were mounted by TimerPage, one of four routes - so the titlebar, live on all four, read a store
+ * only Home kept current. The pomodoro feed is here for a sharper version of the same reason: an interval completes
+ * on main's scheduler while the user may be anywhere, and the snapshot that arrives is what says the cycle moved.
  */
 
 import { useEffect } from 'react';

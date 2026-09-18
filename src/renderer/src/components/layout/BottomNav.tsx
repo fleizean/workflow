@@ -1,26 +1,17 @@
 /*
- * The bottom navigation, ported from legacy/renderer/bottom-nav.js.
+ * The bottom navigation, ported from legacy/renderer/bottom-nav.js. Carried over verbatim as content: the four
+ * items, their icons and order, the class strings for both states, the "Go to <label>" accessible name, aria-current
+ * and the filled icon on the active item, and the style block the imperative version injected for #bottomNav, as
+ * utility classes instead of a <style> element. What goes: the href column and the click handler - each item is a
+ * NavLink to a path in lib/routes.ts, and the active state comes from NavLink's isActive.
  *
- * Carried over verbatim as content: the four items, their icons, their order, the class strings for the active and
- * inactive states, the "Go to <label>" accessible name, aria-current on the active item, the filled icon on the
- * active item, and the style block the imperative version injected for #bottomNav (the upward shadow, and above the
- * md breakpoint a centred bar with rounded top corners), expressed here as utility classes instead of an injected
- * <style> element.
+ * Each state's classes are written out in full rather than joined at render time: a class name that only exists
+ * after a concatenation is one Tailwind's scanner never saw, and it emits no CSS for it (C3).
  *
- * What disappears: the href column and the click handler. v1.2.1 asked the main process to load a different HTML
- * file; here each item is a NavLink to one of the paths in lib/routes.ts, and the active state comes from NavLink's
- * isActive rather than from parsing the page's file name.
- *
- * Each state's classes are written out in full rather than joined from fragments at render time: a class name that
- * only exists after a concatenation is a class name Tailwind's scanner never saw, and it emits no CSS for it (C3).
- *
- * The one thing not carried verbatim is the width: v1.2.1 capped this bar at 430 px while the shell above it was
- * 448 px. Both are max-w-app now - one token, one width (SPA-02).
- *
- * The bar tracks the content column at EVERY width, not only above md. It used to centre itself at md and span the
- * whole window below it, so between 448 px and 768 px a 448 px column sat above an edge-to-edge bar. v1.2.1 was
- * full-width at every size, so neither spelling was parity with it; ROADMAP Phase 10 criterion 1 asks for the bar
- * aligned with the content column at all five matrix sizes, which is this. The rounded top starts at sm (40rem), which is where the bar stops spanning the window.
+ * v1.2.1 capped this bar at 430 px while the shell above it was 448 px; both are max-w-app now (SPA-02). The bar
+ * tracks the content column at EVERY width, not only above md - it used to centre at md and span the whole window
+ * below it, so between 448 px and 768 px a 448 px column sat above an edge-to-edge bar. The rounded top starts at
+ * sm (40rem), which is where the bar stops spanning the window (Phase 10 criterion 1).
  */
 
 import type { ReactElement } from 'react';

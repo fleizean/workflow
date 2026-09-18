@@ -1,16 +1,15 @@
 /*
- * TIMER-07 (G3/G4). A launch that finds counted time restores the clock PAUSED and sets restoredFromPreviousLaunch;
- * this is what consumes that flag.
+ * TIMER-07 (G3/G4). A launch that finds counted time restores the clock PAUSED and sets
+ * restoredFromPreviousLaunch; this is what consumes that flag.
  *
  * v1.2.1 did the opposite twice over: it read `elapsed` out of localStorage, added every wall-clock second since
- * `lastUpdated` if the timer had been running (legacy/pages/index.html:817-825 - B12, which credited a weekend), and
+ * `lastUpdated` if the timer had been running (legacy/pages/index.html:817-825 - B12, which credited a weekend),
  * then called `timer.start()` so the app came back counting without being asked.
  *
- * The three answers here are deliberate, and only one of them is destructive:
- *  - Save it opens the ordinary save dialog, so the time becomes a session with a company, a note and a date;
- *  - Not now closes this and leaves every second counted. So does Escape, so does a click on the backdrop, so does
- *    navigating away and so does quitting - the banner on Home keeps offering it, and the next launch offers it
- *    again. Nothing dismissive discards anything;
+ * Only one of the three answers is destructive:
+ *  - Save it opens the ordinary save dialog;
+ *  - Not now closes this and leaves every second counted. So does Escape, a backdrop click, navigating away and
+ *    quitting - the banner on Home keeps offering it. Nothing dismissive discards anything;
  *  - Discard is a second, destructive confirm that names the amount, and it is the only path that throws it away.
  */
 

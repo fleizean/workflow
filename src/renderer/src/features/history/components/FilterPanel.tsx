@@ -1,6 +1,5 @@
 /*
- * The advanced-filter panel: legacy/pages/work-history.html:1000-1090, carried over field for field - companies,
- * a date range, a duration range in hours, goal achievement, and the two sort selects.
+ * The advanced-filter panel: legacy/pages/work-history.html:1000-1090, carried over field for field.
  *
  * It edits a draft and hands the whole thing back on Apply, which is what v1.2.1 did by reading the DOM at the
  * moment the button was pressed. The goal radios are the one place v1.2.1 rewrote className strings by hand on
