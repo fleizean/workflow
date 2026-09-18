@@ -1,0 +1,125 @@
+name: Release
+
+# The ONLY triggers are a `v*` tag push and a manual dispatch. There is deliberately
+# no branch trigger here: "pushing a commit to main produces no release" is provable
+# by reading this block, not by reasoning about an `if:` expression (CUSTODY-01 / D-06).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  # WR-04: installer names and app.getVersion() come from package.json, so a tag must match it.
+  version-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Tag must equal v<package.json version>
+        if: github.ref_type == 'tag'
+        run: |
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json ($expected) - the installers would carry the wrong version"
+            exit 1
+          fi
+          echo "VERSION_GATE_OK $GITHUB_REF_NAME"
+
+  # BUILD-10 / D-17: building is delegated to the packaging workflow instead of being carried here
+  # as a second matrix. One definition, in package.yml, is what keeps the four legs - Windows and
+  # macOS, x64 and arm64 - from drifting apart between the pull-request path and this tag path. The
+  # tag reaches package.yml only through this call: package.yml deliberately has no tag trigger of
+  # its own, or one tag would start eight packaging legs instead of four.
+  #
+  # D-20: the checkout and setup-node steps this job used to carry now live in package.yml, on @v5. They are first-party actions on mutable major tags; the commit-hash pinning applied to the third-party release action below is deliberately not required of them.
+  build:
+    needs: [verify, version-gate]
+    uses: ./.github/workflows/package.yml
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                    # scoped to this job only
+    steps:
+      # All four, by the names package.yml assigns. A download by name fails when that artifact does
+      # not exist, which is the first line of defence against a missing architecture.
+      - name: Download Windows x64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-x64-build
+          path: dist/
+
+      - name: Download Windows arm64 installer
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-latest-arm64-build
+          path: dist/
+
+      - name: Download macOS x64 disk image
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-x64-build
+          path: dist/
+
+      - name: Download macOS arm64 disk image
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-arm64-build
+          path: dist/
+
+      # BUILD-10, enforced at the moment it matters most. fail_on_unmatched_files below catches an
+      # empty glob, but it cannot tell that three of four architectures showed up - dist/* matches
+      # happily either way. So count what arrived: exactly one non-empty file per expected
+      # installer, and nothing else in dist/, because every file in dist/ is attached to the release.
+      # The suffixes follow the artifactName templates in electron-builder.yml.
+      - name: Refuse to publish unless all four installers arrived
+        shell: bash
+        run: |
+          shopt -s nullglob
+          failed=0
+          for suffix in x64-setup.exe arm64-setup.exe x64.dmg arm64.dmg; do
+            matches=( dist/*-"$suffix" )
+            if [ "${#matches[@]}" -ne 1 ]; then
+              echo "::error::expected exactly one installer ending in -$suffix, found ${#matches[@]}: ${matches[*]:-none}"
+              failed=1
+            elif [ ! -s "${matches[0]}" ]; then
+              echo "::error::${matches[0]} arrived empty"
+              failed=1
+            else
+              echo "ARRIVED ${matches[0]} $(wc -c < "${matches[0]}" | tr -d ' ') bytes"
+            fi
+          done
+          everything=( dist/* )
+          if [ "${#everything[@]}" -ne 4 ]; then
+            echo "::error::dist/ holds ${#everything[@]} entries, expected exactly the four installers - every file in dist/ is attached to the release"
+            ls -la dist/ || true
+            failed=1
+          fi
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Refusing to create the release: it would ship without every platform and architecture (BUILD-10)."
+            exit 1
+          fi
+          echo "FOUR_ARTIFACTS_OK"
+
+      - name: Create DRAFT release
+        uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
+        with:
+          # tag_name defaults to github.ref_name; on workflow_dispatch from a branch it must be given.
+          # WR-03: `manual-` so publishing the draft cannot re-match `v*`; the new tag targets the built commit.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          draft: true                    # D-06 - a human promotes it
+          prerelease: false
+          make_latest: false             # drafts cannot be "latest" anyway; state it explicitly
+          fail_on_unmatched_files: true
+          files: dist/*

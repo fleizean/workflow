@@ -1,0 +1,266 @@
+/* All @import statements must come first. */
+@import "tailwindcss" source(none);
+@import "@fontsource-variable/inter/index.css";
+/*
+ * layer(base) is load-bearing. material-symbols/outlined.css declares `.material-symbols-outlined { font-size:
+ * 24px; ... }`, and an UNLAYERED rule beats every layered one - so imported bare it outranked Tailwind's utilities
+ * layer and every icon rendered at 24px whatever size its class asked for: the 48px streak glyph at half size, the
+ * 12px list glyphs at nearly double. The Play CDN generated its utilities after the Google Fonts @import, so
+ * v1.2.1 never had this. Found by the Phase 1 computed-style baselines, which is what they are for.
+ */
+@import "material-symbols/outlined.css" layer(base);
+
+/*
+ * The renderer's one stylesheet, compiled at build time.
+ *
+ * v1.2.1 fetched Tailwind from the Play CDN and its two fonts from Google Fonts at runtime. Offline, every
+ * Material Symbol rendered as a literal word and the layout collapsed (S4), and a remote script origin made any
+ * meaningful CSP impossible (S3). Here both font families come from installed packages and the bundler
+ * fingerprints each woff2 into out/renderer/assets. Never add an absolute remote address to this file - the CSP
+ * in src/renderer/index.html would block it and the icon would silently vanish.
+ *
+ * Recorded cost: the Material Symbols woff2 is about 3.97 MB. Subsetting it is a deferred item.
+ */
+
+/* The CDN URL carried ?plugins=forms; dropping it would change how inputs and checkboxes render. */
+@plugin "@tailwindcss/forms";
+
+/* Explicit scan roots, relative to THIS file: source(none) above disables the default scan of the working
+ * directory, so src/main and src/lib are never read for class names. */
+@source "../../index.html";
+@source "../**/*.{ts,tsx}";
+
+/* The v4 spelling of v3's darkMode: 'class' - the app puts `dark` on its html element. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Exactly the tokens legacy/renderer/tailwind-config.js declared. `static` makes Tailwind emit every one of them
+ * even when no utility uses it yet: the palette is a contract carried over unchanged, not something to tree-shake.
+ * The old borderRadius overrides equal Tailwind's built-in scale and are deliberately not redeclared.
+ */
+@theme static {
+    --color-primary: #13a4ec;
+    --color-background-light: #f6f7f8;
+    --color-background-dark: #101c22;
+    --color-card-light: #ffffff;
+    --color-card-dark: #1a2c35;
+    --color-surface-dark: #1c2a33;
+
+    --font-display: "Inter Variable", "Inter", sans-serif;
+
+    /*
+     * The one width the app is laid out at. v1.2.1 capped the shell at Tailwind's md (448px) and the bottom
+     * navigation at 430px, so above md the bar was 18px narrower than the thing it belongs to. Both read this
+     * token now (SPA-02).
+     *
+     * Owner decision 2026-09-14: 40rem, not v1.2.1's 28rem. The app stayed 448px wide on a 1280px window, which
+     * the owner asked to grow "with a limit". 40rem is the measured compromise: past roughly 48rem a single
+     * column of full-width rows looks stretched. The cost, stated: the Phase 1 baselines were captured from
+     * v1.2.1 at its own widths, so above 28rem criterion 10 checks that nothing overflows or clips, not that it
+     * matches a picture.
+     */
+    --container-app: 40rem;
+
+    /*
+     * Motion. v1.2.1 injected a <style> element from shared.js for these; ARCH-05 makes a value Tailwind cannot
+     * express a token rather than a loose rule. The curve and the 400px are v1.2.1's own.
+     */
+    --animate-toast-in: toast-in 300ms cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    --animate-toast-out: toast-out 300ms cubic-bezier(0.68, -0.55, 0.265, 1.55) forwards;
+    --animate-modal-in: modal-in 150ms ease-out;
+
+    /*
+     * v3 -> v4 compatibility, the half that belongs to the theme rather than to Preflight. v4 defaults the ring
+     * colour to currentcolor; v3 drew it in blue-500 at half opacity, which is what the v1.2.1 design assumed
+     * wherever it showed a focus ring. The WIDTH is deliberately not restored here - v4 spells v3's 3px ring
+     * `ring-3`, and the sweep guard is what keeps that spelling honest.
+     */
+    --default-ring-color: rgb(59 130 246 / 0.5);
+
+    @keyframes toast-in {
+        from { opacity: 0; transform: translateX(400px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+
+    @keyframes toast-out {
+        from { opacity: 1; transform: translateX(0); }
+        to { opacity: 0; transform: translateX(400px); }
+    }
+
+    @keyframes modal-in {
+        from { opacity: 0; transform: scale(0.96); }
+        to { opacity: 1; transform: scale(1); }
+    }
+
+    /*
+     * TIMER-09's three streak tiers. legacy/pages/index.html:26-290 declared these as .streak-tier-1/2/3 class
+     * rules in a <style> block; ARCH-05 has no place for a class rule, so each is an animation token and the card
+     * selects between whole class strings. The keyframes, durations and colours are v1.2.1's own.
+     *
+     * NOT carried: .streak-particle and .streak-flame. Both were declared and neither was ever rendered.
+     */
+    --animate-streak-glow: streak-glow-pulse 2s ease-in-out infinite;
+    --animate-streak-pulse: streak-pulse 2s ease-in-out infinite;
+    --animate-streak-pulse-quick: streak-pulse 1.5s ease-in-out infinite;
+    --animate-streak-shimmer: streak-shimmer 3s ease-in-out infinite, streak-glow-pulse 2s ease-in-out infinite;
+    --animate-streak-fire: fire-bg 2s ease-in-out infinite, fire-border 1.5s ease-in-out infinite;
+    --animate-streak-flicker: fire-flicker 1s ease-in-out infinite;
+
+    @keyframes streak-pulse {
+        0%, 100% { transform: scale(1); filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6)); }
+        50% { transform: scale(1.1); filter: drop-shadow(0 0 16px rgba(249, 115, 22, 0.9)); }
+    }
+
+    @keyframes streak-glow-pulse {
+        0%, 100% { box-shadow: 0 0 10px rgba(249, 115, 22, 0.3); }
+        50% { box-shadow: 0 0 20px rgba(249, 115, 22, 0.6); }
+    }
+
+    @keyframes streak-shimmer {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+    }
+
+    @keyframes fire-bg {
+        0%, 100% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+    }
+
+    @keyframes fire-border {
+        0%, 100% {
+            box-shadow:
+                0 0 8px rgba(249, 115, 22, 0.8),
+                0 0 15px rgba(249, 115, 22, 0.6),
+                inset 0 0 10px rgba(249, 115, 22, 0.2);
+            border-color: rgba(249, 115, 22, 0.8);
+        }
+        50% {
+            box-shadow:
+                0 0 12px rgba(251, 146, 60, 1),
+                0 0 25px rgba(249, 115, 22, 0.8),
+                inset 0 0 15px rgba(251, 146, 60, 0.3);
+            border-color: rgba(251, 146, 60, 1);
+        }
+    }
+
+    @keyframes fire-flicker {
+        0%, 100% {
+            transform: scale(1) translateY(0);
+            filter: drop-shadow(0 0 20px rgba(249, 115, 22, 1)) hue-rotate(0deg);
+        }
+        25% {
+            transform: scale(1.05) translateY(-2px);
+            filter: drop-shadow(0 0 25px rgba(251, 146, 60, 1)) hue-rotate(10deg);
+        }
+        50% {
+            transform: scale(1.1) translateY(-4px);
+            filter: drop-shadow(0 0 30px rgba(253, 186, 116, 1)) hue-rotate(20deg);
+        }
+        75% {
+            transform: scale(1.05) translateY(-2px);
+            filter: drop-shadow(0 0 25px rgba(251, 146, 60, 1)) hue-rotate(10deg);
+        }
+    }
+}
+
+/*
+ * SPA-12, the third half: Tailwind v4 did not only rename utilities, it RESPECIFIED its default palette. The names
+ * are the same and the colours are not - green-400 moved from #4ade80 to #05df72, orange-400 from #fb923c to
+ * #ff8904, emerald-400 from #34d399 to #00d492, red-600 from #dc2626 to #e7000b. That is 52 to 69 points on a
+ * channel; the neutrals moved by 0 to 4, which is a rounding difference. Nothing warns, because the class names
+ * are unchanged - the silent regression the Phase 1 computed-style baselines exist to catch.
+ *
+ * The values are not typed from memory: they are the ones inside tools/baseline/vendor/tailwind.js, the Tailwind
+ * 3.4.17 the Play CDN served and the baselines were captured under, pinned by SHA-256 in
+ * baselines/v1.2.1/MANIFEST.md. tests/tailwind-compat.test.ts regenerates this list from that bundle and from the
+ * class names in this renderer, so a colour added without a pin fails rather than quietly shipping a v4 value.
+ */
+@theme {
+    --color-amber-100: #fef3c7;
+    --color-amber-200: #fde68a;
+    --color-amber-400: #fbbf24;
+    --color-amber-500: #f59e0b;
+    --color-amber-900: #78350f;
+    --color-blue-100: #dbeafe;
+    --color-blue-400: #60a5fa;
+    --color-blue-500: #3b82f6;
+    --color-blue-600: #2563eb;
+    --color-blue-900: #1e3a8a;
+    --color-emerald-200: #a7f3d0;
+    --color-emerald-400: #34d399;
+    --color-emerald-500: #10b981;
+    --color-emerald-600: #059669;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5db;
+    --color-gray-400: #9ca3af;
+    --color-gray-500: #6b7280;
+    --color-gray-600: #4b5563;
+    --color-green-100: #dcfce7;
+    --color-green-400: #4ade80;
+    --color-green-500: #22c55e;
+    --color-green-600: #16a34a;
+    --color-green-900: #14532d;
+    --color-orange-100: #ffedd5;
+    --color-orange-400: #fb923c;
+    --color-orange-500: #f97316;
+    --color-orange-600: #ea580c;
+    --color-orange-900: #7c2d12;
+    --color-purple-400: #c084fc;
+    --color-purple-500: #a855f7;
+    --color-purple-600: #9333ea;
+    --color-purple-900: #581c87;
+    --color-red-50: #fef2f2;
+    --color-red-100: #fee2e2;
+    --color-red-200: #fecaca;
+    --color-red-300: #fca5a5;
+    --color-red-400: #f87171;
+    --color-red-500: #ef4444;
+    --color-red-600: #dc2626;
+    --color-red-700: #b91c1c;
+    --color-red-900: #7f1d1d;
+    --color-slate-50: #f8fafc;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cbd5e1;
+    --color-slate-400: #94a3b8;
+    --color-slate-500: #64748b;
+    --color-slate-600: #475569;
+    --color-slate-700: #334155;
+    --color-slate-800: #1e293b;
+    --color-slate-900: #0f172a;
+    --color-violet-500: #8b5cf6;
+    --color-violet-600: #7c3aed;
+}
+
+/*
+ * v3 -> v4 Preflight compatibility (SPA-12). v4 changed three defaults the v1.2.1 design assumed: the border
+ * colour became currentColor, buttons lost the pointer cursor, and the placeholder colour became the current text
+ * colour at half opacity. Each is put back to what the CDN served. The ring colour is the fourth and sits in
+ * @theme above, which is where v4 reads it.
+ *
+ * The other half of SPA-12 is the utility-scale sweep, which no rule here can do: v4 renamed the scales while
+ * keeping the v3 spellings alive as deprecated aliases that mean something else. tests/tailwind-compat.test.ts
+ * fails on a v3 spelling reaching src/renderer instead.
+ */
+@layer base {
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
+    }
+
+    /* v3 carried no :not(:disabled) here; parity is with what the CDN served, not with v4 upgrade advice. */
+    button,
+    [role="button"] {
+        cursor: pointer;
+    }
+
+    /* v3 drew placeholders in gray-400 at full opacity; v4 color-mixes the current text colour instead. */
+    input::placeholder,
+    textarea::placeholder {
+        opacity: 1;
+        color: var(--color-gray-400, #9ca3af);
+    }
+}

@@ -1,215 +1,214 @@
-# Workflow ⏱️
+# Workflow
 
 <div align="center">
 
-<img src="assets/banner.png" alt="Workflow Logo" />
+<img src="assets/banner.png" alt="Workflow" />
 
-**Modern work time tracking desktop application**
+**Local-first work time tracking for Windows and macOS**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Electron](https://img.shields.io/badge/Electron-28.0-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/fleizean/workflow-timer)
+[![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)](https://github.com/fleizean/workflow-timer/releases/latest)
 
-[Features](#features) • [Installation](#installation) • [Usage](#usage) • [Development](#development)
+[What it does](#what-it-does) • [Install](#install) • [Your data](#your-data) • [Build from source](#build-from-source)
 
 </div>
 
 ---
 
-## 📋 Overview
+## What it does
 
-Workflow is a beautiful, minimalist desktop application for tracking your work hours. Built with Electron and SQLite, it helps you stay motivated with streak tracking, daily targets, and detailed work session history.
+Workflow tracks how long you work, for whom, and what you were doing — and keeps all of it on your
+own machine. Start the timer, pick a company, write a note, save the session. There is no account,
+no sync service and no server: the whole history is one SQLite file in your user data folder.
 
-## ✨ Features
+- **Timer** — start, pause, adjust by hand. Time that passes while the app is closed or the machine
+  is asleep does not count as work.
+- **Companies** — track per client, with an optional "a note is required" rule per company.
+- **Daily target and streak** — set a target in hours; the streak counts consecutive days you met it.
+- **Work history** — every session, grouped by week, filterable by company, date range and whether
+  the target was met. Sessions can be renamed, re-attributed, edited or deleted.
+- **Pomodoro** — work and break intervals with your own durations, a long break every *n* cycles,
+  auto-start options, a sound and a system notification. It keeps counting while the window is
+  hidden in the tray, and a completed pomodoro that has no note asks you what it was for.
+- **Tray** — close to the tray and keep counting; one icon, one instance, whatever launches it.
 
-### 🎯 Core Features
-- **Timer Management**: Start, pause, and adjust your work sessions with ease
-- **Daily Target**: Set and track your daily work hour goals
-- **Work History**: View all past sessions with filtering and search
-- **Streak Tracking**: 🔥 Monitor consecutive days of reaching your daily target
-- **Session Management**: Save, edit, and delete work sessions with custom names
+**Offline by design.** Fonts, icons and sounds are inside the application bundle and a content
+security policy forbids remote loads, so every screen renders with the network switched off. The one
+exception is the version check described [below](#workflow-checks-github-for-a-newer-version), which
+is optional and can be switched off.
 
-### 📅 Pomodoro Timer
-- **Focus Sessions**: Built-in Pomodoro timer with customizable work/break intervals
-- **Visual Progress**: Dynamic progress ring that changes color based on mode (Work/Break)
-- **Smart Notifications**: Auto-start options and sound alerts for session changes
-- **Persistence**: Timer state is saved even when you close the app or switch pages
+## Install
 
-### 🎨 Design
-- **Modern UI**: Clean, dark-mode interface with glassmorphism effects
-- **Bottom Navigation**: Sleek, mobile-style navigation with hover animations and indicator lines
-- **Frameless Window**: Custom title bar for a native app feel
-- **Responsive**: Optimized mobile-style layout (430x932px)
-- **Interactive Cards**: Hover effects, glow animations, and visual feedback
+Download the installer for your platform from the
+[latest release](https://github.com/fleizean/workflow-timer/releases/latest):
 
-### 🔔 Notifications
-- **Goal Achievement**: Sound and visual notifications when daily target is reached
-- **Congratulations Modal**: Celebrate your productivity milestones
+| Platform | File | Notes |
+| --- | --- | --- |
+| Windows 10/11, x64 | `*-x64-setup.exe` | The verified target |
+| Windows 10/11, ARM64 | `*-arm64-setup.exe` | Built in CI, not runtime-verified |
+| macOS, Intel | `*-x64.dmg` | Built in CI, not runtime-verified |
+| macOS, Apple Silicon | `*-arm64.dmg` | Built in CI, not runtime-verified |
 
-### 💾 Data Management
-- **SQLite Database**: Fast, local data storage
-- **Persistent Storage**: Data is preserved across app updates
-- **Settings**: Customizable daily targets and notification preferences
+The builds are unsigned and unnotarised. On Windows, SmartScreen will warn you the first time.
 
-## 🚀 Installation
+### macOS: "App is damaged" or "Cannot be opened"
 
-### Prerequisites
-- [Node.js](https://nodejs.org/) (v16 or higher)
-- npm (comes with Node.js)
-
-### Quick Start
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/fleizean/workflow-timer.git
-   cd workflow-timer
-   ```
-
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Run the application**
-   ```bash
-   npm start
-   ```
-
-### Building for Production
-
-To create a distributable executable:
-
-```bash
-npm run build
-```
-
-The built application will be in the `dist_output/` directory.
-
-## 💻 Development
-
-### Project Structure
-
-```
-workflow-timer/
-├── src/
-│   ├── pages/           # HTML pages
-│   │   ├── index.html   # Main timer page
-│   │   ├── work-history.html
-│   │   └── settings.html
-│   ├── renderer/        # Frontend JavaScript
-│   │   ├── timer.js
-│   │   ├── shared.js
-│   │   └── tailwind-config.js
-│   ├── styles/          # CSS files
-│   │   ├── common.css
-│   │   └── titlebar.css
-│   └── assets/          # Images and sounds
-├── database/
-│   └── db.js           # SQLite database logic
-├── main.js             # Electron main process
-├── preload.js          # IPC bridge
-└── package.json
-```
-
-### Technologies Used
-
-- **[Electron](https://www.electronjs.org/)** - Desktop application framework
-- **[better-sqlite3](https://github.com/WiseLibs/better-sqlite3)** - Fast SQLite database
-- **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework
-- **[Material Symbols](https://fonts.google.com/icons)** - Icon library
-
-### Linting & Code Quality
-
-We use ESLint to enforce code style and catch errors. Before submitting a PR, make sure your code passes the linter:
-
-```bash
-npm run lint
-```
-
-### Key Scripts
-
-```bash
-npm start          # Run in development mode
-npm run build      # Build for Windows
-npm run build:dir  # Build unpacked directory
-```
-
-## 📖 Usage
-
-### Starting a Work Session
-
-1. Click the **Play** button to start tracking time
-2. The timer will count up and show your remaining time to reach the daily target
-3. Click **Pause** to temporarily stop the timer
-4. Use **Adjust** to manually add or remove time
-
-### Saving Sessions
-
-1. Click the **Save** button
-2. Enter a custom name for your session (e.g., "Frontend Development")
-3. Confirm to save - the session is added to your history
-
-### Tracking Your Streak
-
-- Your streak shows consecutive days where you've reached your daily target
-- Weekends are included in the streak calculation
-- Missing a day resets your streak to 0
-
-### Troubleshooting
-
-#### macOS: "App is damaged" or "Cannot be opened"
-If you see an error saying the app is damaged or cannot be opened, run this command in Terminal:
+macOS quarantines downloads from an unsigned developer. To clear it:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Workflow.app
 ```
 
-### Viewing History
+## Your data
 
-1. Click on the **Logged** card on the main screen
-2. Browse your past sessions grouped by week
-3. Use filters to find specific sessions
-4. Edit or delete sessions as needed
+Everything lives in one SQLite database in your user data folder:
 
-## 🎯 Roadmap
+| Platform | Folder |
+| --- | --- |
+| Windows | `%APPDATA%\workflow-timer\` |
+| macOS | `~/Library/Application Support/workflow-timer/` |
 
-- [ ] Statistics dashboard with charts
-- [x] Pomodoro timer mode
-- [ ] Multi-language support
-- [ ] Custom themes
-- [x] Excelsheet sync
+Up to and including v1.2.1 the file in there was named `krono.db`. Workflow 2 can rename it to
+`workflow.db` — look in the folder above to see which one your copy has. If it is still `krono.db`,
+the rename has not happened on your machine and the rest of this section is about a day that has not
+come yet.
 
-## 🤝 Contributing
+**There is nothing for you to do either way.** The first time a version that performs the rename
+starts, it finds your `krono.db`, flushes anything still sitting in its write-ahead log into the
+file, and moves it to `workflow.db`. Your companies, sessions, notes and settings are the same rows
+in the same database — only the name on disk changed. If the move cannot be completed for any
+reason, Workflow stops and tells you so rather than starting an empty database; your file is left
+exactly where it was.
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Two things worth knowing:
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- **Do not rename the file yourself while Workflow is running**, and do not copy `workflow.db` on
+  its own. A Workflow database can have `-wal` and `-shm` files beside it holding sessions that are
+  not yet in the main file; copying or renaming the main file alone quietly leaves them behind.
+- **Going back to v1.2.1 after v2 has started will show an empty app.** v1.2.1 only knows the name
+  `krono.db`, so it will not find `workflow.db` and will create a new, empty database next to it.
+  Nothing of yours has been deleted. To go back, **with Workflow closed**, in this order:
+  1. Delete `krono.db`, `krono.db-wal` and `krono.db-shm` — all three, and the two sidecars even
+     if they look empty. They belong to the blank database v1.2.1 just made. A `-wal` is not tied
+     to the file it was written for, so one left behind here is applied to your real database the
+     moment it takes that name, and empties it without any error.
+  2. Rename `workflow.db` to `krono.db`. If `workflow.db-wal` and `workflow.db-shm` are there,
+     rename those to `krono.db-wal` and `krono.db-shm` too — they hold sessions that are not yet
+     in the main file.
 
-## 📝 License
+  Do the deleting before the renaming. The other order is the one that loses everything.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Before it migrates anything, Workflow copies your database into a `backups/` folder beside it. And a
+version of Workflow older than your database refuses to open it rather than writing to it — v1.2.1
+has no such check, which is why going back has to be done in the order above.
 
-## 👨‍💻 Author
+#### Workflow checks GitHub for a newer version
 
-**Workflow Team**
-- Website: [fleizean.dev](https://www.fleizean.dev)
+About thirty seconds after you open it, and then once a day while it stays open, Workflow asks
+GitHub for one small file: `https://fleizean.github.io/workflow-timer/version.json`. That is the
+only thing this application ever sends anywhere.
 
-## 🙏 Acknowledgments
+**What is sent:** an ordinary HTTPS `GET` for that fixed address. No query string, no cookie, no
+account, no licence key, no `User-Agent`, no identifier of any kind. Nothing about you, your
+machine, your companies, your notes or your tracked time leaves the app — not even which version you
+are running. GitHub's servers see your IP address and the fact that this file was requested, exactly
+as they would if you opened the page in a browser.
 
-- Icons by [Material Symbols](https://fonts.google.com/icons)
-- Font: [Inter](https://fonts.google.com/specimen/Inter) by Rasmus Andersson
-- Inspired by modern productivity tools
+**What happens with the answer:** if the published version is newer than yours, the tray menu gains
+an **Update available** line that opens the releases page in your browser. Nothing downloads on its
+own and nothing installs itself. If the versions match, or the request fails for any reason, nothing
+is said at all — no dialog, no badge, no retry storm. The check never delays the app opening or
+closing, and with no network it fails silently.
+
+**To switch it off entirely**, set `WORKFLOW_NO_UPDATE_CHECK` to any value before launching Workflow:
+
+```powershell
+setx WORKFLOW_NO_UPDATE_CHECK 1      # Windows, applies to new sessions
+```
+
+```bash
+export WORKFLOW_NO_UPDATE_CHECK=1    # macOS
+```
+
+With it set, no network client is created and no request is made.
+
+## Build from source
+
+Requires **Node.js 24** (see `.nvmrc`). No Python, no MSVC and no Xcode command line tools:
+`better-sqlite3` ships prebuilt N-API binaries and nothing here compiles native code.
+
+```bash
+git clone https://github.com/fleizean/workflow-timer.git
+cd workflow-timer
+npm ci
+npm run dev
+```
+
+`npm run dev` starts electron-vite with hot reload and its own `workflow-timer-dev` user data
+folder, so development never touches your real database.
+
+### Scripts
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Run the app with hot reload |
+| `npm start` | Run a production preview of the built app |
+| `npm run lint` | ESLint over everything, including the architecture rules |
+| `npm run typecheck` | `tsc --noEmit` for the Node and web projects |
+| `npm test` | The vitest suite |
+| `npm run build` | Typecheck, then build main, preload and renderer into `out/` |
+| `npm run build:unpack` | Build and package into `dist/` without making an installer |
+| `npm run build:win` / `build:win:arm64` | Windows installers |
+| `npm run build:mac` / `build:mac:arm64` | macOS disk images |
+| `npm run smoke:packaged` | Drive the packaged binary and check what it really does |
+| `npm run parity:check` | Compare the v2 screens with the v1.2.1 baselines |
+| `npm run matrix:check` | Lay the app out at five sizes and three display scales |
+| `npm run offline:check` | Render every route with the network off |
+| `npm run upgrade:check` | Migrate a populated v1.2.1 database and read it back through the app |
+| `npm run instance:check` | Launch the packaged binary twice against one profile |
+
+Installers land in `dist/`.
+
+### Layout
+
+```
+workflow-timer/
+├── src/
+│   ├── main/         Electron main process: ipc/ validates and calls one service,
+│   │                 services/ hold the logic and know nothing of Electron,
+│   │                 ports/ + adapters/ are how they reach the outside world
+│   ├── preload/      the contextBridge surface - the only thing the renderer can call
+│   ├── renderer/     React 18 SPA: app/ bootstrap and routes, features/<domain>/, components/
+│   ├── lib/db/       Drizzle schema, migrations and repositories - the only SQL in the project
+│   ├── shared/       types, zod schemas and the IPC contract both processes import
+│   └── assets/       icons and the notification sound, bundled into the app
+├── tests/            vitest: services, database, and the structural gates
+├── tools/            baseline capture, the packaged smoke, CI assertions
+├── baselines/        v1.2.1 screenshots and computed styles, and the v2 records
+├── docs/             the GitHub Pages site
+└── electron-builder.yml
+```
+
+## Contributing
+
+Bug reports, ideas and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) describes the
+layout rules and the gates a change has to pass.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+## Acknowledgements
+
+- Icons: [Material Symbols](https://fonts.google.com/icons), self-hosted
+- Font: [Inter](https://rsms.me/inter/) by Rasmus Andersson, self-hosted
+- Database: [better-sqlite3](https://github.com/WiseLibs/better-sqlite3)
 
 ---
 
 <div align="center">
 
-Made with ❤️ and ⏱️ by Workflow Team
-
-[⬆ Back to Top](#workflow-timer-️)
+[⬆ Back to top](#workflow)
 
 </div>

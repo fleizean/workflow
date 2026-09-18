@@ -48,3 +48,14 @@ venv/
 *.tmp
 *.temp
 .cache/
+
+# Planning + audit artifacts stay local: they document unpatched defects in the
+# shipped v1.2.1 and this repository is public.
+RESTRUCTURE-BRIEF.md
+
+# GSD planning workspace and runtime — local only. .planning/ holds a codebase
+# audit that cites unpatched defects in the shipped v1.2.1 by file and line, and
+# this repository is public.
+.planning
+.claude
+.gsd

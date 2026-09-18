@@ -1,0 +1,246 @@
+name: Verify
+
+# Runs on every ref and every pull request. This workflow gates; it never releases.
+# It grants read-only repository permission and contains no release step, so a push
+# to any branch cannot publish an installer (CUSTODY-01 / D-06).
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # BUILD-11 / D-16: three zones, chosen as a floor rather than a sample. The requirement is at
+    # least one DST-observing zone with a negative UTC offset (America/New_York) and at least one
+    # non-DST zone with a positive offset (Europe/Istanbul); UTC is the reference zone, where the
+    # local and UTC dates never disagree. Europe/Istanbul is the author's own zone and the one
+    # where the date-bug class this milestone closes (B6-B10, the Sheets row misalignment) is
+    # invisible - Turkey has observed no DST since 2016 - so three is the minimum that satisfies
+    # BUILD-11. The matrix multiplies zones, not operating systems: no date behaviour under test
+    # is platform-specific. It stays on this job and is deliberately not multiplied into
+    # packaging, which is timezone-independent - 3 x 2 OS x 2 arch buys no signal over
+    # 3 + (2 x 2) (D-19). fail-fast is off so one zone's failure cannot hide another's.
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: ['UTC', 'America/New_York', 'Europe/Istanbul']
+    # Job-level, so every step in a leg inherits the zone rather than each step setting it.
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      # D-20: checkout and setup-node are first-party GitHub actions on mutable major tags, moved @v4 -> @v5 off the deprecated Node 20 runtime; the SHA pinning of the third-party release action is deliberately not required of them.
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0              # WR-05: the whitespace check diffs a commit range
+
+      # D-03 backstop. .gitignore already excludes these patterns, so this step exists to
+      # catch a deliberate 'git add -f'. A real krono.db pushed to a public repository is
+      # unrecoverable: clones taken before any history rewrite keep the user's data forever.
+      # Placed before npm ci so it costs seconds rather than a full install when it trips.
+      - name: Fail if a database file is tracked by git
+        run: |
+          tracked=$(git ls-files -- '*.db' '*.db-wal' '*.db-shm')
+          if [ -n "$tracked" ]; then
+            echo "::error::Database files are tracked by git:"
+            echo "$tracked"
+            echo "::error::Remove with 'git rm --cached <file>'. A pushed database cannot be un-published (D-03)."
+            exit 1
+          fi
+          echo "No tracked database files."
+
+      # D-13's line-ending contract is unprotected unless CI enforces it. Placed before
+      # npm ci so it costs seconds when it fails. 'git diff --check' catches whitespace
+      # errors; the renormalise assertion catches the actual D-13 regression - a blob
+      # committed with line endings that disagree with .gitattributes, which surfaces
+      # later as "whole file changed" on a file nobody edited.
+      # WR-05: only what this run's range introduces - frozen legacy files already carry trailing
+      # whitespace, and --ignore-cr-at-eol hides D-13's CRLF-to-LF rewrite of them.
+      - name: Check whitespace and line-ending contract
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          is_commit() { [ -n "$1" ] && [ "$1" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$1^{commit}" 2>/dev/null; }
+          base=''
+          if [ "$EVENT_NAME" = pull_request ] && is_commit "$PR_BASE_SHA"; then
+            base="$PR_BASE_SHA"
+          elif [ "$EVENT_NAME" = push ] && is_commit "$PUSH_BEFORE_SHA"; then
+            base="$PUSH_BEFORE_SHA"
+          elif [ -n "$DEFAULT_BRANCH" ] && git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH^{commit}" > /dev/null; then
+            base=$(git merge-base "origin/$DEFAULT_BRANCH" HEAD)
+          fi
+          if [ -z "$base" ]; then
+            echo "::error::cannot determine which commits this run introduces (event '$EVENT_NAME'), so the whitespace check would check nothing"
+            exit 1
+          fi
+          echo "Whitespace check over $(git rev-parse --short "$base")..$(git rev-parse --short HEAD) ($EVENT_NAME)"
+          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**'
+          git add --renormalize .
+          if ! git diff --cached --quiet; then
+            echo "::error::Committed line endings disagree with .gitattributes in:"
+            git diff --cached --name-only
+            echo "::error::Fix with: git add --renormalize . && git commit"
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'          # Node 20 is EOL 2026-03-24 (C9). See .nvmrc.
+          cache: 'npm'
+
+      # BUILD-11: prove this leg really runs in its matrix zone before anything expensive happens.
+      # A leg whose TZ never reached the runtime runs every date test in the runner's default zone
+      # and still passes green, reporting coverage it does not have - worse than no matrix at all.
+      # The expected zone is passed separately from the job-level TZ, so deleting or mistyping that
+      # env block fails here instead of being compared against itself. Builtins only, so it runs
+      # before npm ci and fails in seconds, for the same reason the two guards above are early.
+      - name: Prove the matrix timezone is the one the runtime uses
+        env:
+          EXPECTED_TZ: ${{ matrix.tz }}
+        run: node tools/ci/assert-timezone.mjs "$EXPECTED_TZ"
+
+      # BUILD-02: strict mode is why this project is TypeScript at all - the audit's critical bugs
+      # are compile-time-detectable - so switching it off must fail the gate, not pass silently.
+      # Parsed as JSON rather than searched as text: a textual gate in this repository has already
+      # matched prose instead of code, and both split configs are comment-free by contract precisely
+      # so that JSON.parse can read them. tests/tsconfig-strict.test.ts asserts the same property;
+      # this is the cheap duplicate, placed before npm ci where it costs seconds.
+      - name: Fail if strict or noImplicitAny is off in either split tsconfig
+        run: |
+          node -e "
+            const fs = require('fs');
+            let failed = false;
+            for (const file of ['tsconfig.node.json', 'tsconfig.web.json']) {
+              let options;
+              try {
+                options = JSON.parse(fs.readFileSync(file, 'utf8')).compilerOptions || {};
+              } catch (error) {
+                console.log('::error file=' + file + '::cannot be parsed as JSON (' + error.message + '); the split configs are comment-free by contract so this gate can read them');
+                failed = true;
+                continue;
+              }
+              for (const flag of ['strict', 'noImplicitAny']) {
+                if (options[flag] !== true) {
+                  console.log('::error file=' + file + '::' + flag + ' is ' + JSON.stringify(options[flag]) + ' - it must be literally true (BUILD-02)');
+                  failed = true;
+                }
+              }
+            }
+            if (failed) process.exit(1);
+            console.log('TSCONFIG_STRICT_OK tsconfig.node.json tsconfig.web.json');
+          "
+
+      # The --ignore-scripts bridge and its expiry guard were removed here, together, by plan
+      # 01-07. They existed because better-sqlite3@9.6.0 shipped no prebuild, so its install
+      # script fell through to `node-gyp rebuild`, and 9.x's C++ does not compile against Node
+      # 24's V8 headers (run 33970229605). D-12 forbade upgrading before the parity baselines
+      # were captured on Electron 28 / N-API 9; they are captured, and the driver is now 13.0.3.
+      #
+      # A correction worth keeping, because the removed comment stated it the other way round
+      # and someone will otherwise re-derive the wrong model: 13.0.3 does NOT fetch its binary
+      # from an install script. It declares no `install` and no `postinstall` at all, and the
+      # eight N-API prebuilds ship inside the npm tarball. Measured both ways in a scratch dir -
+      # `npm install better-sqlite3@13.0.3 --ignore-scripts` also yields a loadable binary and
+      # no build/ directory. So the flag is not removed to protect the binary; it is removed
+      # because its reason expired and because --ignore-scripts is repo-wide, silently
+      # suppressing lifecycle scripts for all 433 packages and making CI diverge from what a
+      # developer's plain `npm ci` actually does.
+      - name: Install dependencies
+        run: npm ci
+
+      # This job now has a real native binary, so tests may load better-sqlite3. That is the
+      # point of the upgrade: it is what makes the fixture corpus and src/lib/db/backup.ts
+      # testable in plain Node under Vitest (D-08).
+      #
+      # THE FIRST VERSION OF THIS STEP ASSERTED THE WRONG THING and failed this job on run
+      # 34034471809. It required that node_modules/better-sqlite3/build not exist, treating that
+      # as equivalent to "nothing was compiled". It is not equivalent, and the difference is not
+      # academic - it is the difference between a red build and a real regression.
+      #
+      # Measured on ubuntu-latest, npm 11.19.0 / Node 24.20.0 (probe run 34035556354): a plain
+      # `npm ci` DOES create node_modules/better-sqlite3/build, and that directory contains
+      # nothing but node-gyp's configure scaffolding - config.gypi, Makefile, binding.Makefile,
+      # two .target.mk files and two empty .stamp files. No object file. No
+      # build/Release/better_sqlite3.node. `find` over the whole package turns up exactly eight
+      # .node files: the eight shipped prebuilds, and nothing else.
+      #
+      # That is upstream's design, stated in better-sqlite3's own binding.gyp:
+      #
+      #     # npm's implicit node-gyp rebuild should do nothing when the package
+      #     # contains a prebuild for the host. Explicit build scripts override this.
+      #     'force_build%': 0,
+      #     'prebuild_exists%': '<!(node lib/binding.js)',
+      #
+      # With a prebuild present for the host, every gyp target collapses to `type: none`. npm's
+      # implicit rebuild runs and compiles nothing; build/ is the footprint of a no-op. Windows
+      # with npm 11.9.0 does not produce it at all, because npm versions disagree about whether
+      # `gypfile: false` suppresses the implicit rebuild - so the presence of build/ tracks the
+      # npm version, not whether a compiler was needed. Asserting on it tests npm.
+      #
+      # One thing does change, and Phase 2 should know it: npm's implicit rebuild means node-gyp
+      # is INVOKED (it configured, hence config.gypi), which needs Python on PATH even though it
+      # compiles nothing. The hosted runners have it. D-08's substantive claim - that the driver
+      # loads a shipped prebuild and nothing is built - holds; the broader "no toolchain is
+      # touched at all" reading does not, and BUILD-05/BUILD-06 should not lean on it.
+      #
+      # So assert the two things that are load-bearing AND can still fail: nothing was compiled,
+      # and the binding that actually loads is one of the shipped prebuilds. If a platform ever
+      # lacks a prebuild, or force_build is set, node-gyp emits .o files and
+      # build/Release/better_sqlite3.node and the first check fails.
+      #
+      # Phase 2 (plan 02-05, D-21) reviewed this comment and the step below and preserved both unchanged.
+      - name: Assert better-sqlite3 loads a shipped prebuild, with nothing compiled locally
+        run: |
+          test -d node_modules/better-sqlite3/prebuilds || {
+            echo "::error::No prebuilds/ directory - the N-API premise behind D-08 does not hold."; exit 1; }
+
+          compiled=$(find node_modules/better-sqlite3 \
+            -path node_modules/better-sqlite3/prebuilds -prune -o \
+            \( -name '*.o' -o -name '*.node' \) -print)
+          if [ -n "$compiled" ]; then
+            echo "::error::Locally compiled artefacts exist, so node-gyp really did build:"
+            echo "$compiled"
+            echo "::error::The no-compiler claim behind D-08 does not hold on this runner."
+            exit 1
+          fi
+
+          node -e "
+            const D = require('better-sqlite3');
+            const db = new D(':memory:');
+            db.exec('create table t(a)');
+            db.prepare('insert into t values (1)').run();
+            if (db.prepare('select count(*) c from t').get().c !== 1) process.exit(1);
+            db.close();
+            const loaded = Object.keys(require.cache).filter((k) => k.endsWith('.node'));
+            if (loaded.length !== 1) {
+              console.error('::error::expected exactly one native binding, got ' + JSON.stringify(loaded));
+              process.exit(1);
+            }
+            const norm = loaded[0].split(require('path').sep).join('/');
+            if (!norm.includes('/better-sqlite3/prebuilds/')) {
+              console.error('::error::the loaded binding is not a shipped prebuild: ' + norm);
+              process.exit(1);
+            }
+            console.log('DRIVER_LOADS_PREBUILD ' + norm + ' napi=' + process.versions.napi);
+          "
+
+      - name: Run Linter
+        run: npm run lint
+
+      # D-10: the gate is lint + type check + unit tests, each able to fail the job.
+      # `npm run typecheck` chains typecheck:node and typecheck:web (plan 02-01), so this one step
+      # covers both halves of the tsconfig split.
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm test

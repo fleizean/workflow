@@ -1,0 +1,532 @@
+// CORE-01 / CORE-16: one repository per table, camelCase domain objects out, column names in. Every fixture is built
+// under mkdtemp by the Phase 4 helpers and run through the production migration chain before a repository sees it.
+
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import Database from 'better-sqlite3';
+import type DatabaseType from 'better-sqlite3';
+import { classify } from '../src/lib/db/classify';
+import { closeDatabase, openDatabase } from '../src/lib/db/client';
+import { probeDatabase } from '../src/lib/db/probe';
+import { migrateDatabase } from '../src/lib/db/runner';
+import { LATEST } from '../src/lib/db/migrations/registry';
+import { createDbHandle, transact } from '../src/lib/db/handle';
+import {
+    SETTINGS_KEY_MAP, createCompaniesRepository, createPomodoroRepository, createSessionsRepository,
+    createSettingsRepository
+} from '../src/lib/db/repositories';
+import type { SkippedRowReport } from '../src/lib/db/repositories';
+import { DEFAULT_SETTINGS } from '../src/shared/constants/settings';
+import { buildLegacyFixture, cleanupLegacyFixtures } from './fixtures/legacy-shapes';
+import { cleanupFixtures, makeCleanFixture, makeEmptyFixture } from './fixtures/seed';
+import type { LocalDate, Settings } from '../src/shared/types';
+
+const ld = (text: string): LocalDate => text as LocalDate;
+
+interface Opened {
+    readonly connection: DatabaseType.Database;
+    readonly handle: ReturnType<typeof createDbHandle>;
+    readonly skipped: SkippedRowReport[];
+    readonly dbPath: string;
+}
+
+const opened: DatabaseType.Database[] = [];
+
+// The production chain, exactly as startup runs it, then the handle the composition root will build.
+async function open(dbPath: string): Promise<Opened> {
+    const probe = probeDatabase(dbPath);
+    if (!probe.ok) throw new Error('probe failed: ' + probe.reason);
+    const connection = openDatabase(dbPath);
+    opened.push(connection);
+    await migrateDatabase(connection, {
+        dbPath,
+        dbClass: classify(probe.observed, LATEST),
+        fromVersion: probe.observed.userVersion,
+        backupDir: path.join(path.dirname(dbPath), 'backups')
+    });
+    return { connection, handle: createDbHandle(connection), skipped: [], dbPath };
+}
+
+afterAll(() => {
+    for (const connection of opened) closeDatabase(connection);
+    cleanupLegacyFixtures();
+    cleanupFixtures();
+});
+
+// Reads the raw table with the driver, bypassing every repository: the only honest way to ask what is on disk.
+function rawRows<T>(dbPath: string, query: string): T[] {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+        return db.prepare<[], T>(query).all();
+    } finally {
+        db.close();
+    }
+}
+
+const storedSettings = (dbPath: string): Map<string, string> => new Map(
+    rawRows<{ key: string; value: string }>(dbPath, 'SELECT key, value FROM settings')
+        .map((row) => [row.key, row.value] as const)
+);
+
+describe('CORE-01: the sessions repository', () => {
+    let ctx: Opened;
+
+    beforeAll(async () => {
+        ctx = await open(makeCleanFixture());
+    });
+
+    const repo = () => createSessionsRepository(ctx.handle, { onSkippedRow: (s) => ctx.skipped.push(s) });
+
+    it('returns exactly the WorkSession keys, and no column name among them', () => {
+        const [session] = repo().list();
+        expect(session, 'the clean fixture has four sessions').toBeDefined();
+        expect(Object.keys(session ?? {}).sort())
+            .toEqual(['companyId', 'createdAt', 'date', 'durationSeconds', 'id', 'name', 'note']);
+
+        const raw = rawRows<Record<string, unknown>>(ctx.dbPath, 'SELECT * FROM work_sessions LIMIT 1')[0] ?? {};
+        const renamed = ['duration', 'company_id', 'created_at'];
+        expect(renamed.every((column) => column in raw), 'the fixture must carry the columns this test renames')
+            .toBe(true);
+        expect(renamed.filter((column) => column in (session ?? {})),
+            'CORE-01: a database column name reached a caller').toEqual([]);
+    });
+
+    it('maps duration to whole seconds and created_at to an epoch instant', () => {
+        const morning = repo().list().find((s) => s.name === 'Morning block');
+        expect(morning?.durationSeconds).toBe(14400);
+        expect(morning?.date).toBe('2026-01-05');
+        expect(morning?.note).toBe('Fixture task: morning block');
+        expect(morning?.createdAt, 'created_at is UTC text in the database and epoch ms in the domain')
+            .toBe(Date.UTC(2026, 0, 5, 9, 0, 0));
+    });
+
+    it('lists a date range inclusively and a date-plus-company pair', () => {
+        expect(repo().listByDateRange(ld('2026-01-05'), ld('2026-01-06')).map((s) => s.date).sort())
+            .toEqual(['2026-01-05', '2026-01-05', '2026-01-06']);
+        expect(repo().listByDateAndCompany(ld('2026-01-05'), 2).map((s) => s.name).sort())
+            .toEqual(['Afternoon block', 'Morning block']);
+    });
+
+    it('totals each local day from all of its sessions, not from the longest one (B7)', () => {
+        expect(repo().dayTotalFor(ld('2026-01-05')), 'WR-09: one day read as one day')
+            .toBe(19800);
+        expect(repo().dayTotalFor(ld('1999-01-01')), 'a day with nothing on it totals 0, never null').toBe(0);
+        expect(repo().dayTotals()).toEqual([
+            { date: '2026-01-07', totalSeconds: 1800 },
+            { date: '2026-01-06', totalSeconds: 10800 },
+            { date: '2026-01-05', totalSeconds: 19800 }
+        ]);
+    });
+
+    it('creates, updates and deletes through the domain shape', () => {
+        const created = repo().create({
+            name: 'Added block', durationSeconds: 900, date: ld('2026-01-09'), companyId: 2, note: null
+        });
+        expect(created.id).toBeGreaterThan(0);
+        expect(created.durationSeconds).toBe(900);
+        expect(created.createdAt, 'the column default fills created_at, so it stays readable').toBeGreaterThan(0);
+
+        const updated = repo().update(created.id, {
+            name: 'Added block', durationSeconds: 1200, date: ld('2026-01-09'), companyId: 2, note: 'edited'
+        });
+        expect(updated?.durationSeconds).toBe(1200);
+        expect(updated?.note).toBe('edited');
+        expect(repo().update(999_999, {
+            name: 'x', durationSeconds: 1, date: ld('2026-01-09'), companyId: null, note: null
+        }), 'a missing row is null, not a throw').toBeNull();
+
+        expect(repo().remove(created.id)).toBe(true);
+        expect(repo().remove(created.id), 'the second delete changes nothing').toBe(false);
+        expect(repo().get(created.id)).toBeNull();
+    });
+
+    it('counts nothing for a company that has no sessions', () => {
+        expect(repo().removeByCompany(999_999)).toBe(0);
+    });
+});
+
+describe('DATA-05: an empty database totals to nothing rather than null', () => {
+    it('returns no day totals, no sessions and every setting at its seed', async () => {
+        const ctx = await open(makeEmptyFixture());
+        const repo = createSessionsRepository(ctx.handle);
+        expect(repo.list()).toEqual([]);
+        expect(repo.dayTotals(), 'sum() over no rows is NULL; a total must never render as "null"').toEqual([]);
+        expect(createSettingsRepository(ctx.handle).get()).toEqual(DEFAULT_SETTINGS);
+    });
+});
+
+describe('D-15: a row the domain cannot use is reported, never guessed at and never fatal', () => {
+    let ctx: Opened;
+    const skipped: SkippedRowReport[] = [];
+
+    beforeAll(async () => {
+        ctx = await open(buildLegacyFixture('C', 'anomalies'));
+    });
+
+    it('returns every session it can map and reports the rest by column and id', () => {
+        const sessions = createSessionsRepository(ctx.handle, { onSkippedRow: (s) => skipped.push(s) }).list();
+        const stored = rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM work_sessions')[0]?.c ?? 0;
+
+        expect(stored, 'the anomalies fixture seeds nine sessions').toBe(9);
+        expect(sessions.map((s) => s.name).sort())
+            .toEqual(['Loose block', 'Morning block', 'Morning block', 'Orphaned block']);
+        expect(skipped.map((s) => s.column).sort(), 'three malformed dates and two impossible durations')
+            .toEqual(['date', 'date', 'date', 'duration', 'duration']);
+        expect(skipped.every((s) => s.table === 'work_sessions' && typeof s.rowId === 'number')).toBe(true);
+        expect(JSON.stringify(skipped), 'a report must never carry a session name or a note')
+            .not.toMatch(/Odd date|Blank date|US date|Fixture task/);
+    });
+
+    it('leaves an unusable day out of the totals rather than inventing one', () => {
+        expect(createSessionsRepository(ctx.handle).dayTotals()).toEqual([
+            { date: '2026-01-07', totalSeconds: 1200 },
+            { date: '2026-01-06', totalSeconds: 1800 },
+            { date: '2026-01-05', totalSeconds: 7200 }
+        ]);
+    });
+
+    it('keeps every row on disk: nothing is repaired and nothing is deleted', () => {
+        createSessionsRepository(ctx.handle).list();
+        expect(rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM work_sessions')[0]?.c).toBe(9);
+    });
+});
+
+describe('CORE-01: the companies repository', () => {
+    let ctx: Opened;
+
+    beforeAll(async () => {
+        ctx = await open(makeCleanFixture());
+    });
+
+    it('returns exactly the Company keys and never the export columns', () => {
+        const companies = createCompaniesRepository(ctx.handle).list();
+        expect(companies.map((c) => c.name)).toEqual(['Contoso Fixture', 'Northwind Fixture', 'Unassigned']);
+        for (const company of companies) {
+            expect(Object.keys(company).sort()).toEqual(['createdAt', 'id', 'name', 'noteRequired']);
+        }
+        expect(JSON.stringify(companies), 'the retired export letters must not travel with a company')
+            .not.toMatch(/excel|note_column/i);
+    });
+
+    it('reads note_required as a boolean and created_at as an instant', () => {
+        const repo = createCompaniesRepository(ctx.handle);
+        const northwind = repo.findByName('Northwind Fixture');
+        expect(northwind?.noteRequired).toBe(true);
+        expect(northwind?.createdAt).toBe(Date.UTC(2026, 0, 1, 9, 0, 0));
+        expect(repo.findByName('Unassigned')?.noteRequired).toBe(false);
+        expect(repo.findByName('No Such Fixture')).toBeNull();
+    });
+
+    it('an update rewrites name, note_required and updated_at, and no other cell of the row', () => {
+        const repo = createCompaniesRepository(ctx.handle);
+        const all = 'SELECT * FROM companies WHERE name = ';
+        const before = rawRows<Record<string, unknown>>(ctx.dbPath, all + "'Northwind Fixture'")[0];
+        expect(Object.keys(before ?? {}), 'V2-SCHEMA-01: 0002 took the two export columns off this table')
+            .toEqual(['id', 'name', 'created_at', 'updated_at', 'note_required']);
+
+        const updated = repo.update(Number(before?.id ?? 0), { name: 'Northwind Renamed', noteRequired: false });
+        expect(updated?.name).toBe('Northwind Renamed');
+        expect(updated?.noteRequired).toBe(false);
+
+        const after = rawRows<Record<string, unknown>>(ctx.dbPath, all + "'Northwind Renamed'")[0];
+        const changed = Object.keys(after ?? {}).filter((column) => after?.[column] !== before?.[column]).sort();
+        expect(changed, 'a company update must rewrite nothing the patch did not name')
+            .toEqual(['name', 'note_required', 'updated_at']);
+        expect(after?.updated_at, 'v1.2.1 bumped updated_at on every company update').not.toBe('2026-01-01 09:00:00');
+
+        repo.update(Number(before?.id ?? 0), { name: 'Northwind Fixture', noteRequired: true });
+        expect(repo.update(999_999, { name: 'x', noteRequired: false }), 'a missing row is null').toBeNull();
+    });
+
+    it('creates and deletes, and one transaction takes the sessions with the company', () => {
+        const companies = createCompaniesRepository(ctx.handle);
+        const sessions = createSessionsRepository(ctx.handle);
+        const created = companies.create({ name: 'Temp Fixture', noteRequired: false });
+        expect(created.noteRequired).toBe(false);
+        sessions.create({
+            name: 'Temp block', durationSeconds: 60, date: ld('2026-01-10'), companyId: created.id, note: null
+        });
+
+        const removedSessions = transact(ctx.handle, () => {
+            const count = sessions.removeByCompany(created.id);
+            companies.remove(created.id);
+            return count;
+        });
+
+        expect(removedSessions, 'COMP-05: the caller learns what went with the company').toBe(1);
+        expect(companies.get(created.id)).toBeNull();
+    });
+});
+
+describe('CORE-01: the settings repository', () => {
+    let ctx: Opened;
+
+    beforeAll(async () => {
+        ctx = await open(makeCleanFixture());
+    });
+
+    it('maps exactly the ten domain keys onto the v1.2.1 key strings', () => {
+        expect(Object.keys(SETTINGS_KEY_MAP).sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
+        const mapped = Object.values(SETTINGS_KEY_MAP);
+        expect(mapped, 'the retired export keys must not be mapped').not.toContain('script_url');
+        expect(mapped).not.toContain('export_half_hour_precision');
+        expect(Object.keys(createSettingsRepository(ctx.handle).get()).sort())
+            .toEqual(Object.keys(DEFAULT_SETTINGS).sort());
+    });
+
+    it('reads the stored rows, and a missing row as its v1.2.1 seed', () => {
+        expect(createSettingsRepository(ctx.handle).get().dailyTargetSeconds, 'the stored daily_target').toBe(28800);
+
+        // The baseline replay seeds every v1.2.1 key, so the fallback needs a row taken away to be proven at all.
+        // 13 v1.2.1 defaults, less the one 0002 retires, less this one.
+        ctx.connection.exec('DELETE FROM settings WHERE key = ' + "'pomodoro_short_break'");
+        expect(rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM settings')[0]?.c).toBe(11);
+        expect(createSettingsRepository(ctx.handle).get().pomodoroShortBreakSeconds)
+            .toBe(DEFAULT_SETTINGS.pomodoroShortBreakSeconds);
+    });
+
+    it('writes only the keys in the patch, in the string form v1.2.1 wrote', () => {
+        const repo = createSettingsRepository(ctx.handle);
+        const before = storedSettings(ctx.dbPath);
+        const after = repo.update({ dailyTargetSeconds: 14400, pomodoroEnabled: true });
+        expect(after.dailyTargetSeconds).toBe(14400);
+        expect(after.pomodoroEnabled).toBe(true);
+        expect(after.goalNotification, 'an untouched key keeps its value').toBe(DEFAULT_SETTINGS.goalNotification);
+
+        const rows = storedSettings(ctx.dbPath);
+        expect(rows.get('daily_target'), 'the database keeps the v1.2.1 string form').toBe('14400');
+        expect(rows.get('pomodoro_enabled')).toBe('true');
+
+        const changed = [...rows].filter(([key, value]) => before.get(key) !== value).map(([key]) => key).sort();
+        expect(changed, 'a settings write must touch nothing the patch did not name')
+            .toEqual(['daily_target', 'pomodoro_enabled']);
+        expect([...rows.keys()].sort(), 'and must add no row either').toEqual([...before.keys()].sort());
+    });
+
+    it('a value the domain cannot use reads as its seed instead of making settings unreadable', () => {
+        const write = ctx.connection.prepare<[string, string]>(
+            'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
+        );
+        write.run('pomodoro_work_duration', 'not a number');
+        write.run('goal_notification', 'yes');
+        const stored = createSettingsRepository(ctx.handle).get();
+        expect(stored.pomodoroWorkSeconds).toBe(DEFAULT_SETTINGS.pomodoroWorkSeconds);
+        expect(stored.goalNotification).toBe(DEFAULT_SETTINGS.goalNotification);
+    });
+
+    it('survives a legacy NULL primary key, which SQLite reports as notnull 0 (04-08)', () => {
+        ctx.connection.exec('INSERT INTO settings (key, value) VALUES (NULL, ' + "'orphaned'" + ')');
+        expect(rawRows<{ c: number }>(ctx.dbPath, 'SELECT count(*) AS c FROM settings WHERE key IS NULL')[0]?.c,
+            'the fixture must actually hold the NULL key this test is about').toBe(1);
+        const stored: Settings = createSettingsRepository(ctx.handle).get();
+        expect(Object.keys(stored).sort()).toEqual(Object.keys(DEFAULT_SETTINGS).sort());
+    });
+
+    it('never reads or writes the rows the retired export left behind', () => {
+        const url = 'https://script.google.com/macros/s/AKfycbxRetained/exec';
+        ctx.connection.prepare<[string, string]>('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)')
+            .run('script_url', url);
+        createSettingsRepository(ctx.handle).update({ dailyTargetSeconds: 28800 });
+        expect(storedSettings(ctx.dbPath).get('script_url'), 'SC4: a settings write rewrote a row nothing reads')
+            .toBe(url);
+        expect(JSON.stringify(createSettingsRepository(ctx.handle).get())).not.toMatch(/script|google/i);
+    });
+});
+
+/*
+ * WR-10. dayTotals() filtered duration alone while its comment claimed "the same rows list() returns", so a row the
+ * mapper drops - a BLOB note, a text company_id - was counted in the day's total and shown nowhere. Work History
+ * said seven hours, the progress card, the streak and the week totals said eight, and the missing hour had no
+ * session the user could see, edit or delete.
+ */
+describe('WR-10: a day total counts the rows the list returns', () => {
+    const day = ld('2026-03-04');
+
+    async function withAnomaly(column: string, value: unknown): Promise<Opened> {
+        const ctx = await open(makeCleanFixture());
+        const sessions = createSessionsRepository(ctx.handle);
+        sessions.create({ name: 'Visible', durationSeconds: 3600, date: day, companyId: null, note: null });
+        sessions.create({ name: 'Anomalous', durationSeconds: 3600, date: day, companyId: null, note: null });
+        // Foreign keys off for the write, because that is the state a third-party SQLite tool leaves a row in;
+        // the repositories run with them on, which is why the row can be read back but not written this way.
+        ctx.connection.pragma('foreign_keys = OFF');
+        ctx.connection.prepare('UPDATE work_sessions SET ' + column + ' = ? WHERE name = ?').run(value, 'Anomalous');
+        ctx.connection.pragma('foreign_keys = ON');
+        return ctx;
+    }
+
+    it.each([
+        { label: 'a BLOB note', column: 'note', value: Buffer.from([1, 2, 3]) },
+        { label: 'a text company_id', column: 'company_id', value: 'one' }
+    ])('leaves out of the total the row it leaves out of the list: $label', async ({ column, value }) => {
+        const ctx = await withAnomaly(column, value);
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        const listed = repo.listByDateRange(day, day);
+        expect(listed, 'the anomalous row must be dropped from the list, or this proves nothing').toHaveLength(1);
+
+        expect(repo.dayTotalFor(day), 'the day total counted a session nothing on screen explains').toBe(3600);
+        expect(repo.dayTotals().find((total) => total.date === day)?.totalSeconds).toBe(3600);
+        expect(skipped.some((report) => report.reason.includes('left out of the sessions list')),
+            'the aggregate dropped a row and said nothing').toBe(true);
+    });
+
+    it('reports a day whose every row is unreadable rather than inventing a zero for it', async () => {
+        const ctx = await withAnomaly('note', Buffer.from([9]));
+        ctx.connection.prepare('UPDATE work_sessions SET note = ? WHERE name = ?').run(Buffer.from([9]), 'Visible');
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.listByDateRange(day, day)).toEqual([]);
+        // A day with no listable sessions is a day with no total, which is what the filter it replaced produced.
+        expect(repo.dayTotals().some((total) => total.date === day)).toBe(false);
+        expect(skipped.some((report) => report.reason.includes('2 row(s) on ' + day))).toBe(true);
+    });
+
+    /*
+     * The remainder, pinned rather than claimed away. toSession also requires created_at to parse as a SQL
+     * timestamp, and that parse lives in date.ts - SQL can check that the column is text and no more. TEXT affinity
+     * turns a number written into it back into text, so this is the shape that still slips through. The liberal
+     * SQL_TIMESTAMP regex added this phase is what keeps it narrow; if this test ever starts failing, the
+     * predicate has grown and the comment on LISTABLE should lose its last paragraph.
+     */
+    it('still counts a created_at that is text and does not parse, which is the one predicate SQL cannot share', async () => {
+        const ctx = await withAnomaly('created_at', 'not a timestamp');
+        const repo = createSessionsRepository(ctx.handle);
+
+        expect(repo.listByDateRange(day, day)).toHaveLength(1);
+        expect(repo.dayTotalFor(day), 'the known gap closed; narrow the comment on LISTABLE').toBe(7200);
+    });
+
+    it('still counts a day whose sessions are all readable, and says nothing about it', async () => {
+        const ctx = await open(makeCleanFixture());
+        const skipped: SkippedRowReport[] = [];
+        const repo = createSessionsRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+        repo.create({ name: 'Clean', durationSeconds: 60, date: day, companyId: null, note: 'a note' });
+
+        expect(repo.dayTotalFor(day)).toBe(60);
+        expect(skipped, 'a clean day was reported as holding anomalies').toEqual([]);
+    });
+});
+
+describe('CORE-01: the pomodoro repository', () => {
+    it('counts a local day from its rows and records a completion', async () => {
+        const ctx = await open(buildLegacyFixture('C', 'representative'));
+        const repo = createPomodoroRepository(ctx.handle);
+
+        expect(repo.countForDay(ld('2026-01-05')), 'the fixture row carries pomodoros_completed 2').toBe(2);
+        expect(repo.countForDay(ld('2026-01-04')), 'a day with no rows is zero, never null').toBe(0);
+
+        const recorded = repo.recordCompletion(ld('2026-01-04'), null);
+        expect(Object.keys(recorded).sort()).toEqual(['companyId', 'date', 'id', 'pomodorosCompleted']);
+        expect(recorded.pomodorosCompleted).toBe(1);
+        expect(recorded.companyId).toBeNull();
+        expect(repo.countForDay(ld('2026-01-04'))).toBe(1);
+        expect(repo.listByDate(ld('2026-01-05')).map((p) => p.pomodorosCompleted)).toEqual([2]);
+    });
+
+    /*
+     * WR-09. SQLite columns are dynamically typed and this one is nullable, so a third-party tool or a v1.x variant
+     * can leave text or a real in it. Summing that and then refusing the unsafe result collapsed the entire day to
+     * zero: the long break became unreachable for the rest of the day (nextAfterWork only ever said 'shortBreak')
+     * and POMO-09 reported nothing for the day and under-reported the week. The sibling aggregate dayTotals()
+     * already filters duration in SQL, so one bad row costs one bad row; the two now behave the same way.
+     */
+    it.each([
+        { label: 'a real', value: 1.5 },
+        { label: 'text', value: 'not a number' }
+    ])('excludes one row holding $label from a day rather than the whole day', async ({ value }) => {
+        const ctx = await open(makeCleanFixture());
+        const day = ld('2026-02-10');
+        // Three real completions, then a fourth row a third-party tool left in a shape INTEGER affinity permits.
+        for (let i = 0; i < 3; i += 1) createPomodoroRepository(ctx.handle).recordCompletion(day, null);
+        ctx.connection
+            .prepare('INSERT INTO pomodoro_sessions (date, company_id, pomodoros_completed) VALUES (?, NULL, ?)')
+            .run(day, value);
+
+        const skipped: SkippedRowReport[] = [];
+        const repo = createPomodoroRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.countForDay(day), 'one anomalous row cost the whole day its count').toBe(3);
+        expect(skipped.map((report) => report.column)).toEqual(['pomodoros_completed']);
+        expect(skipped[0]?.reason, 'the exclusion was never reported').toContain('1 row(s)');
+        expect(JSON.stringify(skipped), 'a stored value crossed into a log line').not.toContain('not a number');
+    });
+
+    it('says nothing about the NULL v1.2.1\'s ALTER left behind, which sum() already ignores', async () => {
+        const ctx = await open(makeCleanFixture());
+        const day = ld('2026-02-11');
+        createPomodoroRepository(ctx.handle).recordCompletion(day, null);
+        ctx.connection.prepare('INSERT INTO pomodoro_sessions (date, company_id, pomodoros_completed) VALUES (?, NULL, NULL)')
+            .run(day);
+
+        const skipped: SkippedRowReport[] = [];
+        const repo = createPomodoroRepository(ctx.handle, { onSkippedRow: (report) => skipped.push(report) });
+
+        expect(repo.countForDay(day)).toBe(1);
+        expect(skipped, 'an unset count was reported as an anomaly').toEqual([]);
+    });
+});
+
+// The export columns and settings keys migration 0002 removed, as the SQL a repository issues would spell them.
+const RETIRED = ['excel_column', 'note_column', 'script_url', 'export_half_hour_precision'];
+
+describe('SC4: no repository asks the database for a retired column', () => {
+    it('names none of them in any statement it issues', async () => {
+        const migrated = await open(makeCleanFixture());
+        closeDatabase(migrated.connection);
+
+        // openDatabase's statement trace is the only way to see the SQL itself; the mapper alone would hide a
+        // SELECT * that fetched the columns and then dropped them.
+        const issued: string[] = [];
+        const connection = openDatabase(migrated.dbPath, { verbose: (message) => issued.push(String(message)) });
+        opened.push(connection);
+        const handle = createDbHandle(connection);
+        const companies = createCompaniesRepository(handle);
+        const sessions = createSessionsRepository(handle);
+        const settings = createSettingsRepository(handle);
+        const pomodoro = createPomodoroRepository(handle);
+
+        const company = companies.list()[0];
+        companies.get(company?.id ?? 1);
+        companies.findByName('Unassigned');
+        const temp = companies.create({ name: 'Traced Insert', noteRequired: true });
+        companies.update(temp.id, { name: 'Traced Insert', noteRequired: false });
+        sessions.list();
+        sessions.listByDateRange(ld('2026-01-01'), ld('2026-01-31'));
+        sessions.listByDateAndCompany(ld('2026-01-05'), company?.id ?? 1);
+        sessions.dayTotals();
+        settings.get();
+        settings.update({ dailyTargetSeconds: 28800 });
+        pomodoro.countForDay(ld('2026-01-05'));
+        pomodoro.listByDate(ld('2026-01-05'));
+
+        expect(issued.length, 'the trace must have seen the statements it is asked to judge').toBeGreaterThan(10);
+        expect(issued.some((statement) => statement.includes('note_required')),
+            'negative control: the trace does see the column names a repository legitimately uses').toBe(true);
+
+        // Before 0002 this list held drizzle's INSERT, which enumerated every column schema.ts declared and passed
+        // the retired pair their default. schema.ts no longer declares them and the table no longer has them, so
+        // the allowance that covered it is gone too: nothing may name one at all.
+        const named = issued.filter((statement) => RETIRED.some((column) => statement.includes(column)));
+        expect(named, 'SC4/V2-SCHEMA-01: a repository named a column or key 0002 removed').toEqual([]);
+
+        const created = rawRows<Record<string, unknown>>(
+            migrated.dbPath, 'SELECT * FROM companies WHERE name = ' + "'Traced Insert'"
+        )[0];
+        expect(created, 'the traced insert must have produced a row').toBeDefined();
+        expect(Object.keys(created ?? {}), 'a company created after 0002 carries only the surviving columns')
+            .toEqual(['id', 'name', 'created_at', 'updated_at', 'note_required']);
+    });
+});
+
+describe('CORE-16: the repository layer is one file per table plus its mapper', () => {
+    it('holds exactly the files the barrel re-exports', () => {
+        expect(fs.readdirSync('src/lib/db/repositories').sort()).toEqual([
+            'companies.repository.ts', 'index.ts', 'pomodoro.repository.ts', 'rows.ts',
+            'sessions.repository.ts', 'settings.repository.ts'
+        ]);
+    });
+});

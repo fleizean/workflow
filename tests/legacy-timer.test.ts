@@ -1,0 +1,213 @@
+// D-34/B12: the parser maps v1.2.1's saved keys, never throws, keeps the raw string, and never lets the clock
+// reach elapsedSeconds. Plain inputs throughout, like tests/main-config.test.ts.
+
+import { describe, expect, it } from 'vitest';
+import { instantFromEpochMs } from '@shared/utils/date';
+import { parseLegacyTimerState } from '../src/lib/db/legacy-timer';
+
+const NOW = instantFromEpochMs(Date.UTC(2026, 8, 12, 9, 0, 0));
+const NOW_ISO = '2026-09-12T09:00:00.000Z';
+// Exactly a week before NOW: the B12 gap v1.2.1 would have added to elapsed.
+const SAVED_AT = Date.UTC(2026, 8, 5, 9, 0, 0);
+const WEEK_SECONDS = 7 * 24 * 60 * 60;
+
+const record = (raw: string): ReturnType<typeof parseLegacyTimerState> => parseLegacyTimerState(raw, NOW);
+
+const saved = (fields: Record<string, unknown>): string => JSON.stringify(fields);
+
+interface Case {
+    readonly name: string;
+    readonly raw: string;
+    readonly elapsedSeconds: number | null;
+    readonly wasRunning: boolean | null;
+    readonly pomodoroMode: boolean | null;
+    readonly pomodoroState: string | null;
+    readonly pomodoroSessionCount: number | null;
+    readonly lastUpdated: number | null;
+}
+
+const CASES: readonly Case[] = [
+    {
+        name: 'a running timer',
+        raw: saved({
+            elapsed: 3600, running: true, pomodoroMode: false,
+            pomodoroState: null, pomodoroSessionCount: 0, lastUpdated: SAVED_AT
+        }),
+        elapsedSeconds: 3600, wasRunning: true, pomodoroMode: false,
+        pomodoroState: null, pomodoroSessionCount: 0, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'a paused timer',
+        raw: saved({
+            elapsed: 1234, running: false, pomodoroMode: false,
+            pomodoroState: null, pomodoroSessionCount: 0, lastUpdated: SAVED_AT
+        }),
+        elapsedSeconds: 1234, wasRunning: false, pomodoroMode: false,
+        pomodoroState: null, pomodoroSessionCount: 0, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'pomodoro work',
+        raw: saved({
+            elapsed: 300, running: true, pomodoroMode: true,
+            pomodoroState: 'work', pomodoroSessionCount: 2, lastUpdated: SAVED_AT
+        }),
+        elapsedSeconds: 300, wasRunning: true, pomodoroMode: true,
+        pomodoroState: 'work', pomodoroSessionCount: 2, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'pomodoro short break',
+        raw: saved({
+            elapsed: 60, running: true, pomodoroMode: true,
+            pomodoroState: 'shortBreak', pomodoroSessionCount: 3, lastUpdated: SAVED_AT
+        }),
+        elapsedSeconds: 60, wasRunning: true, pomodoroMode: true,
+        pomodoroState: 'shortBreak', pomodoroSessionCount: 3, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'pomodoro long break',
+        raw: saved({
+            elapsed: 90, running: false, pomodoroMode: true,
+            pomodoroState: 'longBreak', pomodoroSessionCount: 4, lastUpdated: SAVED_AT
+        }),
+        elapsedSeconds: 90, wasRunning: false, pomodoroMode: true,
+        pomodoroState: 'longBreak', pomodoroSessionCount: 4, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'missing fields',
+        raw: '{}',
+        elapsedSeconds: null, wasRunning: null, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'garbage',
+        raw: 'not json at all',
+        elapsedSeconds: null, wasRunning: null, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'an empty string',
+        raw: '',
+        elapsedSeconds: null, wasRunning: null, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'a JSON array',
+        raw: '[]',
+        elapsedSeconds: null, wasRunning: null, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'JSON null',
+        raw: 'null',
+        elapsedSeconds: null, wasRunning: null, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'a huge elapsed (1e308)',
+        raw: saved({ elapsed: 1e308, running: true, lastUpdated: SAVED_AT }),
+        elapsedSeconds: null, wasRunning: true, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'an elapsed beyond the safe range (2**53)',
+        raw: saved({ elapsed: 2 ** 53, running: true, lastUpdated: SAVED_AT }),
+        elapsedSeconds: null, wasRunning: true, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'a negative elapsed',
+        raw: saved({ elapsed: -5, running: false, lastUpdated: SAVED_AT }),
+        elapsedSeconds: null, wasRunning: false, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'a fractional elapsed',
+        raw: saved({ elapsed: 12.7, running: false, lastUpdated: SAVED_AT }),
+        elapsedSeconds: 12, wasRunning: false, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'an elapsed saved as a string',
+        raw: saved({ elapsed: '3600', running: true, lastUpdated: SAVED_AT }),
+        elapsedSeconds: null, wasRunning: true, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    },
+    {
+        name: 'a fractional lastUpdated',
+        raw: saved({ elapsed: 10, running: true, lastUpdated: 1.5 }),
+        elapsedSeconds: 10, wasRunning: true, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'a negative lastUpdated',
+        raw: saved({ elapsed: 10, running: true, lastUpdated: -1 }),
+        elapsedSeconds: 10, wasRunning: true, pomodoroMode: null,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: null
+    },
+    {
+        name: 'a pomodoroState saved as a number',
+        raw: saved({ elapsed: 10, running: true, pomodoroMode: true, pomodoroState: 7, lastUpdated: SAVED_AT }),
+        elapsedSeconds: 10, wasRunning: true, pomodoroMode: true,
+        pomodoroState: null, pomodoroSessionCount: null, lastUpdated: SAVED_AT
+    }
+];
+
+describe('D-34: every saved v1.2.1 shape maps to a typed-or-null record', () => {
+    it.each(CASES)('$name', (testCase) => {
+        expect(record(testCase.raw)).toEqual({
+            raw: testCase.raw,
+            elapsedSeconds: testCase.elapsedSeconds,
+            wasRunning: testCase.wasRunning,
+            pomodoroMode: testCase.pomodoroMode,
+            pomodoroState: testCase.pomodoroState,
+            pomodoroSessionCount: testCase.pomodoroSessionCount,
+            lastUpdated: testCase.lastUpdated,
+            importedAt: NOW_ISO
+        });
+    });
+
+    it('keeps the raw string byte-identical in every case', () => {
+        for (const testCase of CASES) {
+            expect(record(testCase.raw).raw, testCase.name + ' lost or rewrote the raw string').toBe(testCase.raw);
+        }
+    });
+
+    it('never throws, whatever it is handed', () => {
+        const odd = ['', ' ', '{', '[[[', 'undefined', 'NaN', '{"elapsed":}', '\u0000', '{"elapsed":1e999}'];
+        for (const raw of [...odd, ...CASES.map((testCase) => testCase.raw)]) {
+            expect(() => record(raw), JSON.stringify(raw) + ' threw').not.toThrow();
+        }
+    });
+
+    it('returns a frozen record, so no caller can rewrite an imported value', () => {
+        expect(Object.isFrozen(record('{}'))).toBe(true);
+    });
+});
+
+describe('B12: the time the app was closed is never added to elapsed', () => {
+    it('imports a week-old running record with exactly the saved elapsed', () => {
+        const raw = saved({ elapsed: 3600, running: true, lastUpdated: SAVED_AT });
+        const parsed = record(raw);
+
+        expect(parsed.wasRunning, 'the record under test must be a running one, or B12 is not exercised').toBe(true);
+        expect(parsed.lastUpdated, 'the gap must be a full week, or the case is not the B12 one').toBe(SAVED_AT);
+        expect(NOW.getTime() - SAVED_AT).toBe(WEEK_SECONDS * 1000);
+        // v1.2.1 would have restored 3600 + 604800 here (index.html:817-824).
+        expect(parsed.elapsedSeconds, 'closed-app time reached elapsedSeconds').toBe(3600);
+        expect(parsed.elapsedSeconds).not.toBe(3600 + WEEK_SECONDS);
+    });
+
+    it('yields the same elapsedSeconds whatever instant it is parsed at', () => {
+        const raw = saved({ elapsed: 3600, running: true, lastUpdated: SAVED_AT });
+        const later = instantFromEpochMs(Date.UTC(2027, 0, 1, 0, 0, 0));
+
+        const atNow = parseLegacyTimerState(raw, NOW);
+        const atLater = parseLegacyTimerState(raw, later);
+
+        // The clock reaches importedAt and nothing else.
+        expect(atLater.elapsedSeconds).toBe(atNow.elapsedSeconds);
+        expect(atLater.lastUpdated).toBe(atNow.lastUpdated);
+        expect(atLater.importedAt).not.toBe(atNow.importedAt);
+        expect(atLater.importedAt).toBe('2027-01-01T00:00:00.000Z');
+    });
+});

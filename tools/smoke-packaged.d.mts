@@ -1,0 +1,102 @@
+// Type contract for what tools/smoke-packaged.mjs exports, so strict TypeScript tests can import them (TS7016).
+// Functions stay undeclared until a TypeScript test needs one.
+
+export declare const EXPECTED_APP_NAME: string;
+export declare const PRODUCT_NAME: string;
+export declare const SMOKE_DB_ENV: string;
+export declare const SMOKE_DB_NAME: string;
+export declare const RENDERER_MARKER_TEXT: string;
+export declare const RENDERER_SECOND_ROUTE_HASH: string;
+export declare const RENDERER_SECOND_ROUTE_TEXT: string;
+export declare const RENDERER_COMPANIES_ROUTE_HASH: string;
+export declare const EXPECTED_XSS_COMPANY_NAME: string;
+export declare const EXPECTED_DESTRUCTIVE_TESTID: string;
+export declare const EXPECTED_SETTINGS_TARGET_TEXT: string;
+export declare const EXPECTED_SETTINGS_NUMBER_FIELDS: number;
+export declare const EXPECTED_ICON_MAX_WIDTH_PX: number;
+export declare const EXPECTED_ICON_TEXT_MIN_WIDTH_PX: number;
+export declare const EXPECTED_BUNDLED_FONTS: readonly string[];
+export declare const FILL_ON: string;
+export declare const DEFAULT_TIMEOUT_MS: number;
+export declare const DATABASE_FILE: string;
+export declare const BACKUP_DIR: string;
+export declare const EXPECTED_LATEST: number;
+export declare function isWithin(parent: string, child: string): boolean;
+
+export interface SmokeCheck {
+    readonly label: string;
+    readonly pass: boolean;
+    readonly detail: string;
+}
+
+export interface SmokeReport {
+    readonly ok: boolean;
+    readonly fields: Readonly<Record<string, string>>;
+}
+
+export interface DatabaseObservation {
+    readonly userVersion: number;
+    readonly companyColumns: string;
+    readonly companies: number;
+    readonly workSessions: number;
+    readonly pomodoroSessions: number;
+    readonly totalDuration: number;
+    readonly unassignedCompanies: number;
+    readonly nullCompanySessions: number;
+    readonly settings: readonly { key: string; value: string }[];
+    readonly settingsByKey: Readonly<Record<string, string>>;
+}
+
+export declare const LEGACY_TIMER_KEY: string;
+export declare const SMOKE_SEED_TIMER_STATE_ENV: string;
+export declare const EXPECTED_EXIT_CODES: Readonly<Record<string, number>>;
+export declare const EXPECTED_IPC_CHANNELS: number;
+export declare const EXPECTED_WATCHDOG_MS: number;
+export declare const EXPECTED_SERVICES: string;
+export declare const EXPECTED_APP_USER_MODEL_ID: string;
+export declare const EXPECTED_NOTIFY_ICON_SIZE: string;
+export declare const MAX_NOTIFY_ICON_BYTES: number;
+export declare const EXPECTED_TRAY_RESET_LABEL: string;
+export declare const EXPECTED_APP_VERSION: string;
+
+export interface LaunchExit {
+    readonly code: number | null;
+    readonly signal: string | null;
+    readonly timedOut: boolean;
+    readonly error?: string;
+}
+
+export interface StoredLegacyTimer {
+    readonly raw: string;
+    readonly elapsedSeconds: number | null;
+    readonly wasRunning?: boolean | null;
+    readonly lastUpdated?: number | null;
+}
+
+export declare function parseSmokeReport(stdout: string): SmokeReport;
+export declare function evaluateRefusalCase(observed: {
+    exit: LaunchExit;
+    report: SmokeReport;
+    hashBefore: string;
+    hashAfter: string;
+    smokeDbExists: boolean;
+}): SmokeCheck[];
+export declare function evaluateTimerCase(observed: {
+    report: SmokeReport;
+    seeded: { raw: string; elapsedSeconds: number };
+    stored: StoredLegacyTimer | null;
+    workSessions: number;
+}): SmokeCheck[];
+export declare function evaluateWalFlushed(observed: {
+    caseName: string;
+    exists: boolean;
+    size: number;
+}): SmokeCheck;
+export declare function evaluateFreshCase(observed: { report: SmokeReport }): SmokeCheck[];
+export declare function evaluateWindowRecovery(observed: { report: SmokeReport }): SmokeCheck[];
+export declare function evaluateLegacyCase(observed: {
+    report: SmokeReport;
+    before: DatabaseObservation;
+    after: DatabaseObservation;
+    backups: readonly string[];
+}): SmokeCheck[];
