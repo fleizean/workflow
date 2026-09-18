@@ -699,6 +699,42 @@ export async function runMatrix(options = {}) {
 /* The report                                                                                 */
 /* ---------------------------------------------------------------------------------------- */
 
+/*
+ * Two reports agree when every line agrees. A line that carries a display scale is a line of
+ * measurements, and there its numbers agree when each is within one CSS pixel of its counterpart.
+ * Every other line - the counts, the verdicts, the labels - must match exactly.
+ *
+ * Not a loosened gate, a gate told what its instrument can resolve. Windows sizes a window in
+ * device pixels and 1.25 has no exact CSS-pixel equivalent, so one build measured on two machines
+ * lands a device pixel apart at 125% and every extent derived from the content width moves with it:
+ * 382.4 here against 381.6 on a runner, 431 against 430. Every verdict on those lines was PASS on
+ * both. Demanding agreement finer than the last recorded digit fails on the machine rather than on
+ * the layout, and a gate that cries wolf is one somebody eventually silences with --write.
+ *
+ * What it still catches, asserted in tests/responsive-matrix.test.ts: a shift a person could see, a
+ * PASS that became a FAIL, and any change to a count - "Checks failed | 0" carries no scale, so it
+ * is compared as text and one failure turning up is a difference.
+ */
+const SCALE_ON_LINE = /\|\s*(?:100|125|150)%\s*\|/;
+const NUMBER = /-?\d+(?:\.\d+)?/g;
+const CSS_PIXEL = 1;
+
+export function linesAgree(was, now) {
+    if (was === now) return true;
+    if (!SCALE_ON_LINE.test(was)) return false;
+    if (was.replace(NUMBER, '#') !== now.replace(NUMBER, '#')) return false;
+    const left = (was.match(NUMBER) ?? []).map(Number);
+    const right = (now.match(NUMBER) ?? []).map(Number);
+    return left.every((value, i) => Math.abs(value - right[i]) <= CSS_PIXEL + 1e-9);
+}
+
+export function reportsAgree(was, now) {
+    const left = was.split('\n');
+    const right = now.split('\n');
+    if (left.length !== right.length) return false;
+    return left.every((line, i) => linesAgree(line, right[i]));
+}
+
 export function summarise(result) {
     const cells = result.runs.flatMap((run) => run.cells);
     const routeChecks = cells.flatMap((cell) => cell.routes.flatMap((r) => r.checks));
@@ -834,6 +870,7 @@ if (invokedDirectly) {
 
     const summary = summarise(result);
     const report = renderMatrixReport(result);
+
     const normalise = (text) => text.replace(/\r\n/g, '\n');
     const committed = fs.existsSync(REPORT) ? normalise(fs.readFileSync(REPORT, 'utf8')) : '';
 
@@ -861,9 +898,26 @@ if (invokedDirectly) {
         failed = true;
         for (const v of summary.violations.slice(0, 10)) console.error(SCRIPT_NAME + ': CSP violation - ' + v);
     }
-    if (!write && committed !== normalise(report)) {
+    if (!write && !reportsAgree(committed, normalise(report))) {
         failed = true;
         console.error(SCRIPT_NAME + ': baselines/v2/RESPONSIVE-MATRIX.md is not what this run produces.');
+        /*
+         * Naming the lines rather than only the fact. The gate first failed on a CI runner, where
+         * `--write` is not a thing anyone can re-run and the operator has nothing to reason from;
+         * every recorded value here is a measurement, so a machine that renders a pixel differently
+         * has to be distinguishable from a screen that actually broke.
+         */
+        const was = committed.split('\n');
+        const now = normalise(report).split('\n');
+        let shown = 0;
+        for (let n = 0; n < Math.max(was.length, now.length) && shown < 20; n += 1) {
+            if (linesAgree(was[n] ?? '', now[n] ?? '')) continue;
+            shown += 1;
+            console.error(SCRIPT_NAME + ': line ' + (n + 1) + ' committed: ' + (was[n] ?? '(no line)'));
+            console.error(SCRIPT_NAME + ': line ' + (n + 1) + ' this run : ' + (now[n] ?? '(no line)'));
+        }
+        const total = Math.max(was.length, now.length);
+        if (shown === 20) console.error(SCRIPT_NAME + ': ...more differences past line ' + total);
         console.error(SCRIPT_NAME + ': re-run with --write once the difference is understood.');
     }
 

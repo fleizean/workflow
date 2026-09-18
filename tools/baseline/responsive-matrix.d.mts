@@ -35,3 +35,8 @@ export declare const MODALS_NOT_REACHED: readonly (readonly string[])[];
 
 export declare function judgeRoute(measured: unknown, size: readonly number[]): MatrixCheck[];
 export declare function judgeModal(name: string, measured: unknown): MatrixCheck[];
+
+/** True when two report lines say the same thing, to the CSS pixel on a line that carries a scale. */
+export declare function linesAgree(was: string, now: string): boolean;
+
+export declare function reportsAgree(was: string, now: string): boolean;

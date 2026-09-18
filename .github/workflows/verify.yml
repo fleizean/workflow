@@ -59,6 +59,10 @@ jobs:
       # errors; the renormalise assertion catches the actual D-13 regression - a blob
       # committed with line endings that disagree with .gitattributes, which surfaces
       # later as "whole file changed" on a file nobody edited.
+      # v121-sql.ts is excluded for the same reason as baselines/: it transcribes v1.2.1's SQL and its
+      # trailing spaces are the contract, because sqlite_master stores CREATE text verbatim. Nothing is
+      # lost by excluding it - db-v121-transcription.test.ts pins the whole file byte-for-byte, which is
+      # a stronger guard than this check.
       # WR-05: only what this run's range introduces - frozen legacy files already carry trailing
       # whitespace, and --ignore-cr-at-eol hides D-13's CRLF-to-LF rewrite of them.
       - name: Check whitespace and line-ending contract
@@ -82,7 +86,7 @@ jobs:
             exit 1
           fi
           echo "Whitespace check over $(git rev-parse --short "$base")..$(git rev-parse --short HEAD) ($EVENT_NAME)"
-          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**'
+          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**' ':!tests/helpers/v121-sql.ts'
           git add --renormalize .
           if ! git diff --cached --quiet; then
             echo "::error::Committed line endings disagree with .gitattributes in:"
@@ -241,6 +245,30 @@ jobs:
       # covers both halves of the tsconfig split.
       - name: Type check
         run: npm run typecheck
+
+      # tests/form-constraints.test.ts drives a real Electron window to prove BL-02's constraint
+      # validation stays fixed, and the hosted Linux runner has no X server, so Chromium aborts with
+      # "Missing X server or $DISPLAY". The harness passes --no-sandbox itself - the other half of the
+      # same failure, and what every other Electron launch here already passed - but a display cannot
+      # be a process argument, so it is supplied here for the whole job. Measured: with the flag and
+      # without a display the suite still fails; with both it passes.
+      - name: Start a virtual display for the Electron harness
+        run: |
+          if ! command -v Xvfb > /dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends xvfb
+          fi
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+          # The socket, not xdpyinfo: x11-utils is not guaranteed on the runner image.
+          for _ in $(seq 1 100); do
+            [ -S /tmp/.X11-unix/X99 ] && break
+            sleep 0.1
+          done
+          if [ ! -S /tmp/.X11-unix/X99 ]; then
+            echo "::error::Xvfb never created /tmp/.X11-unix/X99, so the Electron harness has no display"
+            exit 1
+          fi
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
       - name: Run unit tests
         run: npm test

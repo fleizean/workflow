@@ -31,9 +31,19 @@ const CORRECT = { fall: '2026-11-02', spring: '2026-03-02', fallBucket: 'lastWee
 // Date.UTC, an oracle independent of date.ts: 2026-10-26 00:30:00 UTC.
 const SQL_TIMESTAMP_MS = Date.UTC(2026, 9, 26, 0, 30, 0);
 
+/*
+ * ICU has two spellings for "TZ named a zone I could not load", and they differ by platform: Windows reports the
+ * literal 'Etc/Unknown', Linux omits timeZone from resolvedOptions() entirely, so it arrives here as undefined
+ * once the child's report has been through JSON. Both mean a silent fallback to UTC, and neither is a zone the
+ * sweep may accept - the control below asserts membership, every real zone asserts non-membership (D-08).
+ */
+const UNRESOLVED_ZONES: readonly (string | undefined)[] = ['Etc/Unknown', undefined];
+const nameOf = (resolved: string | undefined): string => resolved ?? '(absent from resolvedOptions)';
+
 interface SweepReport {
     zone: string;
-    resolved: string;
+    // Absent on Linux when TZ names no loadable zone; see UNRESOLVED_ZONES.
+    resolved: string | undefined;
     january: number;
     july: number;
     daysChecked: number;
@@ -93,7 +103,10 @@ describe('date.ts zone sweep', () => {
         expect(stderr, 'the child must write nothing to stderr').toBe('');
         expect(report.zone, 'the child reports the zone it was asked for').toBe(zone);
         // Never compare names: ICU aliases Asia/Kolkata to Asia/Calcutta and Asia/Kathmandu to Asia/Katmandu.
-        expect(report.resolved, 'Etc/Unknown means the child fell back silently (D-08)').not.toBe('Etc/Unknown');
+        expect(
+            UNRESOLVED_ZONES.includes(report.resolved),
+            'the child fell back silently: TZ=' + zone + ' resolved to ' + nameOf(report.resolved) + ' (D-08)'
+        ).toBe(false);
         expect({ january: report.january, july: report.july }, zone + ' offsets (D-08)').toEqual(ZONE_OFFSETS[zone]);
         expect(report.daysChecked, '2020-2030 has 4018 days').toBe(4018);
         expect(report.roundTripFailures, 'SHARED-01 round trip').toEqual([]);
@@ -131,9 +144,12 @@ describe('date.ts zone sweep', () => {
             .toEqual({ fall: CORRECT.fall, spring: CORRECT.spring, fallBucket: CORRECT.fallBucket });
     }, 120_000);
 
-    it('D-08 control: an unknown TZ falls back to Etc/Unknown, so the detector has teeth', () => {
+    it('D-08 control: an unknown TZ resolves to no zone at all, so the detector has teeth', () => {
         const { report } = runChild('Not/A_Zone');
-        expect(report.resolved, 'the fallback must be detectable by name').toBe('Etc/Unknown');
+        expect(
+            UNRESOLVED_ZONES.includes(report.resolved),
+            'an unloadable TZ must be detectable; ICU reported ' + nameOf(report.resolved)
+        ).toBe(true);
         expect({ january: report.january, july: report.july }, 'a fallback is indistinguishable from UTC by offsets alone')
             .toEqual(ZONE_OFFSETS['UTC']);
     }, 120_000);

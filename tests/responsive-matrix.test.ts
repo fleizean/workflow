@@ -14,7 +14,7 @@ import path from 'node:path';
 import { repoRoot } from './helpers/ts-imports';
 
 import {
-    CELL_COUNT, MODALS_NOT_REACHED, SCALES, SIZES, judgeModal, judgeRoute
+    CELL_COUNT, MODALS_NOT_REACHED, SCALES, SIZES, judgeModal, judgeRoute, linesAgree
 } from '../tools/baseline/responsive-matrix.mjs';
 
 const REPORT = path.join(repoRoot, 'baselines', 'v2', 'RESPONSIVE-MATRIX.md');
@@ -192,5 +192,32 @@ describe('the committed matrix report', () => {
         // The control beside it: a loop that was never running could not be proved to have stopped.
         const running = report.match(/really was animating before the unmount/g) ?? [];
         expect(running).toHaveLength(SCALES.length);
+    });
+});
+
+
+/*
+ * The tolerance exists because the same build measured on two machines lands a device pixel apart
+ * at 125%, and it is worth exactly as much as the things it still refuses.
+ */
+describe('the report comparison tolerates a machine, not a layout', () => {
+    it.each([
+        ['the 125% column extent CI reported', '| 380x600 | 125% | index | 0.0-382.4 | 0.0-382.4 | 193x193 | 0 | 0 | 0 |', '| 380x600 | 125% | index | 0.0-381.6 | 0.0-381.6 | 193x193 | 0 | 0 | 0 |'],
+        ['the 125% panel offset CI reported', '| 125% | About: the panel is inside the viewport | `panel 130.8-470.8 of 602, 31.2-351.2 of 382` |', '| 125% | About: the panel is inside the viewport | `panel 130.8-470.8 of 602, 30.8-350.8 of 382` |'],
+        ['the 125% CSS width CI reported', '| 430x932 | 125% | 538x1165 | 431x932 | 1.25 | PASS | PASS | PASS | PASS |', '| 430x932 | 125% | 538x1165 | 430x932 | 1.25 | PASS | PASS | PASS | PASS |'],
+    ])('accepts %s', (_label, was, now) => {
+        expect(linesAgree(was, now)).toBe(true);
+    });
+
+    it.each([
+        ['a shift a person could see', '| 380x600 | 125% | index | 0.0-382.4 | 0.0-382.4 | 193x193 | 0 | 0 | 0 |', '| 380x600 | 125% | index | 0.0-362.4 | 0.0-362.4 | 193x193 | 0 | 0 | 0 |'],
+        ['two pixels where no scale rounds', '| 380x600 | 100% | index | 0.0-380.0 | 0.0-380.0 | 192x192 | 0 | 0 | 0 |', '| 380x600 | 100% | index | 0.0-378.0 | 0.0-378.0 | 192x192 | 0 | 0 | 0 |'],
+        ['a PASS that became a FAIL', '| 430x932 | 125% | 538x1165 | 431x932 | 1.25 | PASS | PASS | PASS | PASS |', '| 430x932 | 125% | 538x1165 | 431x932 | 1.25 | PASS | FAIL | PASS | PASS |'],
+        ['a ring that stopped scaling', '| 1920x1080 | 100% | index | 0.0-1920.0 | 0.0-1920.0 | 346x346 | 0 | 0 | 0 |', '| 1920x1080 | 100% | index | 0.0-1920.0 | 0.0-1920.0 | 300x300 | 0 | 0 | 0 |'],
+        ['a failed check appearing', '| Checks failed | **0** |', '| Checks failed | **1** |'],
+        ['a cell going unmeasured', '| Cells measured | 15 of 15 |', '| Cells measured | 14 of 15 |'],
+        ['a CSP violation appearing', '| CSP violations reported | 0 |', '| CSP violations reported | 1 |'],
+    ])('still refuses %s', (_label, was, now) => {
+        expect(linesAgree(was, now)).toBe(false);
     });
 });

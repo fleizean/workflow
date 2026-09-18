@@ -175,7 +175,14 @@ function runProbes(probes: readonly Probe[]): ProbeResult[] {
         const environment: NodeJS.ProcessEnv = { ...process.env, WORKFLOW_PROBE: PROBE_SCRIPT };
         delete environment.ELECTRON_RUN_AS_NODE;
         delete environment.NODE_OPTIONS;
-        const stdout = execFileSync(electronBinary(), [main, page], {
+        /*
+         * --no-sandbox, which every other Electron launch in this repository already passes (tools/**, and
+         * baselines/v1.2.1/MANIFEST.md pins it as the v1.2.1 launch arg). The npm-installed chrome-sandbox is not
+         * setuid root on a CI runner, and Chromium treats that as FATAL at startup rather than falling back, so
+         * without this the probe window never opens on Linux. The flag precedes the app path so that `page` stays
+         * the last argv entry, which is how MAIN_SCRIPT finds it.
+         */
+        const stdout = execFileSync(electronBinary(), ['--no-sandbox', main, page], {
             encoding: 'utf8',
             timeout: 90_000,
             env: environment,

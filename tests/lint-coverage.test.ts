@@ -146,11 +146,27 @@ interface ComputedConfig {
 
 const eslint = new ESLint({ cwd: repoRoot });
 
-const computedConfig = async (rel: string): Promise<ComputedConfig | undefined> =>
-    (await eslint.calculateConfigForFile(path.join(repoRoot, rel))) as ComputedConfig | undefined;
+/*
+ * calculateConfigForFile RETURNS UNDEFINED rather than throwing for any path ESLint would not lint -
+ * an ignore pattern covers it, or no block's `files` matches it. Every reader here then took
+ * `?.rules?.[rule]` as undefined and carried on, so "this rule stopped applying to this path" was
+ * indistinguishable from "this rule applied and allowed it". Measured against eslint 9.39.2:
+ * docs/x.ts (ignored) and src/main/x.bogusext (no matching block) both come back undefined.
+ */
+const computedConfig = async (rel: string): Promise<ComputedConfig> => {
+    const abs = path.join(repoRoot, rel);
+    const config = (await eslint.calculateConfigForFile(abs)) as ComputedConfig | undefined;
+    if (config === undefined) {
+        throw new Error(
+            rel + ': ESLint computed no configuration for this path, so every rule read from it would ' +
+            'look absent rather than applying (isPathIgnored=' + String(await eslint.isPathIgnored(abs)) + ').'
+        );
+    }
+    return config;
+};
 
 const ruleEntry = async (rel: string, rule: string): Promise<unknown> =>
-    (await computedConfig(rel))?.rules?.[rule];
+    (await computedConfig(rel)).rules?.[rule];
 
 const CUSTODY_03_TEXT = 'copyFileSync|cp|cpSync|rename|renameSync';
 const DATE_MESSAGE = 'Calendar dates go through src/shared/utils/date.ts (SHARED-03).';
@@ -188,29 +204,154 @@ const isSqlExempt = (file: string): boolean => isUnder(file, SQL_HOME) || Object
 const isConfigBypass = (m: Linter.LintMessage): boolean =>
     m.ruleId === 'no-restricted-properties' && m.message.endsWith('from src/main/config.ts (D-23).');
 
-const byRule = (...ruleIds: string[]) => (m: Linter.LintMessage): boolean => m.ruleId !== null && ruleIds.includes(m.ruleId);
+/* A message predicate that can also say which rules it depends on, so probe() can check they are on. */
+interface MessageMatcher {
+    (m: Linter.LintMessage): boolean;
+    ruleIds?: readonly string[];
+}
+
+const byRule = (...ruleIds: string[]): MessageMatcher => {
+    const matcher: MessageMatcher = (m) => m.ruleId !== null && ruleIds.includes(m.ruleId);
+    matcher.ruleIds = ruleIds;
+    return matcher;
+};
 
 interface ProbeVerdict {
     missed: string[];
     flagged: string[];
 }
 
-// Lints in-memory text under an existing path, so typed linting finds the file in its program (Pitfall 9).
+/* What the probe actually saw. A probe that fails has to explain itself without needing a second run. */
+async function probeDiagnosis(rel: string, messages: readonly Linter.LintMessage[], rules: readonly string[]): Promise<string> {
+    const configured = (await computedConfig(rel)).rules ?? {};
+    const named = rules.length > 0 ? rules : Object.keys(configured).filter((r) => r.includes('restricted')).slice(0, 3);
+    // The LENGTH is the diagnostic one: two blocks that both enable a rule are told apart by how much
+    // they put in it, and a truncated dump of a 12 KB options object would hide exactly that.
+    const shown = named.map((rule) => {
+        const json = JSON.stringify(configured[rule]);
+        return json === undefined
+            ? rule + ' is absent'
+            : rule + ' [' + String(json.length) + ' chars] ' + json.slice(0, 240);
+    });
+    return 'ESLint reported ' + JSON.stringify(messages.map((m) => m.ruleId)) + '. Computed config: ' + shown.join(' || ');
+}
+
+/*
+ * THE SENTINEL, and the failure it catches, which every guard below is blind to.
+ *
+ * On the ubuntu runner two probes reported every banned construct as permitted, and the diagnosis
+ * was that ESLint returned NO messages at all - not even the no-unused-vars that the probe's own
+ * unused imports must produce - while the computed configuration was entirely correct (12,421
+ * characters of it, electron and better-sqlite3 and ^node: all present). Zero messages under a
+ * correct configuration is what linting a CLEAN file looks like, and the clean file in question is
+ * the one on disk at the probe's path. typescript-eslint had handed the rules the on-disk source
+ * instead of the text supplied here, so the bans were real, applied, and evaluated against source
+ * that contains none of the constructs being probed.
+ *
+ * That failure is invisible to every other check: the path is not ignored, the config is right, the
+ * parse succeeds, and a clean lint of the wrong file is a successful lint. So the probe plants
+ * something in its own text that MUST come back. `quotes` is 'single' for every extension probed
+ * here, so a double-quoted string is reported on its line or the result is not about this text.
+ * `void` rather than a binding: no-unused-vars then has nothing to say about it, and the repository
+ * already probes with `void process.platform;`, so the shape is known to be inert.
+ */
+const SENTINEL = 'void "probe sentinel";';
+const SENTINEL_RULE = 'quotes';
+
+/*
+ * Why priming fixes it rather than hiding it. typescript-eslint only tells its cached program that a
+ * file changed once it has seen that file as a lint target; the FIRST lint of a path reuses whatever
+ * the program read from disk when it was built. That matches the runner exactly - per file, the
+ * first probe failed and every later probe of the same file passed - and it is why the failure needs
+ * CPU contention to appear at all. One throwaway lint per distinct path puts the file in that set,
+ * so the lint that matters is the second one and gets the text it was given.
+ */
+const primed = new Set<string>();
+async function prime(filePath: string): Promise<void> {
+    if (primed.has(filePath)) return;
+    primed.add(filePath);
+    await eslint.lintText('', { filePath });
+}
+
+/*
+ * Lints in-memory text under an existing path, so typed linting finds the file in its program (Pitfall 9).
+ *
+ * WHY THE GUARDS BELOW EXIST, and why `fatal` alone was not one. ESLint has four ways of answering
+ * "I did not lint that", and only one of them sets `fatal`. This function used to check `fatal` only,
+ * so the other three arrived as an empty message list and were reported as "every banned construct
+ * was permitted" - a probe that never ran reads exactly like a ban that allows everything, which is
+ * the one failure this whole file exists to make impossible. Measured against eslint 9.39.2:
+ *
+ *   ignored path       one message, ruleId null, fatal FALSE, severity 1, "File ignored because of
+ *                      a matching ignore pattern"
+ *   nothing matches    one message, ruleId null, fatal FALSE, severity 1, "File ignored because no
+ *                      matching configuration was supplied"
+ *   parse failure      one message, ruleId null, fatal TRUE
+ *   no result at all   lintText returns [], so there is no result object to read
+ *
+ * The first three all carry ruleId null, so that is the guard; the fourth is checked on its own. The
+ * last guard is the same argument one step further in: a probe in which not one banned construct was
+ * reported has not tested the ban either, so it says so with the computed options attached rather
+ * than returning a full `missed` list that reads as a permissive lint.
+ */
 async function probe(
     file: string,
     header: readonly string[],
     banned: readonly string[],
     allowed: readonly string[],
-    matches: (m: Linter.LintMessage) => boolean
+    matches: MessageMatcher
 ): Promise<ProbeVerdict> {
-    const lines = [...header, ...banned, ...allowed];
-    const [result] = await eslint.lintText(lines.join('\n') + '\n', { filePath: path.join(repoRoot, file) });
-    const messages = result?.messages ?? [];
-    const fatal = messages.filter((m) => m.fatal === true);
-    if (fatal.length > 0) {
-        throw new Error(file + ': the probe did not parse - ' + fatal.map((m) => m.message).join('; '));
+    const lines = [...header, ...banned, ...allowed, SENTINEL];
+    const filePath = path.join(repoRoot, file);
+    await prime(filePath);
+    const [result] = await eslint.lintText(lines.join('\n') + '\n', { filePath });
+    if (result === undefined) {
+        throw new Error(file + ': ESLint returned no result at all, so the probe text was never linted.');
+    }
+    const messages = result.messages;
+    const notLinted = messages.filter((m) => m.ruleId === null);
+    if (notLinted.length > 0) {
+        throw new Error(
+            file + ': ESLint did not lint the probe text - ' + notLinted.map((m) => m.message).join('; ') +
+            ' (isPathIgnored=' + String(await eslint.isPathIgnored(filePath)) + ').'
+        );
+    }
+    const required = matches.ruleIds ?? [];
+    const configuredRules = (await computedConfig(file)).rules ?? {};
+    // Only meaningful where `quotes` is on; it is, for every extension probed here, but a probe of some
+    // future file type must fail as "the sentinel cannot speak here" rather than as a silent pass.
+    if (severityOf(configuredRules[SENTINEL_RULE]) === 0) {
+        throw new Error(
+            file + ': ' + SENTINEL_RULE + ' is not enabled for this path, so the probe cannot confirm that ' +
+            'ESLint linted the text it was given. Give probe() a sentinel this path would report.'
+        );
+    }
+    if (!messages.some((m) => m.ruleId === SENTINEL_RULE && m.line === lines.length)) {
+        throw new Error(
+            file + ': the probe sentinel on line ' + String(lines.length) + ' was not reported, so ESLint did ' +
+            'not lint the text this probe supplied - the result describes other source, almost certainly the ' +
+            'file on disk at this path, whose bans would all read as permitted. ' +
+            await probeDiagnosis(file, messages, required)
+        );
+    }
+    if (required.length > 0) {
+        const configured = configuredRules;
+        if (required.every((rule) => severityOf(configured[rule]) === 0)) {
+            throw new Error(
+                file + ': none of ' + required.join(', ') + ' is enabled in the computed configuration for ' +
+                'this path, so every banned line would read as permitted. ' +
+                await probeDiagnosis(file, messages, required)
+            );
+        }
     }
     const hit = new Set(messages.filter(matches).map((m) => m.line));
+    if (banned.length > 0 && hit.size === 0) {
+        throw new Error(
+            file + ': not one of the ' + String(banned.length) + ' banned constructs was reported, so this ' +
+            'probe tested nothing rather than finding a permissive lint. ' +
+            await probeDiagnosis(file, messages, required)
+        );
+    }
     const lineOf = (i: number): number => header.length + i + 1;
     return {
         missed: banned.filter((_, i) => !hit.has(lineOf(i))),
