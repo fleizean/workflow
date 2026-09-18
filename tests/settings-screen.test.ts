@@ -263,10 +263,9 @@ describe('the destructive action is reached by a stable identifier', () => {
  * on the Pomodoro toggle".
  *
  * legacy/pages/settings.html:744 called saveSettings() from the toggle's change handler, and saveSettings ended in
- * showAlert('Settings saved successfully!') - a modal, over a switch the user had just watched move, every time
- * they touched it. Nothing about that is visible to a type or to a lint rule, and no test in this project renders a
- * component, so what is pinned here is the source: the only two dialogs this screen opens, and the fact that the
- * toggle's handler asks the mode writer and nothing else.
+ * showAlert('Settings saved successfully!') - a modal, over a switch the user had just watched move, every time.
+ * Nothing about that is visible to a type or a lint rule, so what is pinned here is the source: the only two
+ * dialogs this screen opens, and the fact that the toggle's handler asks the mode writer and nothing else.
  */
 describe('criterion 4: the pomodoro toggle announces itself with the switch, and with nothing else', () => {
     const PAGE = 'src/renderer/src/features/settings/SettingsPage.tsx';

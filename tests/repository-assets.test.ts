@@ -1,14 +1,13 @@
 /*
  * Phase 11 criterion 1: the repository carries each binary asset once.
  *
- * Phase 10 proved this of the BUILD OUTPUT and the packaged archive. Neither reaches the repository, which is where
- * the same 1,840,744-byte PNG sat four times - src/assets/icon.png, build/icon.png, docs/assets/workflow-timer.png,
- * assets/workflow-timer.png - and a fifth copy wearing an .svg extension, 2,454,970 bytes of base64 PNG in an SVG
- * wrapper, served as the Pages site's favicon.
+ * Phase 10 proved this of the BUILD OUTPUT and the packaged archive. Neither reaches the repository, which is
+ * where the same 1,840,744-byte PNG sat four times - src/assets/icon.png, build/icon.png,
+ * docs/assets/workflow-timer.png, assets/workflow-timer.png - and a fifth copy wearing an .svg extension,
+ * 2,454,970 bytes of base64 PNG in an SVG wrapper, served as the Pages site's favicon.
  *
  * Judged on CONTENT, for the reason Phase 10 gave: the four copies had four different names, which is exactly why
- * nobody noticed. The register below holds the one duplicate pair that stays, each side with the consumer that
- * needs it there.
+ * nobody noticed.
  */
 
 import { describe, expect, it } from 'vitest';

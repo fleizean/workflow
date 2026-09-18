@@ -4,15 +4,14 @@
  * 08-REVIEW-TIMER WR-08. Before SPA-14, `main.js`, `preload.js` and `database/db.js` were tracked, so git enforced
  * the bytes the SQL transcription, the behaviour inventory, the IPC parity map, the Sheets retirement scan and the
  * setting defaults were checked against. `84a9234` deleted them and left readV121 trying the worktree first - so
- * any file that appeared at one of those paths silently became the v1.2.1 source of truth for all five. The
- * reviewer reproduced it with a two-line main.js at the repo root:
+ * any file appearing at one of those paths silently became the v1.2.1 source of truth for all five. The reviewer
+ * reproduced it with a two-line main.js at the repo root:
  *
  *     x answers on exactly 25 ipcMain channels in main.js   expected +0 to be 25
  *     x ipc-channels.txt still matches main.js exactly      expected [ 'close-window', ... ] to deeply equal []
  *
- * The failure is loud, which is the good case. But the INPUT to a guard was no longer pinned by anything, and the
- * commit message's claim that "every guard reads the same bytes it read before" was true only while nobody created
- * a file there. Git is the pin now, unconditionally.
+ * The failure is loud, which is the good case - but the INPUT to a guard was no longer pinned by anything. Git is
+ * the pin now, unconditionally.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';

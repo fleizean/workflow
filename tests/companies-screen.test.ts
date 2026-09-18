@@ -89,12 +89,9 @@ describe('describeCompanyDelete names what the delete takes with it', () => {
  * company holding twelve sessions could be deleted behind the wording written for a company holding none, and the
  * row behind the dialog said "0 sessions".
  *
- * Three ways to get there, all reachable: the session list still in flight (nothing gates on isPending), the
- * session list failed (retry is false, so one transient failure is enough, and the toast auto-dismisses), and a
- * list that is short because sessions.repository.ts drops rows it cannot map while the cascade deletes them
- * regardless.
- *
- * Unknown is not zero. These pin the vocabulary that keeps it separate all the way to the dialog.
+ * Three ways to get there, all reachable: the session list still in flight (nothing gates on isPending), the list
+ * failed (retry is false, so one transient failure is enough), and a list that is short because
+ * sessions.repository.ts drops rows it cannot map while the cascade deletes them regardless.
  */
 describe('BL-03: a count nobody has is not a count of nothing', () => {
     it('reads a company with sessions and a company without, from a list that has loaded', () => {

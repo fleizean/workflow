@@ -1,16 +1,14 @@
 /*
  * Work History's three shipped defects, as failing-before / passing-after assertions over the module the screen is
- * built on. There is no jsdom in this project and no test renders a component, so this is where criterion 4's
- * first half is actually settled:
+ * built on. There is no jsdom here, so this is where criterion 4's first half is actually settled:
  *
  *  - B8: This Week / Last Week / Older are three buckets that get filled, across week boundaries.
  *  - B6: progress is measured against the target the caller passes, never a hard-coded 28800.
  *  - B7: the goal filter asks what the DAY totalled, not what one session did.
  *
- * What it does not settle is that the list renders in one DOM update. React commits one render; v1.2.1 wrote
- * `container.innerHTML += card` once per card, reparsing everything already there each time. buildHistory returning
- * the whole shape as one value is what makes the single commit possible, and is asserted below as a shape; the
- * commit itself is React's and is not observable from here.
+ * What it does not settle is that the list renders in one DOM update. buildHistory returning the whole shape as
+ * one value is what makes the single commit possible and is asserted below as a shape; the commit itself is
+ * React's and is not observable from here.
  */
 
 import { describe, expect, it } from 'vitest';

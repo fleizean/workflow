@@ -2,13 +2,12 @@
  * A duration is an integer number of seconds, and it never becomes a float to get from one place to another.
  *
  * TIMER CR-02 and SCREENS BL-01 were one defect wearing two faces: both forms rendered the stored seconds as
- * `(seconds / 3600).toFixed(n)` and read them back as `Math.floor(parseFloat(text) * 3600)`, so a save quantised to
- * 36-second steps (toFixed(2)) and an edit to six-minute steps (toFixed(1)). Editing a session's NOTE rewrote its
- * duration, because the whole row went back through that round trip.
+ * `(seconds / 3600).toFixed(n)` and read them back as `Math.floor(parseFloat(text) * 3600)`, so a save quantised
+ * to 36-second steps and an edit to six-minute steps. Editing a session's NOTE rewrote its duration, because the
+ * whole row went back through that round trip.
  *
- * The rule this file pins is the one the settings draft already follows - a field nobody typed into is never
- * written - applied to time: an untouched pair of boxes writes the stored seconds back byte-identical, whatever
- * the boxes are able to display.
+ * The rule pinned here is the one the settings draft already follows - a field nobody typed into is never written
+ * - applied to time.
  */
 
 import { describe, expect, it } from 'vitest';

@@ -7,9 +7,8 @@
  * The branch that matters is persistFailing: it exists precisely so the dialog stops promising safety while the
  * disk is refusing writes, and off Home it could never be reached.
  *
- * Both arrangements are performed below through the real facade and a real bridge shape. The second test disposes
- * the subscription the way a route change did and shows the confirm promising "Quitting keeps it" over a failing
- * disk - so the first test cannot pass for the wrong reason.
+ * Both arrangements are performed below through the real facade. The second test disposes the subscription the way
+ * a route change did, so the first cannot pass for the wrong reason.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';

@@ -10,9 +10,7 @@
  * 08-REVIEW-TIMER WR-05: Modal marks #app-shell inert, and the auto-start banner's Cancel button lives inside it.
  * A completed work interval both opens the attribution prompt and arms the countdown, and
  * DEFAULT_SETTINGS.pomodoroAutoStartBreaks is true - so in the one situation POMO-07 fires by default, the
- * countdown could not be cancelled.
- *
- * The stack is a module rather than a counter inside the component so both rules can be run.
+ * countdown could not be cancelled. The stack is a module rather than a counter so both rules can be run.
  */
 
 import { afterEach, describe, expect, it } from 'vitest';

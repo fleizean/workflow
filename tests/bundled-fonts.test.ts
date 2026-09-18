@@ -3,14 +3,12 @@
  *
  * 9 sites in v1.2.1 set `font-variation-settings: 'FILL' 1` - the active bottom-nav tab, the streak flame, the
  * pomodoro pizza, the play control, the trophy, two Work History headings. If the woff2 in out/renderer carries no
- * FILL axis, every one of them renders outlined and nothing fails: the CSS is valid, the glyph is drawn, it is
- * simply the wrong glyph. STACK.md recorded the opposite of what is true here - it says the app never touches the
- * FILL axis and that the npm font has none - so this file answers the question from the file rather than from the
- * note. (The npm font does carry FILL 0..1; the note was wrong on both halves.)
+ * FILL axis, every one renders outlined and nothing fails: the CSS is valid, the glyph is drawn, it is simply the
+ * wrong glyph. STACK.md recorded the opposite of what is true here, so this file answers the question from the
+ * file rather than from the note. (The npm font does carry FILL 0..1; the note was wrong on both halves.)
  *
- * The parse is a WOFF2 table-directory walk followed by a brotli decompression and an fvar read. It is more code
- * than a size check, and that is the point: a subsetted font produced to shrink the 3.97 MB payload would still be
- * a valid woff2 of the right family, and only its axis list would say it had lost the FILL variants.
+ * The parse is a WOFF2 table-directory walk, a brotli decompression and an fvar read - more code than a size
+ * check, and that is the point: a subsetted font would still be a valid woff2 of the right family.
  */
 
 import { describe, expect, it } from 'vitest';

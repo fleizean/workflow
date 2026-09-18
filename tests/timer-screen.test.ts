@@ -1,9 +1,8 @@
 /*
- * The Home screen's decisions, run rather than read.
- *
- * There is no jsdom in this project by decision, so nothing here renders TimerPage. What IS provable is every
- * number and every word the screen puts on itself: the ring, the headline, the meta line, the streak tier, the
- * day's logged total and - the one that matters - how many seconds a save would write.
+ * The Home screen's decisions, run rather than read. There is no jsdom in this project by decision, so nothing
+ * here renders TimerPage. What IS provable is every number and word the screen puts on itself: the ring, the
+ * headline, the meta line, the streak tier, the day's logged total and - the one that matters - how many seconds a
+ * save would write.
  *
  * What this leaves unproven is stated in 08-C-SUMMARY.md: that the components draw what these functions return,
  * that the save button opens the form, and that the form's answer reaches `timer:stopAndSave`.

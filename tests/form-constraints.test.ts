@@ -2,16 +2,12 @@
  * What Chromium does with the attributes these three forms actually render, in the runtime that ships.
  *
  * SCREENS BL-02 and SCREENS WR-01 are the same defect on two screens: an attribute the component carries makes the
- * browser refuse the submit BEFORE the handler runs, so the screen's own refusal - the part 08-E is built around
- * and the part 08-B's edit form needs - is dead code, and the user gets a bubble naming two values the app itself
- * would never write.
+ * browser refuse the submit BEFORE the handler runs, so the screen's own refusal is dead code and the user gets a
+ * bubble naming two values the app itself would never write.
  *
  * Nothing here reads the components' behaviour. It reads their <input> ATTRIBUTES out of the TSX with the
  * TypeScript parser, rebuilds a form from exactly those, and asks a real offscreen BrowserWindow in the shipped
- * Electron whether clicking submit fires a submit event. A component that grows a `step` the code does not enforce
- * fails here rather than in a user's hands.
- *
- * It opens no database, loads no application code and touches nothing under userData.
+ * Electron whether clicking submit fires a submit event. It opens no database and touches nothing under userData.
  */
 
 import { describe, expect, it, beforeAll } from 'vitest';

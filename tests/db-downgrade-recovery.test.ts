@@ -3,14 +3,13 @@
  *
  * v1.2.1 only knows the name krono.db, so after v2 has adopted the database a downgraded install finds nothing and
  * creates a new, empty one - and if it is then killed from the tray, which is the state the whole of adopt.ts
- * exists for, it leaves krono.db-wal and krono.db-shm behind. Nothing binds a -wal to a particular database file.
- * Renaming workflow.db onto krono.db with those sidecars still there makes the EMPTY database's frames the
- * restored database's frames, SQLite replays them, and the user is left with an empty app and integrity_check
- * still reporting ok.
+ * exists for, it leaves krono.db-wal and krono.db-shm behind. Nothing binds a -wal to a particular database file,
+ * so renaming workflow.db onto krono.db with those sidecars still there makes the EMPTY database's frames the
+ * restored database's frames: SQLite replays them and the user is left with an empty app, integrity_check ok.
  *
- * The instruction is a set of file operations, so it is testable as one. RECOVERY below is executed against a
- * fixture in that exact state, the old instruction is executed beside it as the negative control, and the last
- * test holds README.md to the steps that were run - a documented recovery nobody has performed is a guess.
+ * The instruction is a set of file operations, so it is testable as one. RECOVERY is executed against a fixture in
+ * that exact state, the old instruction beside it as the negative control, and the last test holds README.md to
+ * the steps that were run - a documented recovery nobody has performed is a guess.
  */
 
 import { afterAll, describe, expect, it } from 'vitest';

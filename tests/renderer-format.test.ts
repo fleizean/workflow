@@ -1,13 +1,11 @@
 /*
- * src/renderer/src/lib/format.ts - v1.2.1's display formatters, as functions a test can run.
- *
- * There is no jsdom in this project and no test renders a component, so a screen is proved through the pure modules
- * it is assembled from. These are the ones both Companies and Work History read every value through.
+ * v1.2.1's display formatters, as functions a test can run. There is no jsdom in this project and no test renders
+ * a component, so a screen is proved through the pure modules it is assembled from.
  *
  * The zone question is not asked again here: formatDayBadge, formatLongDay and formatShortDay go through
- * isoWeekday, localDateParts and parseLocalDate, and tests/date-zone-sweep.test.ts already runs those across twelve
- * zones in child processes with an explicit TZ. What this file adds is the shape of the output and the one control
- * that says why the legacy formulas were replaced at all.
+ * isoWeekday, localDateParts and parseLocalDate, and tests/date-zone-sweep.test.ts already runs those across
+ * twelve zones in child processes with an explicit TZ. What this adds is the shape of the output, and the one
+ * control that says why the legacy formulas were replaced at all.
  */
 
 import { describe, expect, it } from 'vitest';
