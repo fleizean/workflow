@@ -1,39 +1,31 @@
 #!/usr/bin/env node
 /*
- * CUSTODY-10 - prove, by execution, that a launched v1.2.1 reads a fixture database and not the
- * owner's real one.
+ * CUSTODY-10 - prove, by execution, that a launched v1.2.1 reads a fixture database and not the owner's real one.
  *
- * This file exists because of research assumption A1. `database/db.js:9-10` opens the database at
- * module load:
+ * This file exists because of research assumption A1. `database/db.js:9-10` opens the database at module load:
  *
  *     const dbPath = path.join(app.getPath('userData'), 'krono.db');
  *     const db = new Database(dbPath);
  *
- * `main.js:6` requires that module at the top of the file, so no application JavaScript runs
- * earlier and no in-app hook can redirect it. The only mechanism below the JS layer is Electron's
- * `--user-data-dir` switch, applied by ElectronMainDelegate::PreSandboxStartup() before the main
- * module is evaluated (read from electron @ v28.3.3, shell/app/electron_main_delegate.cc:318-327).
- * That was read, never executed - the checked-in Electron binary was a Linux ELF at the time.
+ * `main.js:6` requires that module at the top of the file, so no application JavaScript runs earlier and no in-app
+ * hook can redirect it. The only mechanism below the JS layer is Electron's `--user-data-dir` switch, applied by
+ * ElectronMainDelegate::PreSandboxStartup() before the main module is evaluated (electron @ v28.3.3,
+ * shell/app/electron_main_delegate.cc:318-327). That was read, never executed.
  *
- * If the switch silently does nothing, the baseline capture renders the owner's real client names
- * and real work notes into PNGs that are then committed to a public repository. That is a D-03
- * violation which cannot be undone. So the mechanism is probed, and the probe is a hard gate that
- * tools/baseline/capture.mjs calls before it is structurally able to take a screenshot.
+ * If the switch silently does nothing, the baseline capture renders the owner's real client names into PNGs that
+ * are then committed to a public repository - a D-03 violation that cannot be undone. So the mechanism is probed,
+ * and the probe is a hard gate capture.mjs calls before it is structurally able to take a screenshot.
  *
- * The probe asserts four things, and any one of them failing is a refusal:
+ * The probe asserts four things, and any one failing is a refusal:
  *
  *   1. the fixture directory now contains a krono.db;
  *   2. the real %APPDATA%\workflow-timer\krono.db is unchanged in size, mtime and SHA-256;
- *   3. its -wal and -shm sidecars are unchanged too - in WAL mode a write lands in the sidecar
- *      first, so checking only the main file can miss a touch entirely;
+ *   3. its -wal and -shm sidecars are unchanged too - in WAL mode a write lands in the sidecar first;
  *   4. the fixture krono.db is not a byte-copy of the real one.
  *
- * Shutdown is a hard kill of the process tree, not a window-close request. main.js:70-72 calls
- * event.preventDefault() and hides to the tray unless the tray Quit item set isQuiting, so a close
- * request hangs with no diagnostic (research pitfall 4). capture.mjs, which has Playwright and can
- * reach the main process, uses app.exit(0); this probe deliberately carries no automation
- * dependency so that it can run before playwright-core is installed, and a SIGKILL against a
- * throwaway fixture costs nothing.
+ * Shutdown is a hard kill of the process tree, not a window-close request: main.js:70-72 hides to the tray unless
+ * the tray Quit item set isQuiting, so a close request hangs with no diagnostic (pitfall 4). This probe carries no
+ * automation dependency so it can run before playwright-core is installed.
  *
  * Usage:
  *   node tools/baseline/probe-userdata.mjs            probe, print a report, exit 0 or 1
@@ -213,20 +205,12 @@ function findFile(dir, name, depth = 4) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /*
- * Variables that must not reach a launched Electron. This is not hygiene theatre - it was found by
- * this probe failing.
+ * Variables that must not reach a launched Electron. Not hygiene theatre - it was found by this probe failing.
  *
- * ELECTRON_RUN_AS_NODE=1 was present in the ambient environment of the session that first ran the
- * probe (a leftover from plan 01-02, which used it to prove electron.exe executes at all). With it
- * set, electron.exe boots as plain Node instead of as Chromium, Node's own option parser sees
- * --no-sandbox, prints "bad option: --no-sandbox" and exits 9. The failure looks exactly like a
- * failed --user-data-dir redirection: no window, no krono.db, no diagnostic beyond an exit code.
- * A capture harness that inherits it silently produces nothing; worse, a future variant that
- * ignored the exit code could conclude the app "did not create a fixture database" and be tempted
- * to relax the gate.
- *
- * NODE_OPTIONS is scrubbed for the same class of reason: Electron honours it, and an injected flag
- * would change the runtime the baseline is captured against.
+ * ELECTRON_RUN_AS_NODE=1 was in the ambient environment of the session that first ran the probe. With it set,
+ * electron.exe boots as plain Node instead of as Chromium, Node's own option parser sees --no-sandbox, prints
+ * "bad option: --no-sandbox" and exits 9. The failure looks exactly like a failed --user-data-dir redirection: no
+ * window, no krono.db, no diagnostic beyond an exit code. NODE_OPTIONS is scrubbed for the same class of reason.
  */
 export const SCRUBBED_ENV = ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS'];
 

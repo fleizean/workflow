@@ -4,22 +4,20 @@
  *
  *   npm run upgrade:check          build:unpack first - this drives the packaged build
  *
- * WHAT THE PACKAGED SMOKE ALREADY PROVES, and why this is not that. tools/smoke-packaged.mjs's `legacy` case
- * seeds a v1.2.1-shaped krono.db, launches the packaged app and then reads the file back with better-sqlite3:
- * counts, sums and settings survive the migration. That is a claim about the FILE.
+ * WHAT THE PACKAGED SMOKE ALREADY PROVES, and why this is not that. smoke-packaged.mjs's `legacy` case seeds a
+ * v1.2.1-shaped krono.db, launches the packaged app and reads the file back with better-sqlite3. That is a claim
+ * about the FILE.
  *
- * The criterion is about the USER: "preserves every session, company, streak value, and setting". So this asks
- * the running application, through the same bridge the screens use - renderer -> preload -> IPC -> service ->
- * repository -> Drizzle -> SQLite - and compares what comes back, row by row and field by field, against what was
- * seeded. A migration that preserved every byte and a repository that mapped a column wrong would pass the smoke
- * and fail here, which is the whole reason for the second look.
+ * The criterion is about the USER: "preserves every session, company, streak value, and setting". So this asks the
+ * running application, through the same bridge the screens use - renderer -> preload -> IPC -> service ->
+ * repository -> Drizzle -> SQLite - and compares what comes back, row by row, against what was seeded. A migration
+ * that preserved every byte and a repository that mapped a column wrong would pass the smoke and fail here.
  *
  * The streak is the value the criterion names and the one nothing else checks end to end: the fixture is built so
- * that a known number of consecutive days clear the daily target, with a deliberate gap before them, and the
- * answer the app gives has to be that number and not the larger one it would be without the gap.
+ * a known number of consecutive days clear the daily target, with a deliberate gap before them, and the answer the
+ * app gives has to be that number and not the larger one it would be without the gap.
  *
- * SAFETY. Everything happens in a mkdtemp directory. No real krono.db is opened, read or copied; the fixture is
- * synthetic and every name in it is invented.
+ * SAFETY. Everything happens in a mkdtemp directory; the fixture is synthetic and every name in it is invented.
  */
 
 /* global window */

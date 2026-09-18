@@ -6,28 +6,25 @@
  *   npm run offline:check -- --write   rewrite the committed report after a deliberate change
  *
  * Phase 7 proved offline rendering for the boot route, which is where the packaged smoke stops. The criterion is
- * about EVERY route, and about two things the smoke does not look for at all: that the console reports ZERO
- * Content-Security-Policy violations - captured, not assumed absent - and that the icons are glyphs everywhere and
- * not just on Home.
+ * about EVERY route, and about two things the smoke does not look for: that the console reports ZERO CSP
+ * violations - captured, not assumed absent - and that the icons are glyphs everywhere and not just on Home.
  *
- * WHAT OFFLINE MEANS HERE. Chromium's own network stack is put offline before the document is reloaded
- * (session.defaultSession.enableNetworkEmulation), and every http/https/ws request is cancelled and recorded by a
- * webRequest filter, so a resource that WAS fetched is a failure with a URL attached rather than a silent success
- * against a warm cache. That is the same mechanism src/main/smoke.ts uses; it is applied here to a real,
- * non-smoke launch that navigates.
+ * WHAT OFFLINE MEANS HERE. Chromium's own network stack is put offline before the document is reloaded, and every
+ * http/https/ws request is cancelled and recorded by a webRequest filter, so a resource that WAS fetched is a
+ * failure with a URL attached rather than a silent success against a warm cache.
  *
  * WHAT IS CHECKED, PER ROUTE:
  *   - the route renders: its heading is on screen and the shell has its settled background;
  *   - Inter: document.fonts.check resolves the family, and the text on screen computes to it;
- *   - icons: EVERY .material-symbols-outlined element on the route measures at glyph width, not at the width its
- *     name would occupy as literal text. That is SPA-08's probe, applied to all of them instead of one;
+ *   - icons: EVERY .material-symbols-outlined element measures at glyph width, not at the width its name would
+ *     occupy as literal text - SPA-08's probe, applied to all of them instead of one;
  *   - filled variants: the elements that ask for the FILL axis get it, read back off the live element;
  *   - the notification sound: the bundled file resolves to a file: URL inside the app and decodes to a duration;
  *   - zero CSP violations, captured from the securitypolicyviolation event AND from the console;
  *   - zero remote requests.
  *
  * WHAT IT DOES NOT PROVE. That the glyphs are the RIGHT pictures. Nothing here rasterises; width and the FILL axis
- * are what distinguish a glyph from the word "chevron_left", and that is the failure mode S4 actually produces.
+ * are what distinguish a glyph from the word "chevron_left", which is the failure mode S4 actually produces.
  */
 
 /* global window, document, getComputedStyle, Audio */
@@ -76,12 +73,11 @@ function probeInPage(limits) {
 
     /*
      * Every icon on the route. An unresolved Material Symbols font renders the ligature NAME as text, which is
-     * several times wider than the glyph - that is the whole shape of the S4 failure, and it is measurable.
+     * several times wider than the glyph - the whole shape of the S4 failure, and measurable.
      *
      * The GLYPH is measured, not the element: half these spans are `block` inside a full-width navigation cell, so
-     * their border box is the cell's width and says nothing about what was drawn. A Range over the text contents
-     * measures the inline box the text actually occupies, at any display type. And the bound is expressed in ems,
-     * because the same ligature is drawn at 12px in a list row and at 48px on the play button.
+     * their border box says nothing about what was drawn. The bound is in ems, because the same ligature is drawn
+     * at 12px in a list row and at 48px on the play button.
      */
     const icons = [];
     for (const element of document.querySelectorAll('.material-symbols-outlined')) {
@@ -138,12 +134,11 @@ function probeInPage(limits) {
 /*
  * The bundled sound, decoded in the page with the network off.
  *
- * SoundProvider constructs its Audio element lazily - nothing requests the file until main asks for a sound - so
- * there is no resource entry to read the URL out of and no element on the page to inspect. The asset NAME is
- * therefore supplied by the caller, read from the emitted build, and resolved here against the document's own base
- * URL: that is the address SoundProvider's fingerprinted import compiles to, and tests/renderer-build-output.test.ts
- * (SPA-10) is what holds the emitted asset and the renderer's reference to it equal. What this adds is the half
- * neither of them can make: that the file decodes, from inside the packaged archive, offline.
+ * SoundProvider constructs its Audio element lazily, so there is no resource entry to read the URL out of and no
+ * element on the page to inspect. The asset NAME is supplied by the caller, read from the emitted build, and
+ * resolved here against the document's own base URL. tests/renderer-build-output.test.ts holds the emitted asset
+ * and the renderer's reference to it equal; what this adds is that the file decodes, from inside the archive,
+ * offline.
  */
 function probeSoundInPage(assetName) {
     return new Promise((resolve) => {

@@ -369,12 +369,12 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
  * Phase 10 criterion 5, both halves, against the display list the machine running this really has.
  *
  * Phase 5 proved the arithmetic in chooseWindowBounds over displays a test invented; what no test could do was
- * unplug a monitor. The app is given a saved rectangle 30,000 pixels from the origin - a position no display could
- * ever occupy - and the window Electron then opens is measured against screen.getAllDisplays(). The control beside
- * it is the one that keeps this from being vacuous: the saved rectangle must be one this machine really refuses.
+ * unplug a monitor. The app is given a saved rectangle 30,000 pixels from the origin and the window Electron then
+ * opens is measured against screen.getAllDisplays(). The control beside it keeps this from being vacuous: the
+ * saved rectangle must be one this machine really refuses.
  *
- * The tray half pushes a real window off-screen and runs the menu item's own click handler, through the menu
- * object the tray is showing. Windows drawing that menu and dispatching the click is the one step left to a human.
+ * The tray half pushes a real window off-screen and runs the menu item's own click handler. Windows drawing that
+ * menu and dispatching the click is the one step left to a human.
  */
 export function evaluateWindowRecovery({ report }) {
     const f = report.fields;
@@ -429,14 +429,12 @@ export function evaluateWindowRecovery({ report }) {
  * and both are read out of the PACKAGED process rather than out of the source.
  *
  * The identity: Electron exposes no getter, so what is provable is that the process executed setAppUserModelId and
- * with which value - src/main/app-identity.ts records it and the smoke prints it. The value is then held equal to
- * electron-builder.yml's appId, which is what the installer registers the shortcut under; a toast raised under any
- * other identity points at an application Windows has no shortcut for.
+ * with which value - src/main/app-identity.ts records it and the smoke prints it. The value is held equal to
+ * electron-builder.yml's appId, which is what the installer registers the shortcut under.
  *
  * The icon: the adapter's own ?asset path, decoded by nativeImage inside the packaged app. A path that exists is
- * not the claim - the claim is that it is an image with real pixels, because a silently unloadable icon is exactly
- * the failure this catches. The byte ceiling is deliberate: the 1024x1024 icon.png is 1.84 MB and reaching for it
- * here is the mistake the small asset exists to prevent.
+ * not the claim - the claim is that it is an image with real pixels. The byte ceiling is deliberate: the 1024x1024
+ * icon.png is 1.84 MB and reaching for it here is the mistake the small asset exists to prevent.
  */
 export function evaluateNotificationIdentity({ report, expectedAppId }) {
     const f = report.fields;

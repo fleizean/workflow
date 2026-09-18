@@ -1,22 +1,19 @@
 #!/usr/bin/env node
 /*
- * CUSTODY-10 / D-11 - photograph v1.2.1 deterministically, so that Phase 8 can prove the rewrite
- * changed nothing it was not supposed to change.
+ * CUSTODY-10 / D-11 - photograph v1.2.1 deterministically, so Phase 8 can prove the rewrite changed nothing it
+ * was not supposed to change.
  *
- * WHY THIS EXISTS. Once src/pages/*.html are deleted there is no way to re-render v1.2.1. The
- * owner chose Tailwind v4 with a compatibility layer (G1) rather than pinning v3, so the
- * regressions this baseline has to catch are the silent ones: `rounded` becoming `rounded-sm`,
- * `shadow` becoming `shadow-sm`, `ring` becoming `ring-3`, `outline-none` becoming
- * `outline-hidden`, and changed default border, ring and placeholder colours. None of those is
- * visible to an eyeball comparison. All of them are obvious in a computed-style diff, which is why
- * this script emits JSON next to every PNG.
+ * WHY THIS EXISTS. Once src/pages/*.html are deleted there is no way to re-render v1.2.1. The owner chose Tailwind
+ * v4 with a compatibility layer (G1) rather than pinning v3, so the regressions this baseline has to catch are the
+ * silent ones: `rounded` becoming `rounded-sm`, `shadow` becoming `shadow-sm`, `ring` becoming `ring-3`,
+ * `outline-none` becoming `outline-hidden`, and changed default border, ring and placeholder colours. None is
+ * visible to an eyeball comparison; all are obvious in a computed-style diff, which is why this emits JSON next to
+ * every PNG.
  *
- * THE ENTRY GATE. Before this script is structurally able to take a screenshot it runs
- * tools/baseline/probe-userdata.mjs and refuses to continue unless the fixture redirection has been
- * proven IN THIS RUN. A silent redirection failure would not produce an error - it would produce
- * beautiful screenshots of the owner's real client names, committed to a public repository, which
- * cannot be un-published (D-03). `--smoke --skip-probe` is asserted by the plan to exit non-zero:
- * a gate that cannot be observed to fail is decoration.
+ * THE ENTRY GATE. Before this script can take a screenshot it runs tools/baseline/probe-userdata.mjs and refuses
+ * to continue unless the fixture redirection has been proven IN THIS RUN. A silent redirection failure would
+ * produce beautiful screenshots of the owner's real client names, committed to a public repository (D-03).
+ * `--smoke --skip-probe` is asserted to exit non-zero: a gate that cannot be observed to fail is decoration.
  *
  * Modes:
  *   node tools/baseline/capture.mjs                 4 pages x 5 sizes -> baselines/v1.2.1/
@@ -24,10 +21,8 @@
  *   node tools/baseline/capture.mjs --skip-probe    MUST exit non-zero
  *   node tools/baseline/capture.mjs --out=DIR       override the output root
  *
- * Scope (D-11): playwright-core is used in this phase to capture and in Phase 8 to compare, and
- * nowhere else. It is pinned to exactly 1.63.0 because Playwright's Electron support is
- * experimental and sits outside its stability guarantees, so Phase 8 must compare against a capture
- * taken by the same driver.
+ * Scope (D-11): playwright-core is pinned to exactly 1.63.0 because its Electron support is experimental and sits
+ * outside its stability guarantees, so Phase 8 must compare against a capture taken by the same driver.
  */
 
 /*
@@ -228,15 +223,11 @@ export async function runCapture(options = {}) {
         const context = app.context();
 
         /*
-         * Two URL-PREDICATE routes rather than one '**\/*' glob, and the difference is not stylistic.
-         * A catch-all also intercepts the file:// navigation that loads the application's own pages
-         * out of app.asar, and route.continue() on a file:// request aborts it - the whole capture
-         * dies with "(-3) loading file:///.../app.asar/src/pages/index.html", which reads like a
-         * missing page rather than a routing bug. Predicates keep interception on http(s) only, so
-         * the app's own navigation is never touched.
-         *
-         * The glob form would not have worked anyway: the Tailwind URL is
-         * `https://cdn.tailwindcss.com?plugins=...`, with a query and no path.
+         * Two URL-PREDICATE routes rather than one catch-all glob, and the difference is not stylistic. A
+         * catch-all also intercepts the file:// navigation that loads the application's own pages out of app.asar,
+         * and route.continue() on a file:// request aborts it - the whole capture dies with "(-3) loading
+         * file:///.../app.asar/src/pages/index.html", which reads like a missing page rather than a routing bug.
+         * The glob form would not have worked anyway: the Tailwind URL has a query and no path.
          */
         const isVendoredHost = (url) => VENDORED_HOSTS.includes(url.hostname);
         const isOtherRemote = (url) => /^https?:$/.test(url.protocol) && !isVendoredHost(url);

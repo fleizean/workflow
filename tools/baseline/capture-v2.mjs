@@ -1,20 +1,19 @@
 #!/usr/bin/env node
 /*
- * Photograph the v2 SPA the way tools/baseline/capture.mjs photographed v1.2.1, so criterion 2's
- * "diffing computed styles against the Phase 1 baselines" is a computation rather than a look.
+ * Photograph the v2 SPA the way tools/baseline/capture.mjs photographed v1.2.1, so criterion 2's "diffing computed
+ * styles against the Phase 1 baselines" is a computation rather than a look.
  *
- * Same property set, same reader function, same window sizes, same timezone, locale, colour scheme,
- * device scale factor and LCD-text setting - imported from capture.mjs rather than copied, because a
- * second copy of the measurement is a second thing that can drift. What differs is unavoidable and
- * is the point: v1.2.1 was four HTML documents under Electron 28 with the Tailwind Play CDN, and
- * this is one document under Electron 44 with Tailwind compiled at build time.
+ * Same property set, same reader function, same window sizes, timezone, locale, colour scheme, device scale factor
+ * and LCD-text setting - imported from capture.mjs rather than copied, because a second copy of the measurement is
+ * a second thing that can drift. What differs is unavoidable and is the point: v1.2.1 was four HTML documents
+ * under Electron 28 with the Tailwind Play CDN, and this is one document under Electron 44 with Tailwind compiled
+ * at build time.
  *
  *   node tools/baseline/capture-v2.mjs --out=DIR   4 routes x 5 sizes -> DIR/computed, DIR/pixels
  *   node tools/baseline/capture-v2.mjs --smoke     1 route x 1 size into a temporary directory
  *
- * The fixture is seed-baseline-db.mjs's, unchanged: the v1.2.1-shaped krono.db the baselines were
- * taken over, which this build migrates on open. A different fixture would diff the content as well
- * as the styling.
+ * The fixture is seed-baseline-db.mjs's, unchanged: the v1.2.1-shaped krono.db the baselines were taken over,
+ * which this build migrates on open. A different fixture would diff the content as well as the styling.
  */
 
 /* global window, document, getComputedStyle */
@@ -190,15 +189,14 @@ export async function runCaptureV2(options = {}) {
         /*
          * Phase 11: the verdict must not depend on where the operator's mouse is.
          *
-         * At 1920x1080 the window fills a 1920x1080 screen, so the real pointer is inside it, Chromium applies
-         * :hover to whatever it lands on, and the vocabulary diff reads that as a colour v1.2.1 never rendered.
-         * Reproduced as `background-color: oklab(0.684327 -0.0772989 -0.129777 / 0.9)` on the Settings Save
-         * button - Tailwind's hover:bg-primary/90 - which normalises to #13a4ece6 and stood unexplained. Three
-         * consecutive runs each failed on a DIFFERENT page and property, because the answer was the pointer.
+         * At 1920x1080 the window fills the screen, so the real pointer is inside it, Chromium applies :hover to
+         * whatever it lands on, and the vocabulary diff reads that as a colour v1.2.1 never rendered. Reproduced
+         * as `oklab(0.684327 -0.0772989 -0.129777 / 0.9)` on the Settings Save button - Tailwind's
+         * hover:bg-primary/90, which normalises to #13a4ece6. Three consecutive runs each failed on a DIFFERENT
+         * page and property, because the answer was the pointer.
          *
-         * setIgnoreMouseEvents stops the OS pointer reaching the content at all, which is the only version of
-         * this that a resize cannot undo: moving or resizing a window under the cursor makes Windows deliver a
-         * fresh WM_MOUSEMOVE, so a synthetic move alone is re-overwritten by the next setContentSize.
+         * setIgnoreMouseEvents is the only version a resize cannot undo: moving or resizing a window under the
+         * cursor makes Windows deliver a fresh WM_MOUSEMOVE, so a synthetic move is re-overwritten.
          */
         await win.evaluate((browserWindow) => { browserWindow.setIgnoreMouseEvents(true); });
         /* Clears any hover the window had already picked up between opening and the line above. */

@@ -2,46 +2,34 @@
 /*
  * BUILD-11 - prove that a CI timezone-matrix leg actually runs in the zone it is labelled with.
  *
- * The failure this prevents: a matrix leg sets a variable the runtime never honours, every date test
- * in it runs in the runner's default zone, the leg passes green, and the run reports that three
- * timezones were covered when one was. That is a worse outcome than having no matrix at all. The
- * roadmap counts on this matrix to make Phase 3's date module falsifiable: the author is in UTC+3 and
- * Turkey has observed no DST since 2016, so the whole bug class this milestone closes - B6 through
- * B10 and the Google Sheets row misalignment - cannot be reproduced on the author's machine. A leg
- * that silently stays in one zone would let exactly that class through while claiming the DST case
- * was tested.
+ * The failure this prevents: a matrix leg sets a variable the runtime never honours, every date test in it runs in
+ * the runner's default zone, the leg passes green, and the run reports that three timezones were covered when one
+ * was. That is worse than having no matrix at all. The author is in UTC+3 and Turkey has observed no DST since
+ * 2016, so the whole bug class this milestone closes - B6 through B10 and the Sheets row misalignment - cannot be
+ * reproduced on the author's machine.
  *
- * This is not hypothetical. Measured while writing this file, on the author's Windows machine under
- * Git Bash: `TZ=UTC node ...` reached Node, but `TZ=America/New_York node ...`,
- * `TZ=Europe/Istanbul node ...` and `TZ=Etc/UTC node ...` all arrived with process.env.TZ undefined,
- * and Node fell back to the machine zone without a word. The requested zone and the zone the code
- * ran in differed, and nothing said so.
+ * Not hypothetical. Measured on the author's Windows machine under Git Bash: `TZ=UTC node ...` reached Node, but
+ * `TZ=America/New_York node ...`, `TZ=Europe/Istanbul node ...` and `TZ=Etc/UTC node ...` all arrived with
+ * process.env.TZ undefined, and Node fell back to the machine zone without a word.
  *
  * So each leg asserts three things, and any one failing fails the leg:
  *
  *   1. resolved zone - the zone the runtime's own Intl API reports equals the expected name;
- *   2. TZ variable   - the variable that requests the zone is set to that same name, so a mismatch
- *                      between what was asked for and what the runtime resolved is visible rather
- *                      than silent (a leg running on a machine that happens to be in the right zone
- *                      would otherwise pass while proving nothing about the matrix);
- *   3. offsets       - a fixed January instant and a fixed July instant produce the offsets
- *                      documented for that zone in ZONE_OFFSETS below. This is the check that
- *                      exercises the zone rules rather than trusting a name.
+ *   2. TZ variable   - the variable that requests the zone is set to that same name, so a leg running on a machine
+ *                      that happens to be in the right zone cannot pass while proving nothing about the matrix;
+ *   3. offsets       - a fixed January instant and a fixed July instant produce the offsets documented for that
+ *                      zone in ZONE_OFFSETS below, which exercises the zone rules rather than trusting a name.
  *
- * A zone with no row in ZONE_OFFSETS is itself a failure: adding a fourth zone to the matrix without
- * documenting its offsets here goes red instead of passing unchecked.
- *
- * Do not "fix" a failing leg by assigning process.env.TZ in this script or in a test setup file.
- * Node re-reads the variable on assignment, so that would turn every leg green by construction and
- * delete the only evidence that the matrix works.
+ * A zone with no row in ZONE_OFFSETS is itself a failure. Do not "fix" a failing leg by assigning process.env.TZ
+ * here or in a test setup file: Node re-reads the variable on assignment, so that would turn every leg green by
+ * construction and delete the only evidence that the matrix works.
  *
  * Usage:
  *   node tools/ci/assert-timezone.mjs <IANA zone>     e.g. America/New_York
  *
  * Exit codes: 0 every assertion held, 1 an assertion failed, 2 no zone argument was given.
  *
- * Phase 3 owns the date module this matrix exists to falsify; ZONE_OFFSETS and checkTimezone() are
- * exported so its tests can reuse the same table instead of re-deriving it.
+ * ZONE_OFFSETS and checkTimezone() are exported so Phase 3's date tests reuse the same table.
  */
 
 import path from 'node:path';

@@ -5,40 +5,34 @@
  *   npm run matrix:check          build:unpack first - this photographs the packaged build
  *   npm run matrix:check -- --write   rewrite the committed report after a deliberate change
  *
- * THE MATRIX IS 15 CELLS AND ALL 15 ARE MEASURED. Five window sizes x three Windows display scales.
- * The criterion says "all 15 cells checked and recorded, not sampled", so the report below lists every
- * cell with its own numbers and the run fails if any cell is missing, not only if one fails.
+ * THE MATRIX IS 15 CELLS AND ALL 15 ARE MEASURED: five window sizes x three Windows display scales. The criterion
+ * says "all 15 cells checked and recorded, not sampled", so the report lists every cell with its own numbers and
+ * the run fails if any cell is missing, not only if one fails.
  *
- * WHAT A CELL IS, STATED PLAINLY BECAUSE IT DECIDES WHAT THIS PROVES.
- *   size   the window's CONTENT size in device-independent pixels - what BrowserWindow.setContentSize
- *          takes and what MAIN_WINDOW.minWidth/minHeight are expressed in. 380x600 is exactly the
- *          floor the app refuses to be dragged below, which is where that first cell comes from.
- *   scale  --force-device-scale-factor, which is what Windows display scaling sets. At 125% a 380-DIP
- *          window is 475 physical pixels wide and the renderer still lays out at 380 CSS px.
- * So the three scales do NOT change the CSS-pixel layout; they change device-pixel snapping, the
- * fractional rounding of every flex and centring computation, and devicePixelRatio - which is where
- * the one-pixel overflow and the soft canvas actually come from. Each cell records its own measured
- * numbers, so a scale that changes nothing says so with numbers rather than by being skipped.
+ * WHAT A CELL IS, because it decides what this proves.
+ *   size   the window's CONTENT size in device-independent pixels. 380x600 is exactly the floor the app refuses to
+ *          be dragged below, which is where that first cell comes from.
+ *   scale  --force-device-scale-factor, which is what Windows display scaling sets. At 125% a 380-DIP window is
+ *          475 physical pixels wide and the renderer still lays out at 380 CSS px.
+ * So the three scales do NOT change the CSS-pixel layout; they change device-pixel snapping, the fractional
+ * rounding of every flex and centring computation, and devicePixelRatio - which is where the one-pixel overflow
+ * and the soft canvas actually come from.
  *
  * WHAT IS CHECKED IN EACH CELL, on each of the four routes:
- *   1. no horizontal overflow  - the document is no wider than the viewport, and no visible element
- *                                crosses either edge (criterion 1);
- *   2. no clipped content      - no overflow:hidden box cuts off content it contains, and no leaf of
- *                                the scroll area sits behind the fixed bottom navigation once the
- *                                area is scrolled to its end (criterion 1);
- *   3. nav alignment           - the bottom bar's left and right edges equal the content column's
- *                                (criterion 1). v1.2.1 capped the bar at 430px and the shell at 448px;
- *   4. the timer ring          - square to within a pixel, inside the column, and sized from the space
- *                                available rather than pinned at 300px (criterion 3).
- * And once per scale, at the 380x600 floor: every modal reachable without inventing state is opened,
- * measured against the viewport and required to scroll inside itself rather than overflow (criterion 3);
- * the Pomodoro panel is driven onto the screen through the real mode toggle; and the streak fire canvas
- * is mounted, resized and UNMOUNTED with its frame loop counted across the transition (criterion 4).
+ *   1. no horizontal overflow  - the document is no wider than the viewport, and no visible element crosses
+ *                                either edge (criterion 1);
+ *   2. no clipped content      - no overflow:hidden box cuts off content it contains, and no leaf of the scroll
+ *                                area sits behind the fixed bottom navigation once scrolled to its end;
+ *   3. nav alignment           - the bottom bar's edges equal the content column's. v1.2.1 capped the bar at
+ *                                430px and the shell at 448px;
+ *   4. the timer ring          - square to within a pixel, inside the column, and sized from the space available
+ *                                rather than pinned at 300px (criterion 3).
+ * And once per scale, at the 380x600 floor: every modal reachable without inventing state is opened and required
+ * to scroll inside itself; the Pomodoro panel is driven onto the screen through the real mode toggle; and the
+ * streak fire canvas is mounted, resized and UNMOUNTED with its frame loop counted across the transition.
  *
- * WHAT IT DOES NOT PROVE. Nothing here looks at a screenshot, so "correct" means "fits, is reachable and
- * is aligned", not "is beautiful". Likeness to v1.2.1 is `npm run parity:check`'s job, and only below
- * 448px: above that the owner widened the column to 40rem (2026-09-14) and the Phase 1 baselines have
- * nothing left to match.
+ * WHAT IT DOES NOT PROVE. Nothing here looks at a screenshot, so "correct" means "fits, is reachable and is
+ * aligned", not "is beautiful". Likeness to v1.2.1 is `npm run parity:check`'s job, and only below 448px.
  */
 
 /* global window, document, getComputedStyle */
@@ -332,11 +326,10 @@ export function judgeRoute(m, size) {
     /*
      * At or just above the cell's size, never below it.
      *
-     * Measured, not assumed: at 125% a 380x600 DIP request lands on a 382x602 CSS-pixel viewport and 430x932 lands
-     * on 431x932; at 150% 380x600 lands on 380x601. Windows sizes the window in device pixels and the frameless
-     * resize border rounds with it, so a fractional scale simply has no exact CSS-pixel equivalent for some sizes.
-     * BELOW the request would matter - the cell would be testing a narrower layout than it claims - so that fails.
-     * Up to four pixels above is recorded and allowed, and the CSS-px column in the report carries the real number.
+     * Measured, not assumed: at 125% a 380x600 DIP request lands on a 382x602 CSS-pixel viewport and 430x932 on
+     * 431x932; at 150% 380x600 lands on 380x601. Windows sizes the window in device pixels and the frameless
+     * resize border rounds with it. BELOW the request would mean the cell is testing a narrower layout than it
+     * claims, so that fails; up to four pixels above is recorded and allowed.
      */
     check('the window reached at least ' + size[0] + 'x' + size[1] + ' CSS px, and no more than 4 over',
         m.innerWidth >= size[0] && m.innerWidth <= size[0] + 4 &&
@@ -414,9 +407,7 @@ async function gotoRoute(page, route) {
  *
  * setContentSize takes device-independent pixels and Windows sizes the window in device pixels, so at 125% a
  * 430-DIP width is 537.5 physical, which does not exist: the window lands on 537 or 538 and the renderer reports
- * 429 or 430 CSS px back. Waiting for exact equality hangs there, and hanging on a cell is the one outcome worse
- * than failing it. What the cell reached is measured and reported, and judgeRoute allows the one pixel that
- * physical rounding can cost.
+ * 429 or 430 CSS px back. Waiting for exact equality hangs there, and hanging on a cell is worse than failing it.
  */
 async function setSize(page, win, [width, height]) {
     await win.evaluate((browserWindow, size) => browserWindow.setContentSize(size[0], size[1]), [width, height]);

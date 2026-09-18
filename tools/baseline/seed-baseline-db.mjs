@@ -1,27 +1,23 @@
 #!/usr/bin/env node
 /*
- * CUSTODY-10 - write a deterministic v1.2.1-schema fixture database, and pin the three remote
- * hosts the running application loads at runtime.
+ * CUSTODY-10 - write a deterministic v1.2.1-schema fixture database, and pin the three remote hosts the running
+ * application loads at runtime.
  *
- * Two jobs, one script, because both answer the same question: what exactly is the baseline a
- * photograph OF? A screenshot is only a regression detector if everything it depends on is fixed.
- * Three things are not fixed by default:
+ * Two jobs, one script, because both answer the same question: what exactly is the baseline a photograph OF? A
+ * screenshot is only a regression detector if everything it depends on is fixed. Three things are not fixed by
+ * default:
  *
- *   1. The database. v1.2.1 renders the owner's real client names and work notes. D-03 forbids
- *      those reaching a public repository, so the capture runs against synthetic content.
- *   2. Today's date. database/db.js reads the real system clock in getTodaySessions(),
- *      getThisWeekTotal(), getLastWeekTotal() and calculateCurrentStreak(). A fixture with hard
- *      dates renders differently every day it is re-captured.
- *   3. cdn.tailwindcss.com and fonts.googleapis.com. Both are live URLs. The Play CDN currently
- *      redirects to Tailwind 3.4.17, but nothing holds it there, and it generates CSS from the
- *      live DOM at runtime rather than shipping a stylesheet.
+ *   1. The database. v1.2.1 renders the owner's real client names and work notes, which D-03 forbids reaching a
+ *      public repository, so the capture runs against synthetic content.
+ *   2. Today's date. database/db.js reads the real system clock in getTodaySessions(), getThisWeekTotal(),
+ *      getLastWeekTotal() and calculateCurrentStreak(), so a fixture with hard dates renders differently every day.
+ *   3. cdn.tailwindcss.com and fonts.googleapis.com. Both are live URLs; the Play CDN currently redirects to
+ *      Tailwind 3.4.17, but nothing holds it there, and it generates CSS from the live DOM at runtime.
  *
- * WHY node:sqlite AND NOT better-sqlite3: at this point in phase 01, better-sqlite3 is still 9.6.0
- * and unbuildable on this machine (MSB8020, a missing ClangCL platform toolset). D-12 gates the
- * upgrade behind plan 01-07 precisely so that waves 4-5 can still launch v1.2.1 on Electron 28.
- * node:sqlite ships inside the pinned Node 24 runtime, needs no native build and adds no
- * third-party supply-chain surface. It prints an ExperimentalWarning on stderr; that is expected.
- * This is the same choice, for the same reason, that plan 01-04 made.
+ * WHY node:sqlite AND NOT better-sqlite3: at this point in phase 01, better-sqlite3 is still 9.6.0 and unbuildable
+ * on this machine (MSB8020, a missing ClangCL platform toolset). D-12 gates the upgrade behind plan 01-07 precisely
+ * so waves 4-5 can still launch v1.2.1 on Electron 28. node:sqlite ships inside the pinned Node 24 runtime, needs
+ * no native build and adds no third-party supply-chain surface. Its ExperimentalWarning on stderr is expected.
  *
  * Usage:
  *   node tools/baseline/seed-baseline-db.mjs <dir>     seed <dir>/krono.db
@@ -51,38 +47,29 @@ const realSchemaPath = path.join(repoRoot, 'tests', 'fixtures', 'v121-real-schem
 /* ---------------------------------------------------------------------------------------- */
 
 /*
- * Reproduced in its POST-MIGRATION shape, which is what a real v1.2.1 database looks like and is
- * not what a tidy hand-written CREATE would produce. In a real installation, companies.excel_column
- * / note_column / note_required and work_sessions.company_id / note were appended by ALTER TABLE in
- * initDatabase(), so they sit LAST. A fixture with a tidier column order is not a v1.2.1 database,
- * and phase 04's PRAGMA table_info migration logic would then be tested against a lie.
+ * Reproduced in its POST-MIGRATION shape, which is what a real v1.2.1 database looks like and is not what a tidy
+ * hand-written CREATE would produce. In a real installation, companies.excel_column / note_column / note_required
+ * and work_sessions.company_id / note were appended by ALTER TABLE in initDatabase(), so they sit LAST. A fixture
+ * with a tidier column order is not a v1.2.1 database, and phase 04's PRAGMA table_info logic would then be tested
+ * against a lie.
  *
- * FOREIGN KEYS ARE ENFORCED HERE, because they are enforced in production. An earlier revision of
- * this file switched them off, on the premise recorded as CB-4: database/db.js issues no
- * PRAGMA foreign_keys, therefore every declared ON DELETE CASCADE is inert in the field. The first
- * half is true. The conclusion is false, and it has been disproved three independent ways:
+ * FOREIGN KEYS ARE ENFORCED HERE, because they are enforced in production. An earlier revision switched them off,
+ * on the premise recorded as CB-4: database/db.js issues no PRAGMA foreign_keys, therefore every declared ON
+ * DELETE CASCADE is inert in the field. The first half is true. The conclusion is false, disproved three ways:
  *
- *   1. better-sqlite3 - the driver v1.2.1 ships, and the one this repo now uses - compiles SQLite
- *      with SQLITE_DEFAULT_FOREIGN_KEYS (deps/defines.gypi). PRAGMA compile_options lists
- *      DEFAULT_FOREIGN_KEYS and PRAGMA foreign_keys reads 1 on a connection db.js never touched.
- *   2. A cascade delete really cascades - tests/backup.test.ts, "enforces ON DELETE CASCADE,
- *      contrary to CB-4", deletes a parent and observes the child rows go.
- *   3. The owner's real database holds 97 work sessions, 0 orphans, and an empty
- *      PRAGMA foreign_key_check.
+ *   1. better-sqlite3 - the driver v1.2.1 ships - compiles SQLite with SQLITE_DEFAULT_FOREIGN_KEYS
+ *      (deps/defines.gypi). PRAGMA foreign_keys reads 1 on a connection db.js never touched.
+ *   2. A cascade delete really cascades - tests/backup.test.ts, "enforces ON DELETE CASCADE, contrary to CB-4".
+ *   3. The owner's real database holds 97 work sessions, 0 orphans, and an empty PRAGMA foreign_key_check.
  *
- * So node:sqlite's DatabaseSync default of ON already matched the application, and the override
- * was actively making this fixture diverge from the thing it is a photograph of. It is gone - see
- * openFixture(). Nothing seeded here needs to violate referential integrity, and a seed row that
- * dangles is a bug in the seed data that should fail loudly at insert time rather than render into
- * a PNG committed to a public repository. Where a fixture genuinely DOES need to violate it -
- * tests/fixtures/seed.ts's orphan fixture, which manufactures what a third-party tool leaves
- * behind - the disable is scoped to the statements that need it and explained at the point of use.
+ * So node:sqlite's DatabaseSync default of ON already matched the application, and the override was making this
+ * fixture diverge from the thing it is a photograph of. A seed row that dangles should fail loudly at insert time
+ * rather than render into a committed PNG. Where a fixture genuinely DOES need to violate referential integrity -
+ * tests/fixtures/seed.ts's orphan fixture - the disable is scoped to the statements that need it.
  *
- * PRAGMA foreign_keys is a per-connection setting, not schema, and is not stored in the database
- * file, so flipping it changes no byte of the seeded fixture. That was confirmed rather than
- * assumed: sqlite_master (type, name, sql) plus every row of every table was dumped before and
- * after this change and the two dumps hash identically (sha256 2a174157e2d4b77c...b434f0d35), so
- * the committed schema extract and the byte-for-byte sqlite_master comparison are untouched.
+ * PRAGMA foreign_keys is a per-connection setting, not schema, so flipping it changes no byte of the seeded
+ * fixture. That was confirmed rather than assumed: sqlite_master plus every row of every table was dumped before
+ * and after the change and the two dumps hash identically (sha256 2a174157e2d4b77c...b434f0d35).
  */
 export const V121_DDL = `
 CREATE TABLE IF NOT EXISTS companies (
@@ -147,34 +134,29 @@ export function addDays(date, days) {
 /*
  * THE SEEDING POLICY, and why it is shaped the way it is.
  *
- * Research offered two ways to handle "today" leaking into the rendered output: seed relative to
- * the run date, or accept the drift and mask the date strip. This takes the first.
+ * Research offered two ways to handle "today" leaking into the rendered output: seed relative to the run date, or
+ * accept the drift and mask the date strip. This takes the first.
  *
- * The naive version of "relative to the run date" - seed today, yesterday, the day before - is
- * still not deterministic, and the reason is easy to miss. getThisWeekTotal() and getLastWeekTotal()
- * do not slice by "N days ago"; they slice by CALENDAR WEEK, Monday to Sunday. Seeding today-1 and
- * today-2 puts a different number of sessions inside the current week depending on which weekday
- * the capture happens to run on: on a Monday, none of them; on a Thursday, both. The This Week
- * tile, the Last Week comparison, and the number of rows on the work-history page would all differ
- * between this capture and Phase 8's, and every one of those differences would be attributed to the
- * rewrite.
+ * The naive version - seed today, yesterday, the day before - is still not deterministic, and the reason is easy
+ * to miss. getThisWeekTotal() and getLastWeekTotal() do not slice by "N days ago"; they slice by CALENDAR WEEK,
+ * Monday to Sunday. Seeding today-1 and today-2 puts a different number of sessions inside the current week
+ * depending on which weekday the capture runs on: on a Monday none of them, on a Thursday both. The This Week
+ * tile, the Last Week comparison and the work-history row count would all differ between this capture and Phase
+ * 8's, and every difference would be attributed to the rewrite.
  *
  * So the seed straddles the week boundary deliberately and never crosses it by accident:
  *
- *   - ALL of the current week's work sits on TODAY. This week therefore always contains exactly
- *     three sessions totalling 30,600 s, whatever weekday the capture runs on.
- *   - The historical block sits on the PREVIOUS week's Monday, Tuesday and Wednesday - computed
- *     from this week's Monday minus 7, so it is always entirely inside "last week" and never
- *     inside "this week".
+ *   - ALL of the current week's work sits on TODAY, so this week always contains exactly three sessions
+ *     totalling 30,600 s, whatever weekday the capture runs on.
+ *   - The historical block sits on the PREVIOUS week's Monday, Tuesday and Wednesday - computed from this week's
+ *     Monday minus 7, so it is always entirely inside "last week".
  *   - Nothing is seeded on today-1 or today-2, because those days move across the week boundary.
  *
- * The streak falls out of this: today's 30,600 s clears the 28,800 s daily target, yesterday has
- * nothing, so calculateCurrentStreak() returns exactly 1 on every run date. That is deliberately
- * far below the fire-canvas thresholds in src/pages/index.html:719-729 (`streak > 10` starts the
- * requestAnimationFrame particle animation, `streak > 5` adds a pulsing CSS tier). At 1, no tier
- * class is applied at all and no animation clock exists to photograph. The capture also masks
- * #streakFireCanvas; a fixture that never lights it is the sturdier of the two controls and using
- * both is correct.
+ * The streak falls out of this: today's 30,600 s clears the 28,800 s target, yesterday has nothing, so
+ * calculateCurrentStreak() returns exactly 1 on every run date. That is deliberately far below the fire-canvas
+ * thresholds in src/pages/index.html:719-729 (`streak > 10` starts the particle animation, `streak > 5` adds a
+ * pulsing tier), so no tier class is applied and no animation clock exists to photograph. The capture also masks
+ * #streakFireCanvas; using both controls is correct.
  */
 export function seedDates(now = new Date()) {
     // eslint-disable-next-line no-restricted-syntax -- frozen v1.2.1 baseline tooling; Phase 8 re-capture depends on this behaviour (D-13)
@@ -192,14 +174,12 @@ export function seedDates(now = new Date()) {
 /* ---------------------------------------------------------------------------------------- */
 
 /*
- * Every string below is rendered into a PNG that is committed to a public repository, so every
- * string below is invented. "Northwind", "Contoso" and "Fabrikam" are the canonical fictional
- * companies from Microsoft's own sample data, suffixed with "Fixture" so that no reader can mistake
- * one for a real client of this application's owner.
+ * Every string below is rendered into a PNG committed to a public repository, so every string below is invented.
+ * "Northwind", "Contoso" and "Fabrikam" are the canonical fictional companies from Microsoft's own sample data,
+ * suffixed with "Fixture" so no reader can mistake one for a real client.
  *
- * "Unassigned" is not invented - initDatabase() creates it on every launch if it is missing, and
- * re-points every company-less session at it. A fixture without it would be silently mutated by the
- * app the moment the capture launched, so the fixture would not be the thing that was photographed.
+ * "Unassigned" is not invented - initDatabase() creates it on every launch if it is missing, and re-points every
+ * company-less session at it. A fixture without it would be silently mutated the moment the capture launched.
  */
 export const COMPANIES = [
     { id: 1, name: 'Unassigned', excel_column: null, note_column: null, note_required: 0 },
@@ -621,12 +601,11 @@ function selfTest() {
         }
 
         /*
-         * A negative control, and not a restatement of the pragma readback. It opens a scratch
-         * fixture through the same openFixture() the seeder uses and tries to insert a work_session
-         * pointing at a company that does not exist. Two independent mutations turn it red:
-         * flipping FIXTURE_FOREIGN_KEYS to false, and dropping the REFERENCES clause out of
-         * V121_DDL - the second of which the D-05 comparison cannot see, because that compares
-         * column names and order, never constraints.
+         * A negative control, not a restatement of the pragma readback. It opens a scratch fixture through the same
+         * openFixture() the seeder uses and tries to insert a work_session pointing at a company that does not
+         * exist. Two independent mutations turn it red: flipping FIXTURE_FOREIGN_KEYS to false, and dropping the
+         * REFERENCES clause out of V121_DDL - which the D-05 comparison cannot see, because that compares column
+         * names and order, never constraints.
          */
         const dangling = { rejected: false, detail: 'the insert was accepted' };
         {
@@ -657,10 +636,9 @@ function selfTest() {
         );
         check('at least five seeded sessions', sessions.c >= 5, `${sessions.c} sessions, ${sessions.d} s total`);
         /*
-         * The three checks below replace one that asserted "foreign keys left disabled, matching
-         * the application". The application does not run with foreign keys off - see the header -
-         * and the old check could not have failed anyway: it opened the connection with
-         * enforcement explicitly disabled and then asserted that enforcement was disabled.
+         * The three checks below replace one that asserted "foreign keys left disabled, matching the application".
+         * The application does not run with foreign keys off - see the header - and the old check could not have
+         * failed anyway: it opened the connection with enforcement disabled and then asserted it was disabled.
          */
         check(
             'the fixture connection enforces foreign keys, matching what better-sqlite3 gives the application',

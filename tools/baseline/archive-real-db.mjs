@@ -1,24 +1,19 @@
 #!/usr/bin/env node
 /*
- * CUSTODY-07 - archive the owner's real, populated krono.db somewhere safe, and commit its
- * schema and nothing else.
+ * CUSTODY-07 - archive the owner's real, populated krono.db somewhere safe, and commit its schema and nothing else.
  *
- * D-03 is a hard constraint, not a preference: this repository is public and the database holds
- * real client names and real work notes. A committed database cannot be un-published - a history
- * rewrite does not reach the clones already taken. So the real file goes to a dated folder on the
- * owner's machine, outside %APPDATA%\workflow-timer\ and outside this working tree, and the only
- * thing that lands in git is the DDL from sqlite_master.
+ * D-03 is a hard constraint, not a preference: this repository is public and the database holds real client names
+ * and real work notes. A committed database cannot be un-published - a history rewrite does not reach the clones
+ * already taken. So the real file goes to a dated folder outside %APPDATA%\workflow-timer\ and outside this
+ * working tree, and the only thing that lands in git is the DDL from sqlite_master.
  *
- * The "outside this working tree" part is enforced by resolved-absolute-path containment rather
- * than by care, and the refusal is exercised by --self-test rather than trusted. An ignore rule is
- * a convention; a containment check that has been observed to fire is a guarantee.
+ * The "outside this working tree" part is enforced by resolved-absolute-path containment rather than by care, and
+ * the refusal is exercised by --self-test rather than trusted.
  *
- * Why node:sqlite and not better-sqlite3: at this point in phase 01, better-sqlite3 is still
- * 9.6.0 and its better_sqlite3.node is unbuildable here (D-12 gates the upgrade behind plan
- * 01-07, because waves 4-5 must capture the parity baseline against v1.2.1 on Electron 28).
- * node:sqlite ships inside the pinned Node 24 runtime, needs no native build, and adds no
- * third-party supply-chain surface. It prints an ExperimentalWarning on stderr; that is expected
- * and is not an error.
+ * Why node:sqlite and not better-sqlite3: at this point in phase 01, better-sqlite3 is still 9.6.0 and its
+ * better_sqlite3.node is unbuildable here (D-12 gates the upgrade behind plan 01-07). node:sqlite ships inside the
+ * pinned Node 24 runtime, needs no native build, and adds no third-party supply-chain surface. Its
+ * ExperimentalWarning on stderr is expected.
  *
  * Usage:
  *   node tools/baseline/archive-real-db.mjs              archive the real triple + extract schema
@@ -155,14 +150,12 @@ function renderSchema(rows, provenance) {
 }
 
 /*
- * Self-assertion, run against the DDL body only - not against the generated provenance header,
- * whose prose is fixed text this script controls and whose only variable parts are the script
- * name, the date and the sqlite_master object names. Checking the header would mean the check
- * fires on the words used to describe it, which is how the first run of this script failed.
+ * Self-assertion, run against the DDL body only - not against the generated provenance header, whose prose is
+ * fixed text this script controls. Checking the header would mean the check fires on the words used to describe
+ * it, which is how the first run of this script failed.
  *
- * The generator is not trusted to have selected only DDL; the body is checked before it is
- * allowed to exist. DEFAULT '...' is the one legitimate string literal in a CREATE TABLE, so it
- * is scrubbed first and anything still quoted afterwards fails.
+ * The generator is not trusted to have selected only DDL. DEFAULT '...' is the one legitimate string literal in a
+ * CREATE TABLE, so it is scrubbed first and anything still quoted afterwards fails.
  */
 function assertDdlOnly(body) {
     if (/\bINSERT\b/i.test(body)) {
@@ -236,19 +229,13 @@ function archive({ sourceDir, destRoot, schemaOut, guardRepoRoot, stamp }) {
             continue;
         }
         /*
-         * CUSTODY-03 bans fs-copying a SQLite database, and that ban is correct everywhere
-         * except here. It exists because copying a LIVE database yields a file that opens fine
-         * and passes integrity_check while missing every committed-but-uncheckpointed page in
-         * the -wal. None of that applies at this call site: the application is not running,
-         * this is a cold archive rather than a live backup, the measured -wal is 0 bytes, and
-         * the whole triple is copied together so any WAL content travels with its database.
+         * CUSTODY-03 bans fs-copying a SQLite database, and that ban is correct everywhere except here. It exists
+         * because copying a LIVE database yields a file that opens fine and passes integrity_check while missing
+         * every committed-but-uncheckpointed page in the -wal. None of that applies at this call site: the
+         * application is not running, the measured -wal is 0 bytes, and the whole triple is copied together.
          *
-         * db.backup() is deliberately NOT used, because it would require opening the owner's
-         * real database for WRITE, which is exactly what T-01-17 forbids. A read-only copy is
-         * the weaker operation here, and weaker is what this task wants.
-         *
-         * Do not cite this site as precedent for a backup path. CUSTODY-03's backup module
-         * uses db.backup().
+         * db.backup() is deliberately NOT used, because it would require opening the owner's real database for
+         * WRITE, which is exactly what T-01-17 forbids. Do not cite this site as precedent for a backup path.
          */
         // eslint-disable-next-line no-restricted-syntax -- cold archive, app not running, T-01-17 forbids opening the real DB for write
         fs.copyFileSync(from, path.join(destDir, name));

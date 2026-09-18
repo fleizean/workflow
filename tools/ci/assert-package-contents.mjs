@@ -1,33 +1,26 @@
 #!/usr/bin/env node
 /*
- * BUILD-08 - prove that the PACKAGED application holds only what the app needs to run, by reading
- * the artifact itself rather than the configuration that was supposed to produce it.
+ * BUILD-08 - prove that the PACKAGED application holds only what the app needs to run, by reading the artifact
+ * itself rather than the configuration that was supposed to produce it.
  *
- * The failure this prevents is concrete, and it has already happened once. v1.2.1's builder block
- * said files: ["**\/*"], so every installer shipped the whole repository: the GitHub Pages site under
- * docs/ at roughly 3.9 MB, the top-level assets/ at roughly 4 MB, and three copies of the same 1.8 MB
- * image. Since Phase 1 the repository holds worse material than dead weight. baselines/ carries
- * parity screenshots and computed-style records captured from the author's own running
- * application, and tools/baseline/vendor/ carries byte-exact copies of what a content delivery
- * network and Google Fonts served on one particular day. None of that is something a person
- * downloading the app should receive: it is evidence about one person's environment, and an
- * installer redistributes it to everyone who downloads it.
+ * The failure this prevents has already happened once. v1.2.1's builder block said files: ["**\/*"], so every
+ * installer shipped the whole repository: docs/ at roughly 3.9 MB, assets/ at roughly 4 MB, and three copies of
+ * the same 1.8 MB image. Since Phase 1 the repository holds worse material than dead weight - baselines/ carries
+ * screenshots and computed-style records captured from the author's own running application, and
+ * tools/baseline/vendor/ byte-exact copies of what a CDN and Google Fonts served on one particular day. That is
+ * evidence about one person's environment, and an installer redistributes it to everyone who downloads it.
  *
- * electron-builder.yml now carries an allowlist (plan 02-01). That is a statement of intent. What
- * ships is whatever the packager actually wrote into app.asar, and a pattern that is supposed to
- * exclude a directory and an archive that actually excludes it are different claims - only the
- * second one reaches users. So this script never reads the configuration. It opens the packaged
- * archive, reads the file listing from the archive's own header, and checks every path:
+ * electron-builder.yml carries an allowlist, which is a statement of intent; what ships is whatever the packager
+ * actually wrote into app.asar. So this script never reads the configuration. It opens the packaged archive, reads
+ * the listing from the archive's own header, and checks every path:
  *
- *   1. no path falls under a denied prefix - the documentation site, the top-level assets, the
- *      baselines, the tooling including its vendored capture assets, the legacy v1.2.1 tree that
- *      stays on disk until Phase 7 (D-01), the planning directory, the restructure brief - and no
- *      source map, TypeScript source, database or installer is packaged anywhere;
- *   2. every top-level entry is one the app needs: the build output (out/), and the manifest and
- *      production dependency directory the packager always adds;
- *   3. the region unpacked from the archive holds the better-sqlite3 package and nothing else. The
- *      native addon is the one file that cannot be dlopen'd from inside the archive (BUILD-05);
- *      anything that joins it sits outside the archive for no reason.
+ *   1. no path falls under a denied prefix - the documentation site, the top-level assets, the baselines, the
+ *      tooling including its vendored capture assets, the planning directory, the restructure brief and the
+ *      retired v1.2.1 tree - and no source map, TypeScript source, database or installer is packaged anywhere;
+ *   2. every top-level entry is one the app needs: the build output (out/), and the manifest and production
+ *      dependency directory the packager always adds;
+ *   3. the region unpacked from the archive holds the better-sqlite3 package and nothing else. The native addon is
+ *      the one file that cannot be dlopen'd from inside the archive (BUILD-05).
  *
  * Reading the header needs no dependency. The layout, from the format itself:
  *
@@ -35,31 +28,24 @@
  *   bytes 4-7    uint32 LE = H        size of the header pickle that follows
  *   bytes 8-11   uint32 LE = H - 4    the header pickle's payload size
  *   bytes 12-15  uint32 LE = J        byte length of the JSON string
- *   bytes 16..   J bytes of JSON: { "files": { <name>: <node> } }, where a directory node is
- *                { "files": ... }, a file { "size", "offset" } or { "size", "unpacked": true },
- *                and a link { "link" }
+ *   bytes 16..   J bytes of JSON: { "files": { <name>: <node> } }, where a directory node is { "files": ... }, a
+ *                file { "size", "offset" } or { "size", "unpacked": true }, and a link { "link" }
  *   bytes 8+H..  the data region; a packed file's "offset" (a decimal string) is relative to it
  *
- * A packed entry whose offset plus size runs past the end of the archive is reported as a truncated
- * or half-written archive rather than listed. A partial listing that passes is exactly the silent
- * success this script exists to prevent.
- *
- * It also prints the complete listing, the byte total and the ten largest entries, so the later
- * bundle-size work starts from a measurement rather than an assumption.
+ * A packed entry whose offset plus size runs past the end of the archive is reported as a truncated archive rather
+ * than listed: a partial listing that passes is exactly the silent success this script exists to prevent. It also
+ * prints the complete listing, the byte total and the ten largest entries.
  *
  * Usage:
  *   node tools/ci/assert-package-contents.mjs <packaged app directory>
  *     e.g. dist/win-unpacked, dist/win-arm64-unpacked, dist/mac, dist/mac-arm64, or a Workflow.app
  *
- * Exit codes: 0 the package holds only allowlisted files; 1 it does not, or its archive could not be
- * read; 2 no argument was given, or no packaged application is where one was expected.
+ * Exit codes: 0 the package holds only allowlisted files; 1 it does not, or its archive could not be read; 2 no
+ * argument was given, or no packaged application is where one was expected.
  *
  * Fix a failure in electron-builder.yml (files: and asarUnpack:), never by widening this script.
  *
- * The pure pieces - the header reader, the denied-prefix matcher, the top-level allowlist check and
- * the unpacked-region check - are exported, the way tools/baseline/probe-userdata.mjs exports its
- * pieces, so tests/packaging.test.ts checks them on every push without a packaged binary present.
- * Their types are declared in assert-package-contents.d.mts.
+ * The pure pieces are exported so tests/packaging.test.ts checks them on every push without a packaged binary.
  */
 
 import crypto from 'node:crypto';
@@ -114,7 +100,7 @@ const DENIED_RULES = Object.freeze([
     prefixRule('assets/', 'top-level repository assets - the README banner, which no packaged code reads'),
     prefixRule('baselines/', "parity screenshots and computed-style records captured from the author's own running app"),
     prefixRule('tools/', 'repository tooling, including tools/baseline/vendor/ - byte-exact copies of what a CDN served on one day'),
-    prefixRule('legacy/', 'the retired v1.2.1 renderer - pages, flat scripts and stylesheets - kept on disk until SPA-14 signs off parity (D-01) and never shipped'),
+    prefixRule('legacy/', 'the retired v1.2.1 renderer. SPA-14 deleted it in 08-F, so this rule now matches nothing - it stays so a directory of that name reappearing cannot ship'),
     prefixRule('database/', 'the legacy v1.2.1 database module (D-01)'),
     exactRule('main.js', 'the legacy v1.2.1 main-process entry script (D-01)'),
     exactRule('preload.js', 'the legacy v1.2.1 preload script (D-01)'),
@@ -367,9 +353,8 @@ export function listFilesUnder(dir) {
  *
  * The failure it catches has already happened here: the titlebar imported the 1024x1024 icon.png, so Vite
  * fingerprinted a second copy of a 1.84 MB file into the renderer bundle beside the one main needs for the tray -
- * two identical megabytes in every installer, under two different names, which is precisely why a name-based check
- * would have reported nothing. An asset imported by both the main and the renderer build is emitted into both by
- * construction, so a SMALL duplicate is reported and allowed; a large one is a failure.
+ * two identical megabytes under two different names, which is why a name-based check would report nothing. An
+ * asset imported by both builds is emitted into both by construction, so a SMALL duplicate is allowed.
  */
 export const MAX_DUPLICATED_BYTES = 64_000;
 

@@ -5,21 +5,18 @@
  *   npm run parity:check
  *
  * 08-REVIEW-TIMER WR-07 / 08-REVIEW-SCREENS WR-05: capture-v2.mjs and diff-computed.mjs were referenced by no
- * package.json script, no test and no workflow. diff-computed's own header argued that its SETTLED register is
- * "a gate rather than a reading: a future change either matches the baselines or arrives in the unexplained
- * list", and VISUAL-PARITY-DIFF.md said it "exits non-zero on any difference that is not in its register with a
- * reason" - but a gate nothing invokes cannot exit non-zero at anybody, and the committed 29-difference register
- * could not go stale in a way any check would notice.
+ * package.json script, no test and no workflow. diff-computed's own header argued that its SETTLED register is "a
+ * gate rather than a reading", and VISUAL-PARITY-DIFF.md said it "exits non-zero on any difference that is not in
+ * its register with a reason" - but a gate nothing invokes cannot exit non-zero at anybody, and the committed
+ * 29-difference register could not go stale in a way any check would notice.
  *
- * This is the invocation. It captures the packaged v2 build, diffs it against the Phase 1 baselines, and fails on
- * two things:
+ * This is the invocation. It captures the packaged v2 build, diffs it against the Phase 1 baselines, and fails on:
  *
  *   1. any design-property difference that is NOT in the register with a reason;
- *   2. a committed VISUAL-PARITY-DIFF.md that is not what this run produces - the staleness guard, which is what
- *      tests/inventory.test.ts exists to provide for the behaviour inventory.
+ *   2. a committed VISUAL-PARITY-DIFF.md that is not what this run produces - the staleness guard.
  *
- * It needs a packaged build (capture-v2 launches the unpacked app), so `npm run build:unpack` comes first. With
- * --write it updates the committed report instead of failing on it, which is how a deliberate change is recorded.
+ * It needs a packaged build, so `npm run build:unpack` comes first. With --write it updates the committed report
+ * instead of failing on it, which is how a deliberate change is recorded.
  */
 
 import fs from 'node:fs';

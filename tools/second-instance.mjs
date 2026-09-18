@@ -7,18 +7,16 @@
  *
  * WHY IT WAS OPEN. requestSingleInstanceLock() is a cross-PROCESS transition. tests/db-startup.test.ts asserts by
  * AST that the second-instance handler calls surfaceMainWindow, and the packaged smoke proves one tray icon within
- * ONE process - neither of which is the claim. Two processes on one krono.db is how v1.2.1 corrupts it, so the
- * claim has to be made with two real processes.
+ * ONE process - neither of which is the claim. Two processes on one krono.db is how v1.2.1 corrupts it.
  *
  * WHAT IS DRIVEN, in order:
  *   1. the packaged app is launched over a mkdtemp profile and its window is hidden - the state a user is in when
- *      they click the shortcut again, and the state in which "focuses the existing window" is observable;
+ *      they click the shortcut again;
  *   2. the same binary is launched again, with the same --user-data-dir, as an ordinary child process;
  *   3. the second is required to EXIT, by itself, quickly, and to have opened no window;
- *   4. the first is required to still be alive, to still have exactly one main window, and to have SHOWN it -
- *      which is what surfaceMainWindow does and is the difference between focusing and ignoring;
- *   5. the first is required to still answer through its own IPC bridge afterwards, which is the database half:
- *      a second writer would have had to take the file from it.
+ *   4. the first is required to still be alive, to still have exactly one main window, and to have SHOWN it;
+ *   5. the first is required to still answer through its own IPC bridge afterwards - the database half, since a
+ *      second writer would have had to take the file from it.
  *
  * SAFETY. A mkdtemp profile; no real krono.db is opened.
  */

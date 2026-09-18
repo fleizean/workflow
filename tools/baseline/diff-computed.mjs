@@ -1,42 +1,37 @@
 #!/usr/bin/env node
 /*
- * Criterion 2's second gate, as a computation: diff the v2 SPA's computed styles against the Phase 1
- * baselines under baselines/v1.2.1/computed/.
+ * Criterion 2's second gate, as a computation: diff the v2 SPA's computed styles against the Phase 1 baselines
+ * under baselines/v1.2.1/computed/.
  *
  *   node tools/baseline/capture-v2.mjs --out=DIR
  *   node tools/baseline/diff-computed.mjs --v2=DIR [--report=FILE]
  *
- * WHY THIS IS NOT AN ELEMENT-BY-ELEMENT DIFF. The baseline keys every element by its position in the
- * document (`tag#id:nth-child(n) > ...`). v1.2.1 was four hand-written HTML documents and v2 is one
- * React tree, so almost no key exists on both sides - a keyed diff would report "100% different" and
- * mean nothing. What the baseline is actually FOR is named in capture.mjs's own header: catching the
- * silent Tailwind v4 regressions - a renamed scale step, a changed Preflight default - none of which
- * is visible to an eyeball. Those show up as a VALUE that v1.2.1 rendered and v2 renders nowhere, or
- * the reverse. So this diffs the value vocabulary of each property, per page, unioned over the five
- * sizes.
+ * WHY THIS IS NOT AN ELEMENT-BY-ELEMENT DIFF. The baseline keys every element by its position in the document
+ * (`tag#id:nth-child(n) > ...`). v1.2.1 was four hand-written HTML documents and v2 is one React tree, so almost
+ * no key exists on both sides - a keyed diff would report "100% different" and mean nothing. What the baseline is
+ * FOR is named in capture.mjs's own header: catching the silent Tailwind v4 regressions, none of which is visible
+ * to an eyeball. Those show up as a VALUE that v1.2.1 rendered and v2 renders nowhere, or the reverse. So this
+ * diffs the value vocabulary of each property, per page, unioned over the five sizes.
  *
  * WHAT IS NORMALISED FIRST, AND WHY EACH IS NOT A DIFFERENCE:
  *
- *  - COLOUR NOTATION. Tailwind v3 shipped its palette as rgb(); v4 ships the same palette as oklch(),
- *    and getComputedStyle returns the notation that was specified. slate-400 is `rgb(148, 163, 184)`
- *    under v3 and `oklch(0.704 0.04 256.788)` under v4 - one colour, two spellings. Every colour is
- *    resolved to 8-bit sRGB before comparison, so a real colour change still fails.
- *  - EMPTY SHADOW SLOTS. v4's shadow chain carries more always-transparent slots than v3's, so the
- *    same shadow reads as five comma-separated parts instead of three. Fully transparent zero-size
- *    parts draw nothing and are dropped from both sides.
- *  - OUTLINE WIDTH UNDER `outline-style: none`. CSS 2.1 computed outline-width to 0 when the style is
- *    none; current Chromium keeps the specified width. Both records say `none`, so neither draws an
- *    outline; the width is normalised to 0 when the style is none. This is Chromium 120 vs 152, not
- *    the rewrite.
- *  - `rounded-full`. v3 emitted 9999px, v4 emits calc(infinity * 1px) -> 3.35544e+07px. Both exceed
- *    half of any element on any of these screens, so both draw the same pill.
+ *  - COLOUR NOTATION. Tailwind v3 shipped its palette as rgb(); v4 ships the same palette as oklch(), and
+ *    getComputedStyle returns the notation that was specified. slate-400 is `rgb(148, 163, 184)` under v3 and
+ *    `oklch(0.704 0.04 256.788)` under v4 - one colour, two spellings. Every colour is resolved to 8-bit sRGB.
+ *  - EMPTY SHADOW SLOTS. v4's shadow chain carries more always-transparent slots than v3's, so the same shadow
+ *    reads as five comma-separated parts instead of three. Fully transparent zero-size parts are dropped.
+ *  - OUTLINE WIDTH UNDER `outline-style: none`. CSS 2.1 computed outline-width to 0 when the style is none;
+ *    current Chromium keeps the specified width. Both records say `none`, so neither draws an outline. This is
+ *    Chromium 120 vs 152, not the rewrite.
+ *  - `rounded-full`. v3 emitted 9999px, v4 emits calc(infinity * 1px) -> 3.35544e+07px. Both exceed half of any
+ *    element on any of these screens, so both draw the same pill.
  *
- * WHAT IS DELIBERATELY NOT A GATE. The twelve geometry properties (width, height, margin, padding,
- * gap, flex, grid-template-columns, transform, display, position, overflow, z-index) are reported as
- * counts only. The DOM differs by construction - v1.2.1 kept every modal in the markup and v2 mounts
- * each one only while it opens - and the content column is 40rem where the v1.2.1 column was 448px
- * (owner, 2026-09-14), so above 448px these baselines have nothing left to match. A geometry
- * vocabulary difference is therefore evidence of nothing either way.
+ * WHAT IS DELIBERATELY NOT A GATE. The twelve geometry properties (width, height, margin, padding, gap, flex,
+ * grid-template-columns, transform, display, position, overflow, z-index) are reported as counts only. The DOM
+ * differs by construction - v1.2.1 kept every modal in the markup and v2 mounts each one only while it opens - and
+ * the content column is 40rem where the v1.2.1 column was 448px (owner, 2026-09-14), so above 448px these
+ * baselines have nothing left to match. A geometry vocabulary difference is
+ * therefore evidence of nothing either way.
  */
 
 import fs from 'node:fs';

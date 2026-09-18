@@ -53,16 +53,15 @@ const DRIZZLE_TOOLING_PATTERNS = [{
 }];
 
 /*
- * ARCH-01: a service must load with electron stubbed to throw, must not know that IPC exists, and must not reach the
- * database, the adapters or the composition root. Ports in, handlers above, repositories handed to it as arguments.
+ * ARCH-01: a service must load with electron stubbed to throw, must not know that IPC exists, and must not reach
+ * the database, the adapters or the composition root. Ports in, handlers above, repositories handed in.
  *
- * WR-05: until this rule grew, only `electron` was ever flagged here - `better-sqlite3`, `@lib/db`, `../../lib/db`,
- * `../adapters`, `../window` and `../container` were all accepted, while five service files carried a comment saying
- * "nothing here imports src/lib/db". A rule five files quote and nothing checks is a comment.
+ * WR-05: until this rule grew, only `electron` was ever flagged here - `better-sqlite3`, `@lib/db`, `../adapters`,
+ * `../window` and `../container` were all accepted, while five service files carried a comment saying "nothing
+ * here imports src/lib/db". A rule five files quote and nothing checks is a comment.
  *
- * The ban covers the type position too. Every service states what it needs structurally on purpose - naming
- * SessionsRepository is taking a dependency on the row layer's vocabulary - so there is no type import to exempt, and
- * an exemption is how the value import comes back.
+ * The ban covers the type position too: every service states what it needs structurally on purpose, so there is no
+ * type import to exempt, and an exemption is how the value import comes back.
  */
 const SERVICE_LAYER_MESSAGE = 'src/main/services must stay Electron-free, must not import ipc/, and must not reach the database, the adapters or the composition root - take a port from src/main/ports, state what you need structurally, and let the container hand it to you (ARCH-01).';
 const SERVICE_LAYER_PATHS = [
@@ -143,11 +142,11 @@ const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts', 'src/main/smoke.ts
 /*
  * SPA-11 (trap C3): a class name that exists only after a concatenation is a class name the build never saw.
  * v1.2.1 got away with `bg-${color}-100` at fourteen sites because the Tailwind Play CDN generates CSS by watching
- * the live DOM; build-time Tailwind reads the SOURCE instead, so those names emit no CSS at all and the element
- * renders uncoloured. Nothing else catches it - it typechecks, it renders, and only the pixels are wrong.
+ * the live DOM; build-time Tailwind reads the SOURCE instead, so those names emit no CSS at all. Nothing else
+ * catches it - it typechecks, it renders, and only the pixels are wrong.
  *
  * A safelist would silence this rule and keep the bug. The sanctioned shape is a typed lookup map whose values are
- * whole class strings, which is what src/renderer/src/components/ui/AlertDialog.tsx does.
+ * whole class strings, which is what AlertDialog.tsx does.
  */
 const CLASS_BUILD_MESSAGE = 'Write class names out in full and select between them with a typed lookup map; a name assembled at run time gets no CSS from a build-time Tailwind (SPA-11, C3).';
 const CLASS_ATTRIBUTES = 'JSXAttribute[name.name=/^(className|class)$/] ';
@@ -159,8 +158,7 @@ const CLASS_LIST = [
 /*
  * CR-02: a literal that is a Tailwind utility waiting for its next piece - 'bg-', 'text-', 'rounded-full bg-',
  * 'hover:'. Anchoring only on the className attribute left the most natural refactor of a banned line wide open:
- * hoist the concatenation to a local and pass the variable. This matches the literal wherever it is concatenated,
- * so the hoist, the spread-props object and setAttribute are one rule rather than three.
+ * hoist the concatenation to a local and pass the variable. This matches the literal wherever it is concatenated.
  *
  * The roots are an allowlist rather than a shape, because a shape catches ids too: AlertDialog builds
  * 'dialog-title-' + id, and reaching an element by its id is the sanctioned way.
@@ -199,10 +197,9 @@ const CLASS_BUILD_BANS = [
 /*
  * SPA-13 (Y2). legacy/pages/settings.html:659 reached the DELETE-ALL-DATA button with
  * document.querySelector('.mt-8.mb-8 button') - a spacing tweak detaches it, and the failure is a button that
- * silently stops working. The ban is on any class selector, not on a list of Tailwind-looking ones: ARCH-05 leaves
- * no other kind of class in this renderer, so a dot in a selector string is a utility class by construction. An
- * attribute or id selector carries no dot and is left alone; so is a dynamic selector, which is banned outright
- * because nothing can tell what it will contain.
+ * silently stops working. The ban is on any class selector, not a list of Tailwind-looking ones: ARCH-05 leaves no
+ * other kind of class in this renderer, so a dot in a selector string is a utility class by construction. An
+ * attribute or id selector carries no dot; a dynamic selector is banned outright.
  */
 const CLASS_QUERY_MESSAGE = 'Reach an element with a ref, an id or a data attribute - never by its utility classes, which are layout that moves (SPA-13, Y2).';
 const CLASS_QUERY_METHODS = '[callee.property.name=/^(querySelector|querySelectorAll|closest|matches)$/]';
@@ -228,9 +225,8 @@ const CLASS_QUERY_BANS = [
 /*
  * ARCH-05's third clause - "no per-component class rule" - reaches only rules written inside globals.css, and a
  * stylesheet does not have to be a file. WR-04: a <style> element with a rule in it is exactly what
- * legacy/renderer/shared.js:255-285 did for the toast transition, and replacing it with @theme tokens is the change
- * 07-E-SUMMARY.md presents as ARCH-05's whole point. Nothing stopped it coming back, and the imperative routes to a
- * per-element style were open too.
+ * legacy/renderer/shared.js:255-285 did for the toast transition. Nothing stopped it coming back, and the
+ * imperative routes to a per-element style were open too.
  */
 const ARCH_05_MESSAGE = 'Styling is Tailwind utilities on components: one stylesheet, no rule injected at run time and no inline style. A value Tailwind cannot express is an @theme token (ARCH-05).';
 const STYLE_INJECTION_BANS = [
@@ -254,15 +250,13 @@ const STYLE_INJECTION_BANS = [
  * S2, criterion 1. React escapes a JSX child, so the v2 renderer is safe by construction rather than by care - and
  * "by construction" is worth exactly as much as the number of doors left open around it.
  *
- * v1.2.1 had four: legacy/pages/companies.html:141 and :145 built
- * onclick="editCompany(${company.id}, '${company.name.replace(/'/g, "\\'")}')" - one character escaped out of the
- * six that matter; legacy/renderer/shared.js:122 interpolated a toast message into innerHTML; :179-182 did the same
- * with a title, a description and a whole block of caller-supplied HTML; and every page's own showToast copied the
- * first of those. A company name, a session name and a note all come out of the database and one of them is
- * whatever the user typed, so each is untrusted text on a screen.
+ * v1.2.1 had four: legacy/pages/companies.html:141 and :145 built an onclick= out of a company name with one
+ * character escaped out of the six that matter; legacy/renderer/shared.js:122 interpolated a toast message into
+ * innerHTML; :179-182 did the same with a title, a description and a block of caller-supplied HTML; and every
+ * page's own showToast copied the first. Each of those values comes out of the database, and one is whatever the
+ * user typed.
  *
- * dangerouslySetInnerHTML is the one that would come back: it is the sanctioned React spelling of the same thing,
- * and nothing in this app has a reason to render markup it did not write itself.
+ * dangerouslySetInnerHTML is the one that would come back: it is the sanctioned React spelling of the same thing.
  */
 const HTML_INJECTION_MESSAGE = 'Untrusted text is a JSX child, never HTML. A company name, a session name and a note all come from the database, and one of them is <img src=x onerror=alert(1)> (S2).';
 const HTML_INJECTION_BANS = [
@@ -282,11 +276,9 @@ const HTML_INJECTION_BANS = [
 ].map((selector) => ({ selector, message: HTML_INJECTION_MESSAGE }));
 
 /*
- * ARCH-03, criterion 7: the renderer's direction of flow, as lint rather than as a convention.
- *
- * Phase 7 slice A asserted these directions against the source tree, which catches them only where a test thought
- * to look. Here each one is a rule the linter applies to every renderer file, and each is lifted in exactly the
- * places ARCH-03 names - so the allowlist is the architecture, written once.
+ * ARCH-03, criterion 7: the renderer's direction of flow, as lint rather than as a convention. Phase 7 slice A
+ * asserted these directions against the source tree, which catches them only where a test thought to look. Here
+ * each is a rule the linter applies to every renderer file, lifted in exactly the places ARCH-03 names.
  */
 const RENDERER_FACADE_MESSAGE = 'The preload bridge is opened in lib/ipc.ts and called from features/<domain>/api or app/providers; everywhere else takes the data from a hook (ARCH-03).';
 const RENDERER_FACADE_PATHS = [{ name: '@shared/constants/bridge', message: RENDERER_FACADE_MESSAGE }];
@@ -353,9 +345,8 @@ const WEB_STORAGE_BANS = [
 /*
  * CR-03(a): no-restricted-imports inspects ImportDeclaration and the two export-from forms, and nothing else. It
  * does not inspect ImportExpression, so an await import of @renderer/lib/ipc walked past all four ARCH-03 bans -
- * including the cross-feature one the config marks "never lifted". This is a syntactic rule, so it reaches where
- * no-restricted-imports structurally cannot, and it is composed from the same lift set so an area that lifts a
- * static import lifts the dynamic one with it and nothing else.
+ * including the cross-feature one the config marks "never lifted". This syntactic rule reaches where
+ * no-restricted-imports structurally cannot, composed from the same lift set.
  *
  * The selectors use . where a / belongs: esquery parses an attribute regex itself and cannot escape a slash.
  */
