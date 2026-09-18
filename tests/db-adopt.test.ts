@@ -256,11 +256,9 @@ describe('V2-SCHEMA-02: a crash mid-adoption leaves exactly one openable databas
 /*
  * DATA CR-01. The "target wins outright" rule was one fs.existsSync at the top of the function, ~190 ms of
  * checkpoint, open/close and integrity_check before the move it guards. fs.renameSync replaces an existing target
- * silently on NTFS and on POSIX alike, so a workflow.db restored from a backup, materialised by a roaming profile
- * or dropped in by a sync client inside that window was destroyed and the adoption reported success.
- *
- * The window is reached here through the beforeRename kill point, which is the same instant a real file would
- * appear in - the hook is the last thing that runs before the irreversible step.
+ * silently on NTFS and POSIX alike, so a workflow.db restored from a backup or dropped in by a sync client inside
+ * that window was destroyed and the adoption reported success. The window is reached here through the beforeRename
+ * kill point, the last thing that runs before the irreversible step.
  */
 describe('V2-SCHEMA-02: a database that appears at the new name during the move still wins', () => {
     const plant = (target: string) => (): void => {

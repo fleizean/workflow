@@ -24,18 +24,16 @@ import type { DataDomain, IpcChannel, IpcHandlers, IpcResult } from '@shared/typ
 /*
  * Criterion 4, executed rather than reviewed.
  *
- * The failure this file exists for is quiet and total. The preload bridge RESOLVES an { ok: false, error } envelope
- * - it never rejects, which is right for a wire format and wrong for a caller. Hand that envelope straight to
+ * The failure this file exists for is quiet and total. The preload bridge RESOLVES an { ok: false, error }
+ * envelope - it never rejects, which is right for a wire format and wrong for a caller. Hand that straight to
  * TanStack Query and Query sees a successful result whose data happens to be an error object: isError is false
  * forever, every error branch in the UI is dead code, and a failed call renders as an empty list. Nothing about
- * that is visible to typecheck or to lint, and a source-shape assertion can only say that `invoke` contains a
- * throw. So this runs the real thing: a real dispatch over a handler that fails, through the real bridge shape,
- * into the real query objects the hooks pass to useQuery, on a client built by the real factory.
+ * that is visible to typecheck or to lint. So this runs the real thing: a real dispatch over a handler that fails,
+ * through the real bridge shape, into the real query objects the hooks pass to useQuery.
  *
- * What it does NOT prove: that a React component renders the error state. There is no jsdom in this project, so
- * the last step - useQuery(sessionsQuery) inside a rendered tree - is asserted by reading the hook instead. That
- * is why the query objects are exported: the thing executed here is the same object the hook passes in, not a copy
- * of it written for the test.
+ * What it does NOT prove: that a React component renders the error state - there is no jsdom here, so the last
+ * step is asserted by reading the hook. That is why the query objects are exported: the thing executed here is the
+ * same object the hook passes in, not a copy written for the test.
  */
 
 const FAILING_CHANNEL = 'sessions:list';

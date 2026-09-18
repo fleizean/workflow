@@ -6,22 +6,17 @@ import { fileURLToPath } from 'node:url';
 /*
  * Why this file exists.
  *
- * baselines/v1.2.1/pixels/ and computed/ are the only record of what v1.2.1 looked like. Phase 8
- * (SPA-14) deletes legacy/pages/*.html once the parity checklist is ticked, and after that the app
- * cannot be re-rendered at all: re-capturing would mean reverting better-sqlite3 and reinstalling
- * the pinned installer. So a capture that was partial, or that photographed an unstyled frame, is
- * not a recoverable mistake - it is a baseline that quietly lies for the rest of the project.
+ * baselines/v1.2.1/pixels/ and computed/ are the only record of what v1.2.1 looked like. SPA-14 deletes
+ * legacy/pages/*.html once the parity checklist is ticked, and after that the app cannot be re-rendered at all. So
+ * a capture that was partial, or that photographed an unstyled frame, is not a recoverable mistake - it is a
+ * baseline that quietly lies for the rest of the project.
  *
- * The failure this guards against is specifically the QUIET one. A capture that dies loudly gets
- * fixed on the spot. A capture that writes 19 of 20 files, or that raced the Tailwind Play CDN on
- * one page out of four, leaves artifacts that look entirely normal. In Phase 8 the first would
- * silently narrow the parity check rather than fail it, and the second would surface as a diff on
- * exactly one page - which reads like a rewrite regression on that page, the most expensive
- * possible way to discover a capture bug.
+ * The failure this guards against is specifically the QUIET one. A capture that writes 19 of 20 files, or that
+ * raced the Tailwind Play CDN on one page out of four, leaves artifacts that look entirely normal: the first
+ * silently narrows the parity check rather than failing it, and the second surfaces as a diff on exactly one page,
+ * which reads like a rewrite regression - the most expensive possible way to discover a capture bug.
  *
- * Scope: presence, pairing, decodability, parseability and applied styling. This file compares NO
- * pixels. Pixel diffing is Phase 8's job and needs pixelmatch and pngjs; pulling those forward
- * would add supply-chain surface for no benefit here.
+ * Scope: presence, pairing, decodability, parseability and applied styling. This file compares NO pixels.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -47,11 +42,10 @@ const SIZES: ReadonlyArray<readonly [number, number]> = [
 const PALETTE_BACKGROUND = 'rgb(16, 28, 34)';
 
 /*
- * Duplicated from COMPUTED_PROPS in tools/baseline/capture.mjs ON PURPOSE - importing it would make
- * this assertion tautological. The point is that the COMMITTED baselines carry this exact property
- * set: if someone widens or narrows the driver's list, the artifacts on disk become stale and the
- * Phase 8 diff would compare different properties on either side. Duplication makes that a test
- * failure that says "re-capture"; an import would make it silently pass.
+ * Duplicated from COMPUTED_PROPS in tools/baseline/capture.mjs ON PURPOSE - importing it would make this assertion
+ * tautological. The point is that the COMMITTED baselines carry this exact property set: if someone widens or
+ * narrows the driver's list, the artifacts on disk become stale and the Phase 8 diff would compare different
+ * properties on either side. Duplication makes that a test failure that says "re-capture".
  */
 const COMPUTED_PROPS = [
     'display', 'position', 'width', 'height', 'margin', 'padding', 'color',
@@ -86,11 +80,10 @@ function readRecord(stem: string): StyleRecord {
 }
 
 /*
- * The <body> element's key. tools/baseline/capture.mjs keys every record by a structural selector
- * path built from the element up to (but excluding) document.documentElement, so <body> is a
- * single top-level segment - `body:nth-child(2)` in practice, because <head> precedes it. Matched
- * by shape rather than by that literal string so a future <html> with a different child order
- * still resolves, while anything nested (which would contain ' > ') still cannot match.
+ * The <body> element's key. tools/baseline/capture.mjs keys every record by a structural selector path built from
+ * the element up to (but excluding) document.documentElement, so <body> is a single top-level segment. Matched by
+ * shape rather than by that literal string so a future <html> with a different child order still resolves, while
+ * anything nested (which would contain ' > ') still cannot match.
  */
 function bodyKey(record: StyleRecord): string | undefined {
     return Object.keys(record).find((key) => /^body(:nth-child\(\d+\))?$/.test(key));
@@ -135,17 +128,14 @@ describe('CUSTODY-10: the v1.2.1 baselines are complete and were captured styled
     });
 
     /*
-     * Not in the plan's behaviour list; added because a real defect made it necessary. The rule
-     * `baselines/** text eol=lf` in .gitattributes is an explicit `text`, not `text=auto`, so it
-     * forces end-of-line conversion with NO binary detection and overrides the `*.png binary` rule
-     * earlier in that file - later rules win. Under it, git stripped the 0x0D of every CRLF pair
-     * inside the PNG byte stream on commit (measured: a 16-byte probe stored as a 13-byte blob).
-     * Every check above would still have passed: the files are present, paired and non-zero. Only
-     * decoding catches it, and it would otherwise have surfaced in Phase 8.
+     * Not in the plan's behaviour list; added because a real defect made it necessary. The rule `baselines/** text
+     * eol=lf` in .gitattributes is an explicit `text`, not `text=auto`, so it forces end-of-line conversion with NO
+     * binary detection and overrides the `*.png binary` rule earlier in that file - later rules win. Under it, git
+     * stripped the 0x0D of every CRLF pair inside the PNG byte stream on commit (measured: a 16-byte probe stored
+     * as a 13-byte blob). Every check above would still have passed; only decoding catches it.
      *
-     * Checking the IHDR dimensions against the filename is the same assertion from the other side:
-     * the driver waits for `window.innerWidth === <requested width>` before each shot precisely so
-     * that an off-by-one content size cannot be filed under the wrong name.
+     * Checking the IHDR dimensions against the filename is the same assertion from the other side: the driver waits
+     * for `window.innerWidth === <requested width>` before each shot precisely so a wrong size cannot be misfiled.
      */
     it('every screenshot is a decodable PNG whose pixel dimensions match its filename', () => {
         const wrong: string[] = [];

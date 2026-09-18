@@ -482,17 +482,14 @@ describe('the services the container composes', () => {
     });
 
     /*
-     * POMO-04, driven end to end rather than reasoned about.
-     *
-     * A work interval completes, the process stops without ever getting to the prompt, and a second launch over the
-     * same file is asked - with the SCREEN's own predicate, the one features/timer/pomodoro-view.ts exports and
-     * TimerPage renders from - whether it still owes the user a question. Then the answer is given as an ordinary
+     * POMO-04, driven end to end rather than reasoned about. A work interval completes, the process stops before
+     * the prompt, and a second launch over the same file is asked - with the SCREEN's own predicate, the one
+     * pomodoro-view.ts exports - whether it still owes the user a question. Then the answer is given as an ordinary
      * session update, and the predicate stops finding it. The day's recorded total is asserted across all of it,
      * because the one thing attribution must never do is change how much time was worked.
      *
      * The stop here is "nothing further was written", which is what the prompt's crash actually costs: the
-     * transaction committed before the completion callback returned, so there is nothing else in flight. A real
-     * SIGKILL mid-write is tests/db-kill.test.ts's job.
+     * transaction committed before the completion callback returned. A real SIGKILL mid-write is db-kill.test.ts's.
      */
     /*
      * 08-REVIEW-TIMER WR-01, over the real repository. The sentinel is carried in user data and read by a second
@@ -607,11 +604,9 @@ describe('the services the container composes', () => {
 
     /*
      * WR-02. The timer and the pomodoro each own an accumulator and each register their own repeat, and nothing
-     * below the composition root can stop both from running. An hour spent in pomodoro mode then produces interval
-     * rows AND an hour in the main accumulator the user is prompted to save - two hours recorded for one worked.
-     * Inventing time is the same failure as losing it, so the rule is stated and enforced here: at most one
-     * accumulator counts at a time. The sum below is the whole assertion - what is on disk plus what is still held
-     * must equal the wall clock that passed, never twice it.
+     * below the composition root can stop both from running. An hour in pomodoro mode then produces interval rows
+     * AND an hour in the main accumulator the user is prompted to save - two hours recorded for one worked. The sum
+     * below is the whole assertion: what is on disk plus what is still held must equal the wall clock, never twice it.
      */
     it('counts a pomodoro-mode hour once, whichever accumulator the user started first', async () => {
         const dbPath = makeCleanFixture();
@@ -898,10 +893,8 @@ describe('the services the container composes', () => {
         /*
          * 08-REVIEW-TIMER CR-01. The Save dialog reads the counted value when it opens and the clock keeps running
          * under it; whatever the user then submits, the accumulator used to be zeroed regardless. Counted 3600 at
-         * open, 3900 at submit, 3600 written, accumulator zeroed - five minutes of real work recorded nowhere.
-         *
-         * The rule is the one the pomodoro completion already follows: only seconds that reached a session row may
-         * be dropped. What a save did not write stays counted, on the clock, where the user can still save it.
+         * open, 3900 at submit, 3600 written, accumulator zeroed - five minutes of real work recorded nowhere. The
+         * rule is the pomodoro completion's: only seconds that reached a session row may be dropped.
          */
         it('keeps the seconds a save did not write, rather than zeroing the whole accumulator', async () => {
             const dbPath = makeCleanFixture();

@@ -7,23 +7,19 @@ import { fileURLToPath } from 'node:url';
 /*
  * Why this file exists, and why it duplicates a CI step.
  *
- * This repository is public. %APPDATA%\workflow-timer\krono.db holds real client names and real
- * work notes. Committing it is the one mistake in this whole restructure that cannot be undone:
- * a history rewrite does not reach the clones already taken, and there is no server and no
- * telemetry through which anything could be recalled. D-03 therefore says schema only, and this
- * file is what turns that decision from a thing someone remembers into a thing the suite checks.
+ * This repository is public. %APPDATA%\workflow-timer\krono.db holds real client names and real work notes.
+ * Committing it is the one mistake in this whole restructure that cannot be undone: a history rewrite does not
+ * reach the clones already taken, and there is no server through which anything could be recalled. D-03 says
+ * schema only, and this file turns that from a thing someone remembers into a thing the suite checks.
  *
- * Plan 01-02 added an equivalent step to .github/workflows/verify.yml. The duplication is
- * deliberate: the CI step catches the mistake before a push reaches the remote, this test catches
- * it in the local loop before the commit exists at all. For an irreversible mistake, two
- * independent checks at two different moments is the right amount, not redundancy.
+ * Plan 01-02 added an equivalent step to verify.yml. The duplication is deliberate: the CI step catches the
+ * mistake before a push reaches the remote, this test catches it before the commit exists at all.
  *
- * The same reasoning covers the installer binaries. They are 83.5 MB and 106 MB, .gitignore does
- * not exclude *.exe or *.dmg, and 190 MB of blobs in a public git history is equally permanent.
- * They are pinned by digest in baselines/v1.2.1/MANIFEST.md instead (CUSTODY-08).
+ * The same reasoning covers the installer binaries. They are 83.5 MB and 106 MB, .gitignore does not exclude *.exe
+ * or *.dmg, and 190 MB of blobs in a public git history is equally permanent. They are pinned by digest in
+ * baselines/v1.2.1/MANIFEST.md instead (CUSTODY-08).
  *
- * Failure messages name the offending paths on purpose. A bare boolean failure here would tell
- * the reader nothing about what to remove, and the removal is urgent.
+ * Failure messages name the offending paths on purpose: the removal is urgent.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -59,17 +55,15 @@ const trackedMatching = (extensions: string[]): string[] =>
 const digestCandidates = (text: string): string[] => text.match(/\b[0-9a-fA-F]{32,}\b/g) ?? [];
 
 /*
- * The manifest grew a second and a third kind of pin in plan 01-05, and "record vs enforcement"
- * has to be checked per kind or not at all:
+ * The manifest grew a second and a third kind of pin in plan 01-05, and "record vs enforcement" has to be checked
+ * per kind or not at all:
  *
- *   section 1  the release installers   enforced by tools/baseline/fetch-installer.sh
+ *   section 1  the release installers          enforced by tools/baseline/fetch-installer.sh
  *   section 3  the vendored CDN + font assets  enforced by tools/baseline/vendor/index.json
  *   section 4  the unpacked application files  a provenance record; nothing re-derives them
  *
- * Before this existed, the section-1 assertion scanned the WHOLE file, so the first vendored
- * digest added in section 3 read as "documented but not enforced by the installer fetch script"
- * and reddened a test about installers. Scoping by section keeps each pin checked against the
- * thing that actually enforces it, instead of loosening the check to make room.
+ * Before this existed, the section-1 assertion scanned the WHOLE file, so the first vendored digest added in
+ * section 3 read as "documented but not enforced" and reddened a test about installers.
  */
 const manifestSection = (n: number): string => {
     const text = read(MANIFEST);
@@ -212,11 +206,10 @@ describe('CUSTODY-07 / CUSTODY-08: no real user data and no large binary enters 
     });
 
     /*
-     * The same record-vs-enforcement invariant, one section down. tools/baseline/capture.mjs
-     * refuses to fulfil a request from a vendored file whose digest is not in the manifest, so a
-     * vendor digest that drifts out of section 3 does not silently degrade the baseline - it stops
-     * the capture. This asserts the two lists are the same list, which is the precondition for that
-     * refusal meaning anything.
+     * The same record-vs-enforcement invariant, one section down. tools/baseline/capture.mjs refuses to fulfil a
+     * request from a vendored file whose digest is not in the manifest, so a vendor digest that drifts out of
+     * section 3 stops the capture rather than silently degrading the baseline. This asserts the two lists are the
+     * same list, which is the precondition for that refusal meaning anything.
      */
     it('every vendored capture asset is pinned in the manifest, and vice versa (CUSTODY-10)', () => {
         const indexPath = path.join(repoRoot, 'tools/baseline/vendor/index.json');

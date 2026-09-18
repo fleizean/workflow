@@ -18,25 +18,20 @@ import { EXPECTED_APP_USER_MODEL_ID, MAX_NOTIFY_ICON_BYTES } from '../tools/smok
  *               (electron v28.3.3, lib/browser/init.ts)
  *
  * On Windows DIR_APP_DATA is %APPDATA%, so today this repository resolves to
- * %APPDATA%\workflow-timer\krono.db — the file holding every existing user's tracked time.
+ * %APPDATA%\workflow-timer\krono.db - the file holding every existing user's tracked time.
  *
- * Renaming `name` does not throw, does not warn, and does not fail a build. The app simply
- * launches against a different, empty directory and looks brand new. There is no server and no
- * telemetry, so a release that does this cannot be recalled from anyone already running it.
+ * Renaming `name` does not throw, does not warn, and does not fail a build. The app simply launches against a
+ * different, empty directory and looks brand new, and there is no telemetry, so a release that does this cannot be
+ * recalled from anyone already running it. The GitHub repository was renamed, which makes "fixing" `name` to match
+ * feel like tidying up. That is the single edit this file exists to stop (CUSTODY-02).
  *
- * The GitHub repository was renamed to fleizean/workflow, which makes "fixing" `name` to match
- * feel like tidying up. It is not. That is the single edit this file exists to stop (CUSTODY-02).
+ * Phase 2 (D-10/D-11) moved two things this file guards, and every assertion moved with them in the same commit -
+ * a follow-up commit would have left a window in which the guard reported green while protecting nothing:
  *
- * Phase 2 (plan 02-01, D-10/D-11) moved two things this file guards, and every assertion moved
- * with them in the same commit - a follow-up commit would have left a window in which the guard
- * reported green while protecting nothing:
- *
- *   - The electron-builder configuration left package.json for electron-builder.yml. The two
- *     builder assertions below read that file, as text, and a third asserts package.json carries
- *     no inline builder block, so the configuration cannot silently move back.
- *   - The main process moved to src/main/**. The setName/setPath scan was a hard-coded list of the
- *     three v1.2.1 files; it is now every source file git knows about, with one annotated
- *     allowlist entry for the development userData module.
+ *   - The electron-builder configuration left package.json for electron-builder.yml. The two builder assertions
+ *     read that file as text, and a third asserts package.json carries no inline builder block.
+ *   - The main process moved to src/main/**. The setName/setPath scan was a hard-coded list of three v1.2.1 files;
+ *     it is now every source file git knows about, with one annotated allowlist entry.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -70,18 +65,13 @@ const ALTERNATE_BUILDER_CONFIGS = [
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.cjs', '.mjs'];
 
 /*
- * The whole source tree, as git sees it: tracked files AND files not yet committed, minus
- * everything .gitignore excludes.
+ * The whole source tree, as git sees it: tracked files AND files not yet committed, minus everything .gitignore
+ * excludes. git, not a filesystem walk, for the reason tests/custody-hygiene.test.ts gives. execFileSync with an
+ * argument array: no shell, no quoting surface.
  *
- * git, not a filesystem walk, for the reason tests/custody-hygiene.test.ts gives: the standard
- * exclusions keep out/, dist/, node_modules and the gitignored planning directories out for free.
- * execFileSync with an argument array: no shell, no quoting surface.
- *
- * --cached --others, NOT a tracked-only listing. This test runs before the commit that adds a
- * file exists - that is when it matters. A tracked-only listing cannot see src/main/** at that
- * moment, so it would scan nothing new and report green while covering none of the tree it was
- * just widened to protect: the same "green while protecting nothing" failure the Phase 1 handoff
- * names for this exact assertion, one step earlier.
+ * --cached --others, NOT a tracked-only listing. This test runs before the commit that adds a file exists - that is
+ * when it matters. A tracked-only listing would scan nothing new and report green while covering none of the tree
+ * it was just widened to protect.
  */
 const sourceFiles = (): string[] =>
     execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
@@ -199,10 +189,9 @@ describe('CUSTODY-02: the userData path cannot silently move', () => {
         /*
          * Owner report, 2026-09-18: Windows toasts carried the Electron identity and a default icon because
          * setAppUserModelId was never called. Setting it to the WRONG value is worse than not setting it - the
-         * toast then points at an application Windows has no installed shortcut for, so it cannot resolve a name
-         * or a logo and has no reason to fall back. So the three places that spell the identity are held equal:
-         * electron-builder.yml (what NSIS registers the shortcut under), src/main/config.ts (what the app applies)
-         * and tools/smoke-packaged.mjs (what the packaged launch is checked against).
+         * toast then points at an application Windows has no installed shortcut for, so it cannot resolve a name or
+         * a logo and has no reason to fall back. So the three places that spell the identity are held equal:
+         * electron-builder.yml, src/main/config.ts and tools/smoke-packaged.mjs.
          */
         const declared = /^appId:\s*(\S+)\s*$/m.exec(builderConfig);
         expect(declared, BUILDER_CONFIG + ' declares no appId').not.toBeNull();

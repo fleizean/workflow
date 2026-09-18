@@ -12,18 +12,14 @@ import { read, repoRoot, scriptKindFor, stripCommentsAndStrings } from './helper
  * SPA-11, SPA-12 and criterion 3, checked against CSS Tailwind actually emitted (C3).
  *
  * v1.2.1 loaded the Tailwind Play CDN, which generates CSS by watching the live DOM: a class name that only exists
- * after `'bg-' + tone + '-100'` runs still got styled, because the CDN saw the element after the concatenation.
- * Build-time Tailwind does the opposite - it reads the SOURCE, never the DOM - so those fourteen sites emit no CSS
- * at all and the alert's icon circle loses its colour entirely. That failure is invisible to typecheck, to lint and
- * to every test that reads source text, which is why this file compiles the real globals.css against the real
- * renderer with Tailwind's own scanner and then asks the output.
+ * after `'bg-' + tone + '-100'` runs still got styled. Build-time Tailwind reads the SOURCE, never the DOM - so
+ * those fourteen sites emit no CSS at all and the alert's icon circle loses its colour entirely. That failure is
+ * invisible to typecheck, to lint and to every test that reads source text, which is why this file compiles the
+ * real globals.css against the real renderer with Tailwind's own scanner and then asks the output.
  *
- * It is deliberately NOT the build gate. `npm run build` would prove the same thing, but only where a build has
- * run; this compiles in-process in about a second, so a concatenated class name fails the ordinary test run.
- *
- * The negative control below is the part that makes the rest mean something: it puts a concatenated class name in
- * a throwaway file and shows Tailwind's scanner missing it while finding its literal neighbours. Without it, every
- * assertion here could pass over a scanner that simply returns everything.
+ * Deliberately NOT the build gate: this compiles in-process in about a second, so a concatenated class name fails
+ * the ordinary test run. The negative control below is what makes the rest mean something - it shows Tailwind's
+ * scanner missing a concatenated name while finding its literal neighbours.
  */
 
 const STYLES_DIR = 'src/renderer/src/styles';
@@ -151,8 +147,7 @@ describe('C3: the classes the alert draws its icon circle with exist in the emit
  * Criterion 4, and the one class of failure this screen can have that nothing else here would see. The switch on
  * Settings is drawn by `peer-checked:` utilities rather than v1.2.1's `has-[:checked]:`, because the input has to
  * be the switch's own sibling for the row to be one label. A utility that emits no CSS leaves a switch that never
- * moves and never changes colour, with a checkbox behind it that works perfectly - which is the C3 failure wearing
- * a different hat.
+ * moves, with a checkbox behind it that works perfectly - the C3 failure wearing a different hat.
  */
 describe('C3: the settings switch is styled in the state it has to show', () => {
     const TOGGLE = 'src/renderer/src/features/settings/components/SettingsToggle.tsx';
@@ -219,10 +214,8 @@ describe('C3: the same scanner misses a class name that is built rather than wri
 
     /*
      * WR-03: this used to restate the previous test and then assert that a scanner with no sources finds nothing,
-     * which is a tautology. Neither line compiled bg-fuchsia-100, so the claim 07-C-SUMMARY.md made for it - that
-     * the same name written out literally WOULD have been styled - was not made anywhere. It compiles it now, so
-     * the day Tailwind drops a colour from its palette this control fails instead of passing while meaning
-     * nothing.
+     * which is a tautology. Neither line compiled bg-fuchsia-100, so 07-C-SUMMARY.md's claim - that the same name
+     * written out literally WOULD have been styled - was not made anywhere. It compiles it now.
      */
     it('would style that name if it were written out, so the miss is about scanning and not about the colour', async () => {
         expect(compiled.css.includes(selectorFor('bg-fuchsia-100')),
@@ -386,13 +379,10 @@ describe('SPA-12: the renamed utility scales are swept, and stay swept', () => {
      * The half of the rename table the ban above cannot express, found while porting Home (08-C).
      *
      * v4 renamed the BOTTOM of four scales as well as the bare spelling: v3's `shadow-sm` is v4's `shadow-xs`, v3's
-     * `rounded-sm` is v4's `rounded-xs`, and the same for blur and backdrop-blur. So a block of markup copied out of
-     * legacy/ that already said `shadow-sm` renders one step LARGER, with nothing to complain and nothing above to
-     * catch it - `shadow-sm` is also where the sweep sends the bare `shadow`, so it cannot be banned.
-     *
-     * It is therefore swept by hand and pinned here: the values below are read out of real Tailwind, and the two
-     * spellings the sweep produced have to still be in the renderer, so a later copy-paste that reverts one of them
-     * is visible. Legacy carried 26 `shadow-sm` and 14 `backdrop-blur-sm`; six of them had reached the v2 tree.
+     * `rounded-sm` is v4's `rounded-xs`, and the same for blur and backdrop-blur. So markup copied out of legacy/
+     * that already said `shadow-sm` renders one step LARGER, with nothing to catch it - `shadow-sm` is also where
+     * the sweep sends the bare `shadow`, so it cannot be banned. It is swept by hand and pinned here: the values
+     * are read out of real Tailwind. Legacy carried 26 `shadow-sm` and 14 `backdrop-blur-sm`; six had reached v2.
      */
     it('knows that v4 renamed the bottom of the shadow, blur and radius scales too', async () => {
         const base = path.join(repoRoot, STYLES_DIR);
@@ -435,15 +425,13 @@ describe('SPA-12: the renamed utility scales are swept, and stay swept', () => {
 /*
  * The category of regression the deleted global stylesheet left behind.
  *
- * legacy/styles/common.css:8-15 hid scrollbars for the WHOLE document: `::-webkit-scrollbar { display: none }` plus
- * `* { -ms-overflow-style: none; scrollbar-width: none }`. Nothing in v1.2.1 ever drew one, so no page had to ask.
- * ARCH-05 deleted that file and the cutover replaced it in exactly one place - AppShell's content area - which left
- * every dialog in the app drawing a raw Windows scrollbar down a dark panel, and the filter panel's inner company
- * list doing the same inside it. Two of the three scroll containers in the renderer, from one deleted rule.
+ * legacy/styles/common.css:8-15 hid scrollbars for the WHOLE document, so nothing in v1.2.1 ever drew one and no
+ * page had to ask. ARCH-05 deleted that file and the cutover replaced it in exactly one place - AppShell's content
+ * area - which left every dialog drawing a raw Windows scrollbar down a dark panel, and the filter panel's inner
+ * company list doing the same inside it. Two of the three scroll containers in the renderer, from one deleted rule.
  *
  * So the replacement is not "remember to add the pair": it is this, which fails on the next scroll container that
- * forgets. Class strings in this renderer are built by concatenating adjacent literals, so the joins are collapsed
- * first - otherwise a constant split across two lines would read as two unrelated class lists.
+ * forgets. Adjacent string literals are collapsed first, or a constant split across two lines reads as two lists.
  */
 describe('ARCH-05: a scroll container hides its scrollbar, as the deleted global rule did', () => {
     const SCROLLS = /(?:^|\s)overflow(?:-[xy])?-(?:auto|scroll)(?:\s|$)/;

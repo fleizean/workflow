@@ -49,12 +49,10 @@ const REAL_SCHEMA = path.resolve(
 );
 
 /*
- * The WAL fixture's row split, RESTATED here rather than imported from the generator.
- *
- * Importing the constants would make the assertion tautological - it would only prove the
- * generator agrees with itself. These numbers are the contract: 5 rows checkpointed into the
- * main file, 40 committed into the sidecar and never checkpointed. If someone narrows that
- * split the fixture stops being adversarial, and this test is what has to notice.
+ * The WAL fixture's row split, RESTATED here rather than imported from the generator - importing the constants
+ * would only prove the generator agrees with itself. These numbers are the contract: 5 rows checkpointed into the
+ * main file, 40 committed into the sidecar and never checkpointed. If someone narrows that split the fixture stops
+ * being adversarial, and this test is what has to notice.
  */
 const CHECKPOINTED_ROWS = 5;
 const CHECKPOINTED_SECONDS = 5 * 3600;
@@ -62,14 +60,10 @@ const WAL_ONLY_ROWS = 40;
 const WAL_ONLY_SECONDS = 40 * 100;
 
 /*
- * Reads a scalar out of a fixture. The typings default Result to unknown, so the row shape is
- * declared at the call site rather than asserted away with `any`.
- *
- * The missing-column guard is not defensive padding. A bare `row?.v ?? 0` returns 0 for any
- * query whose result column is not aliased `v` - which is every PRAGMA, since a PRAGMA names
- * its column after itself. An assertion built on that reads 0 whatever the database contains,
- * so it passes forever and can never fail. This file shipped exactly one such assertion (see
- * the foreign-key case below). Fail loudly instead of quietly.
+ * Reads a scalar out of a fixture. The missing-column guard is not defensive padding: a bare `row?.v ?? 0` returns
+ * 0 for any query whose result column is not aliased `v` - which is every PRAGMA, since a PRAGMA names its column
+ * after itself. An assertion built on that reads 0 whatever the database contains, so it passes forever and can
+ * never fail. This file shipped exactly one such assertion (see the foreign-key case below).
  */
 function scalar(dbPath: string, sql: string): number {
     const db = new Database(dbPath);
@@ -91,15 +85,11 @@ function scalar(dbPath: string, sql: string): number {
 /*
  * Closes a database the way the application does: open it, USE it, close it.
  *
- * The "use it" step is load-bearing, and its absence was a real defect in this file's first
- * draft. `new Database(x).close()` does NOT checkpoint, because SQLite opens the database file
- * lazily - a connection that never reads has never opened the -wal, so closing it has nothing
- * to check point and the sidecar survives untouched. Measured on better-sqlite3 13.0.3:
- * open-then-close leaves the -wal in place; open-read-close deletes it.
- *
- * That matters twice over. It is the difference between a degradation test that exercises the
- * real failure mode and one that asserts nothing at all, and it is a genuine hazard for plan
- * 01-08's restore path: opening a database is not the same as touching one.
+ * The "use it" step is load-bearing, and its absence was a real defect in this file's first draft.
+ * `new Database(x).close()` does NOT checkpoint, because SQLite opens the database file lazily - a connection that
+ * never reads has never opened the -wal. Measured on better-sqlite3 13.0.3: open-then-close leaves the -wal in
+ * place; open-read-close deletes it. That is the difference between a degradation test that exercises the real
+ * failure mode and one that asserts nothing at all.
  */
 function closeCleanlyLikeTheApp(dbPath: string): void {
     const db = new Database(dbPath);
@@ -124,15 +114,12 @@ function columnsOf(dbPath: string, table: string): string[] {
 
 describe('the v1.2.1 fixture schema', () => {
     /*
-     * D-05. Plan 01-04 extracted the owner's real sqlite_master and concluded it matches
-     * database/db.js. This asserts that conclusion mechanically and permanently, against the
-     * fixture that is actually used, rather than trusting a comparison made once by hand.
+     * D-05. Plan 01-04 extracted the owner's real sqlite_master and concluded it matches database/db.js. This
+     * asserts that conclusion mechanically and permanently, against the fixture actually used.
      *
-     * The comparison is byte-for-byte on purpose. sqlite_master stores the CREATE statement as
-     * it was typed, so an ALTER-appended column leaves a textual scar - CURRENT_TIMESTAMP,
-     * newline, then ", excel_column TEXT, ...". A fixture built from flat CREATE TABLEs would be
-     * semantically identical and textually different, and would therefore read as a second
-     * legacy variant that does not exist. That is why v121.sql runs the migration path.
+     * Byte-for-byte on purpose: sqlite_master stores the CREATE statement as it was typed, so an ALTER-appended
+     * column leaves a textual scar. A fixture built from flat CREATE TABLEs would be semantically identical and
+     * textually different, and would read as a second legacy variant that does not exist.
      */
     it("reproduces the owner's real sqlite_master byte for byte (D-05)", () => {
         const realFile = fs.readFileSync(REAL_SCHEMA, 'utf8').replace(/\r\n/g, '\n');
@@ -141,9 +128,8 @@ describe('the v1.2.1 fixture schema', () => {
     });
 
     /*
-     * The real database contains sqlite_sequence, created implicitly by AUTOINCREMENT, and it
-     * appears in no DDL anywhere in database/db.js. Plan 01-04 flagged it explicitly. Phase 4's
-     * migration runner must expect five objects in sqlite_master, not four.
+     * The real database contains sqlite_sequence, created implicitly by AUTOINCREMENT, and it appears in no DDL
+     * anywhere in database/db.js. Phase 4's migration runner must expect five objects in sqlite_master, not four.
      */
     it('contains the five objects a real v1.2.1 database has, sqlite_sequence included', () => {
         const names = schemaOf(makeEmptyFixture())
@@ -160,9 +146,9 @@ describe('the v1.2.1 fixture schema', () => {
     });
 
     /*
-     * Column ORDER is load-bearing, not cosmetic: Phase 4 reads the schema with PRAGMA
-     * table_info. In a real v1.2.1 database these columns were appended by ALTER TABLE and sit
-     * last. A tidier fixture would pass a test that the real database fails.
+     * Column ORDER is load-bearing, not cosmetic: Phase 4 reads the schema with PRAGMA table_info. In a real v1.2.1
+     * database these columns were appended by ALTER TABLE and sit last. A tidier fixture would pass a test that the
+     * real database fails.
      */
     it('keeps the ALTER-appended columns last, as a real v1.2.1 database has them', () => {
         const fx = makeEmptyFixture();
@@ -175,26 +161,20 @@ describe('the v1.2.1 fixture schema', () => {
     });
 
     /*
-     * CB-4 says: database/db.js never issues PRAGMA foreign_keys, therefore every declared
-     * ON DELETE CASCADE is inert in every real user's database. The premise is true. THE
-     * CONCLUSION IS FALSE, and this is where that gets nailed down rather than repeated.
+     * CB-4 says: database/db.js never issues PRAGMA foreign_keys, therefore every declared ON DELETE CASCADE is
+     * inert in every real user's database. The premise is true. THE CONCLUSION IS FALSE.
      *
-     * better-sqlite3 compiles SQLite with SQLITE_DEFAULT_FOREIGN_KEYS (confirmed in this
-     * driver's own PRAGMA compile_options), so enforcement is ON from the moment the driver
-     * opens a connection - pragma or no pragma. The cascade is LIVE for every user: deleting a
-     * company really does delete its work_sessions. That is not silent data loss;
-     * database/db.js:303-312 deletes the sessions explicitly first and companies.html warns with
-     * the exact session count, so the behaviour is intended and disclosed. But Phase 4's DATA-12
-     * must be sized as DEFENSIVE cleanup after third-party tools, not as cleanup of a population
-     * the application itself produces.
+     * better-sqlite3 compiles SQLite with SQLITE_DEFAULT_FOREIGN_KEYS (confirmed in this driver's own PRAGMA
+     * compile_options), so enforcement is ON from the moment the driver opens a connection. The cascade is LIVE for
+     * every user. That is not silent data loss - database/db.js:303-312 deletes the sessions explicitly first and
+     * companies.html warns with the exact count - but Phase 4's DATA-12 must be sized as DEFENSIVE cleanup after
+     * third-party tools, not as cleanup of a population the application itself produces.
      *
-     * The fixture's job is therefore to stay SILENT on the subject, exactly as database/db.js
-     * is, so that a fixture opened through the driver behaves as a real database does.
+     * The fixture's job is therefore to stay SILENT on the subject, exactly as database/db.js is.
      *
-     * The assertion this replaces read `scalar(fx, 'PRAGMA foreign_keys')` and expected 0. It
-     * passed - but a PRAGMA names its result column after itself, so scalar() found no column
-     * aliased `v` and returned its fallback. It asserted nothing whatsoever, and it asserted it
-     * about a claim that is false. scalar() now throws on that shape.
+     * The assertion this replaces read `scalar(fx, 'PRAGMA foreign_keys')` and expected 0. It passed - but a PRAGMA
+     * names its result column after itself, so scalar() found no column aliased `v` and returned its fallback. It
+     * asserted nothing whatsoever, about a claim that is false. scalar() now throws on that shape.
      */
     it('issues no foreign-key pragma, and is therefore opened with the cascades LIVE', () => {
         expect(readV121Ddl()).not.toMatch(/PRAGMA\s+foreign_keys/i);
@@ -240,10 +220,9 @@ describe('the WAL fixture', () => {
     });
 
     /*
-     * The property plan 01-08's negative control depends on. The main file alone is exactly what
-     * a naive fs.copyFileSync backup captures; the sidecar holds rows it never sees. Asserted as
-     * exact counts rather than as an inequality, because an inequality would still hold if the
-     * split drifted to 44/1 and the fixture quietly stopped being adversarial.
+     * The property plan 01-08's negative control depends on. The main file alone is exactly what a naive
+     * fs.copyFileSync backup captures; the sidecar holds rows it never sees. Asserted as exact counts rather than as
+     * an inequality, because an inequality would still hold if the split drifted to 44/1.
      */
     it('holds committed rows that the main database file alone does not contain', async () => {
         const fx = await makeWalFixture();
@@ -266,11 +245,10 @@ describe('the WAL fixture', () => {
     });
 
     /*
-     * The invariant must be able to fail, and it must fail on the real degradation mode rather
-     * than on a made-up one. A clean close checkpoints and deletes the -wal - that is exactly how
-     * a well-meaning fixture ends up silently empty, and it is why the owner's own krono.db-wal
-     * is 0 bytes. So: degrade a COPY by closing it cleanly, then point the generator's own guard
-     * at it.
+     * The invariant must be able to fail, and it must fail on the real degradation mode rather than a made-up one.
+     * A clean close checkpoints and deletes the -wal - that is exactly how a well-meaning fixture ends up silently
+     * empty, and it is why the owner's own krono.db-wal is 0 bytes. So: degrade a COPY by closing it cleanly, then
+     * point the generator's own guard at it.
      */
     it('throws instead of returning a fixture whose -wal is empty', async () => {
         const fx = await makeWalFixture();
@@ -302,8 +280,8 @@ describe('the rest of the fixture corpus', () => {
     });
 
     /*
-     * DATA-05. sum() over no rows is NULL, not 0, and a daily total that renders as "NaN" or
-     * "null" on a fresh install is the cheapest possible way to make a new user distrust the app.
+     * DATA-05. sum() over no rows is NULL, not 0, and a daily total that renders as "NaN" or "null" on a fresh
+     * install is the cheapest possible way to make a new user distrust the app.
      */
     it('sums duration to zero rather than null on the empty fresh-install fixture', () => {
         const fx = makeEmptyFixture();
@@ -323,19 +301,15 @@ describe('the rest of the fixture corpus', () => {
     });
 
     /*
-     * DATA-12. These rows are NOT what the application produces, and the fixture does not claim
-     * they are. The cascades are live - see "enforces ON DELETE CASCADE, contrary to CB-4" above -
-     * and database/db.js deletes the sessions explicitly before removing a company anyway, so the
-     * app's own delete path cannot strand one. The owner's real database holds 97 sessions and 0
+     * DATA-12. These rows are NOT what the application produces, and the fixture does not claim they are. The
+     * cascades are live - see "enforces ON DELETE CASCADE, contrary to CB-4" above - and database/db.js deletes the
+     * sessions explicitly before removing a company anyway. The owner's real database holds 97 sessions and 0
      * orphans.
      *
-     * The fixture is kept because it is DEFENSIVE, not descriptive. foreign_keys is a
-     * per-connection pragma, so anything that opens krono.db without better-sqlite3's compiled-in
-     * default - the sqlite3 CLI, DB Browser for SQLite, a hand-rolled repair script, a partial
-     * restore - can delete a company and leave its sessions pointing at nothing. Phase 4's cleanup
-     * has to survive that database whoever made it. So makeOrphanFixture() manufactures the state
-     * with an explicit PRAGMA, exactly as such a tool would; tests/fixtures/seed.ts records the
-     * correction and its consequences for DATA-12 at length.
+     * The fixture is kept because it is DEFENSIVE, not descriptive. foreign_keys is a per-connection pragma, so
+     * anything that opens krono.db without better-sqlite3's compiled-in default - the sqlite3 CLI, DB Browser, a
+     * repair script, a partial restore - can delete a company and strand its sessions. makeOrphanFixture()
+     * manufactures that state with an explicit PRAGMA, exactly as such a tool would.
      */
     it('carries work_sessions orphaned by a tool that opened the database without foreign keys', () => {
         const fx = makeOrphanFixture();
@@ -352,9 +326,8 @@ describe('the rest of the fixture corpus', () => {
 
 describe('fixture handling', () => {
     /*
-     * Pitfall 2. Opening the pristine fixture read-write checkpoints its sidecar away, and the
-     * NEXT test then runs against a single-file database and passes for the wrong reason. Every
-     * case must work on a copy of the whole triple.
+     * Pitfall 2. Opening the pristine fixture read-write checkpoints its sidecar away, and the NEXT test then runs
+     * against a single-file database and passes for the wrong reason. Every case must work on a copy of the triple.
      */
     it('copies the whole triple and leaves the pristine fixture untouched', async () => {
         const fx = await makeWalFixture();
@@ -377,10 +350,8 @@ describe('fixture handling', () => {
         expect(fs.statSync(fx + '-wal').size).toBe(before);
     });
 
-    /*
-     * Every created_at is passed explicitly; DEFAULT CURRENT_TIMESTAMP would make fixture content
-     * differ between runs and turn any content-based assertion into a flake.
-     */
+    // Every created_at is passed explicitly; DEFAULT CURRENT_TIMESTAMP would make fixture content differ between
+    // runs and turn any content-based assertion into a flake.
     it('generates identical row content on two runs', () => {
         const dump = (dbPath: string): string => {
             const db = new Database(dbPath);
@@ -402,12 +373,10 @@ describe('fixture handling', () => {
 /*
  * Reads a database's true row count and summed duration WITHOUT disturbing it.
  *
- * readonly:true is the whole point and is not interchangeable with scalar() above. A read-write
- * connection that reads and then closes CHECKPOINTS - it folds the -wal into the main file and
- * deletes the sidecar. Calling scalar() on a WAL fixture before taking the naive copy would
- * therefore hand the naive copy every row, and CUSTODY-03's negative control would pass while
- * proving the opposite of what it claims. Measured in plan 01-07: open-read-close removes the
- * sidecar; a read-only connection leaves it byte-for-byte intact.
+ * readonly:true is the whole point and is not interchangeable with scalar() above: a read-write connection that
+ * reads and then closes CHECKPOINTS, folding the -wal into the main file and deleting the sidecar. Calling scalar()
+ * on a WAL fixture before taking the naive copy would hand that copy every row, and CUSTODY-03's negative control
+ * would pass while proving the opposite of what it claims. Measured in plan 01-07.
  */
 function truth(dbPath: string): { count: number; sum: number } {
     const db = new Database(dbPath, { readonly: true, fileMustExist: true });
@@ -436,11 +405,10 @@ function backupDirFor(dbPath: string): string {
 }
 
 /*
- * Plan 01-08, Task 1 - the module's own contract, separate from the three requirement blocks.
- *
- * These are the properties that make the requirement proofs below possible at all: a destination
- * that cannot collide, a refusal to touch one that already exists, a source connection that does
- * not consume what it reads, and a deadline that can end a backup which will not end by itself.
+ * Plan 01-08, Task 1 - the module's own contract, separate from the three requirement blocks. These are the
+ * properties that make the requirement proofs below possible at all: a destination that cannot collide, a refusal
+ * to touch one that already exists, a source connection that does not consume what it reads, and a deadline that
+ * can end a backup which will not end by itself.
  */
 describe('src/lib/db/backup.ts module contract', () => {
     it('produces a verified copy matching the source on rows and summed duration', async () => {
@@ -458,9 +426,9 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * DATA-05's null trap, at the module boundary rather than in SQL. sum() over zero rows is
-     * NULL, and `NULL !== 0` would fail a fresh-install backup for no reason at all - on the one
-     * database where a spurious "backup failed" is most likely to be believed.
+     * DATA-05's null trap, at the module boundary rather than in SQL. sum() over zero rows is NULL, and
+     * `NULL !== 0` would fail a fresh-install backup for no reason - on the one database where a spurious "backup
+     * failed" is most likely to be believed.
      */
     it('verifies an empty fresh-install database with a summed duration of zero, not null', async () => {
         const fx = makeEmptyFixture();
@@ -474,14 +442,11 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * The backup on disk must be ONE file. The online backup API closes and checkpoints its own
-     * destination handle, but verifying the result reopens it, and a read-only connection cannot
-     * delete the -shm and empty -wal that reopening a WAL database creates. Left in place they
-     * are not untidiness: restoreDatabase copies the .bak alone, so a sidecar beside a backup is
-     * content a restore would silently not carry, and it outlives the .bak once that backup is
-     * pruned. Discovered by execution here, not by reading - the research note that the
-     * destination "is a single quiescent file" is true of the backup call and not of the
-     * verification that must follow it.
+     * The backup on disk must be ONE file. The online backup API closes and checkpoints its own destination handle,
+     * but verifying the result reopens it, and a read-only connection cannot delete the -shm and empty -wal that
+     * reopening a WAL database creates. Left in place they are not untidiness: restoreDatabase copies the .bak
+     * alone, so a sidecar beside a backup is content a restore would silently not carry, and it outlives the .bak
+     * once that backup is pruned. Discovered by execution, not by reading.
      */
     it('leaves the backup as a single quiescent file with no sidecars beside it', async () => {
         const fx = makeCleanFixture();
@@ -512,8 +477,8 @@ describe('src/lib/db/backup.ts module contract', () => {
 
     /*
      * A stable krono.db.bak is the trap this avoids: the driver opens an existing destination
-     * SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE and overwrites it silently, so a second failed
-     * migration attempt would destroy the good copy the first one made.
+     * SQLITE_OPEN_READWRITE|SQLITE_OPEN_CREATE and overwrites it silently, so a second failed migration attempt
+     * would destroy the good copy the first one made.
      */
     it('derives a distinct timestamped destination from the injected clock', async () => {
         const fx = makeCleanFixture();
@@ -541,11 +506,11 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * WR-04: the sweep runs at the top of every backup, before the source is opened. force: true suppresses
-     * ENOENT only, so a leftover that will not delete - held by a scanner, left read-only by a restore tool, or a
-     * directory a user made with that name - threw out of backupDatabase, which the runner turns into "No backup
-     * was taken" and a refused migration. Identically, on every launch. A directory is the portable stand-in: rmSync
-     * without recursive refuses it on Windows and POSIX alike.
+     * WR-04: the sweep runs at the top of every backup, before the source is opened. force: true suppresses ENOENT
+     * only, so a leftover that will not delete - held by a scanner, left read-only, or a directory a user made with
+     * that name - threw out of backupDatabase, which the runner turns into "No backup was taken" and a refused
+     * migration, identically on every launch. A directory is the portable stand-in: rmSync without recursive
+     * refuses it on Windows and POSIX alike.
      */
     it('completes when a leftover staging file in backups/ cannot be deleted', async () => {
         const fx = makeCleanFixture();
@@ -563,9 +528,9 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * Pitfall 2 at the module level. readonly:true backs up the FULL sidecar content and leaves
-     * the source's -wal in place, so a fixture is not consumed by being backed up. A read-write
-     * source connection would checkpoint on close and quietly disarm every later case.
+     * Pitfall 2 at the module level. readonly:true backs up the FULL sidecar content and leaves the source's -wal in
+     * place, so a fixture is not consumed by being backed up. A read-write source would checkpoint on close and
+     * quietly disarm every later case.
      */
     it('leaves the source -wal intact, because the source is opened read-only', async () => {
         const fx = await makeWalFixture();
@@ -580,12 +545,10 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * better-sqlite3 does not sleep on SQLITE_BUSY and SQLite may restart a backup indefinitely
-     * while the source is being written, so an unbounded backup could in principle never finish.
-     * Phase 4 runs this immediately before a migration, where hanging is the worst outcome.
-     *
-     * A zero deadline makes the abort deterministic: the driver's first transfer(0) is a probe
-     * that copies no pages, so the progress callback is always invoked at least once.
+     * better-sqlite3 does not sleep on SQLITE_BUSY and SQLite may restart a backup indefinitely while the source is
+     * being written, so an unbounded backup could in principle never finish - and Phase 4 runs this immediately
+     * before a migration, where hanging is the worst outcome. A zero deadline makes the abort deterministic: the
+     * driver's first transfer(0) is a probe that copies no pages, so the progress callback always runs at least once.
      */
     it('aborts a backup that exceeds its wall-clock deadline and leaves no partial file', async () => {
         const fx = makeCleanFixture();
@@ -599,11 +562,10 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * A -wal describing a database that no longer exists is the classic separated-WAL hazard,
-     * and a restore creates exactly that state unless the target's sidecars go first. The WAL
-     * fixture is the only source that makes this observable: its target carries a 329 KB sidecar
-     * full of frames that describe the PRE-restore file. Against a clean fixture there would be
-     * no sidecar to leave behind and the assertion would pass without the removal existing.
+     * A -wal describing a database that no longer exists is the classic separated-WAL hazard, and a restore creates
+     * exactly that state unless the target's sidecars go first. The WAL fixture is the only source that makes this
+     * observable: its target carries a 329 KB sidecar full of frames describing the PRE-restore file. Against a
+     * clean fixture the assertion would pass without the removal existing.
      */
     it('removes the stale sidecars of the database it restores over', async () => {
         const fx = await makeWalFixture();
@@ -624,8 +586,8 @@ describe('src/lib/db/backup.ts module contract', () => {
     });
 
     /*
-     * A retention count of zero is not an instruction to delete the only backup there is. The
-     * newest is the one a migration is about to depend on.
+     * A retention count of zero is not an instruction to delete the only backup there is. The newest is the one a
+     * migration is about to depend on.
      */
     it('never deletes the newest backup, whatever retention count it is given', async () => {
         const fx = makeCleanFixture();
@@ -643,15 +605,12 @@ describe('src/lib/db/backup.ts module contract', () => {
 });
 
 /*
- * CUSTODY-03. Selected by the validation strategy's name filter:
- *   npx vitest run tests/backup.test.ts -t 'uncheckpointed'
+ * CUSTODY-03, selected by name: npx vitest run tests/backup.test.ts -t 'uncheckpointed'.
  *
- * The argument this block makes is not "the online backup works". It is that the OBVIOUS
- * alternative fails silently, so nothing short of the online backup is acceptable. That is why
- * the naive copy is executed here as a real negative control rather than described in a comment:
- * on a cleanly-closed database the two approaches are indistinguishable, which is exactly why
- * the owner's own krono.db-wal is 0 bytes and why a naive backup would have tested green on this
- * machine forever.
+ * The argument is not "the online backup works" but that the OBVIOUS alternative fails silently, so nothing short
+ * of the online backup is acceptable. That is why the naive copy is executed here as a real negative control: on a
+ * cleanly-closed database the two are indistinguishable, which is why the owner's own krono.db-wal is 0 bytes and
+ * why a naive backup would have tested green on this machine forever.
  */
 describe('CUSTODY-03: the online backup captures uncheckpointed WAL content', () => {
     it('keeps rows a file copy loses, and that copy still reports integrity ok', async () => {
@@ -666,12 +625,9 @@ describe('CUSTODY-03: the online backup captures uncheckpointed WAL content', ()
         expect(expected.sum).toBe(CHECKPOINTED_SECONDS + WAL_ONLY_SECONDS);
 
         /*
-         * THE NEGATIVE CONTROL. Copying the main database file is what a backup written by
-         * someone who has not read sqlite.org/backup.html looks like.
-         *
-         * eslint-disable-next-line no-restricted-syntax -- this call is the DEFECT under test.
-         * The CUSTODY-03 rule exists to stop exactly this from reaching production code; here it
-         * is executed deliberately so its consequence is measured rather than asserted.
+         * THE NEGATIVE CONTROL. Copying the main database file is what a backup written by someone who has not read
+         * sqlite.org/backup.html looks like. The CUSTODY-03 lint rule exists to stop exactly this reaching
+         * production code; here it is executed deliberately so its consequence is measured rather than asserted.
          */
         const naiveCase = copyFixture(fx);
         const naive = path.join(path.dirname(naiveCase), 'naive-copy.bak');
@@ -680,9 +636,8 @@ describe('CUSTODY-03: the online backup captures uncheckpointed WAL content', ()
         const naiveStats = truth(naive);
 
         /*
-         * STRICTLY less, never less-than-or-equal. A fixture that had degraded to a clean
-         * single file would satisfy the weaker comparison, and this test would pass while
-         * proving the exact opposite of what it claims.
+         * STRICTLY less, never less-than-or-equal. A fixture that had degraded to a clean single file would satisfy
+         * the weaker comparison, and this test would pass while proving the exact opposite of what it claims.
          */
         expect(naiveStats.count).toBeLessThan(expected.count);
         expect(naiveStats.sum).toBeLessThan(expected.sum);
@@ -707,14 +662,14 @@ describe('CUSTODY-03: the online backup captures uncheckpointed WAL content', ()
 });
 
 /*
- * CUSTODY-04. A backup nobody checked is a belief, and a backup checked only against itself is
- * a belief with a certificate.
+ * CUSTODY-04. A backup nobody checked is a belief, and a backup checked only against itself is a belief with a
+ * certificate.
  */
 describe('CUSTODY-04: a backup is verified against the source, not against itself', () => {
     /*
-     * The naive copy's REAL measured statistics, run through the module's own comparison. This
-     * is the pairing the requirement turns on: the copy passes every check it can perform on
-     * itself, and fails the only check that compares it with what it was copied from.
+     * The naive copy's REAL measured statistics, run through the module's own comparison. This is the pairing the
+     * requirement turns on: the copy passes every check it can perform on itself, and fails the only check that
+     * compares it with what it was copied from.
      */
     it('rejects the naive copy on rows and on summed duration, though it passes integrity', async () => {
         const fx = await makeWalFixture();
@@ -745,13 +700,10 @@ describe('CUSTODY-04: a backup is verified against the source, not against itsel
     });
 
     /*
-     * The comparison firing end-to-end, on real files, with no mocking and no mutation.
-     *
-     * restoreDatabase is handed a LIVE WAL-mode database in place of a quiesced backup. It reads
-     * 45 sessions from it (main file plus sidecar), then copies the main file alone - which is
-     * precisely the naive-copy defect - and the re-verification catches the 40 missing rows and
-     * refuses. This is also why restoreDatabase re-verifies at all: a file copy is only sound
-     * against a backup the online API produced, and this proves what happens when it is not.
+     * The comparison firing end-to-end, on real files, with no mocking and no mutation. restoreDatabase is handed a
+     * LIVE WAL-mode database in place of a quiesced backup: it reads 45 sessions from it, then copies the main file
+     * alone - precisely the naive-copy defect - and the re-verification catches the 40 missing rows and refuses.
+     * This is also why restoreDatabase re-verifies at all.
      */
     it('refuses to accept a short copy, naming the table and both values', async () => {
         const fx = await makeWalFixture();
@@ -764,8 +716,8 @@ describe('CUSTODY-04: a backup is verified against the source, not against itsel
     });
 
     /*
-     * The error must name the mismatch. "Backup failed" is useless at three in the morning
-     * during a migration, which is the only time anyone reads it.
+     * The error must name the mismatch. "Backup failed" is useless at three in the morning during a migration,
+     * which is the only time anyone reads it.
      */
     it('states expected against observed rather than merely that something went wrong', async () => {
         const fx = await makeWalFixture();
@@ -787,11 +739,8 @@ describe('CUSTODY-04: a backup is verified against the source, not against itsel
 });
 
 /*
- * CUSTODY-05. Selected by the validation strategy's name filter:
- *   npx vitest run tests/backup.test.ts -t 'restore'
- *
- * A backup with no tested restore is untested code on the most important path in the
- * application.
+ * CUSTODY-05, selected by name: npx vitest run tests/backup.test.ts -t 'restore'. A backup with no tested restore
+ * is untested code on the most important path in the application.
  */
 describe('CUSTODY-05: restore returns a damaged database to service', () => {
     it('refuses to restore a backup that is not a database, and leaves the target alone', async () => {
@@ -811,11 +760,10 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
     });
 
     /*
-     * The round trip, on the WAL fixture rather than the clean one, so three things are true at
-     * once: the backup had to capture sidecar content to be complete, the damaged target still
-     * carries a 329 KB stale sidecar describing the file that was destroyed, and the recovered
-     * statistics are compared against values measured before the damage rather than against
-     * constants.
+     * The round trip, on the WAL fixture rather than the clean one, so three things are true at once: the backup
+     * had to capture sidecar content to be complete, the damaged target still carries a 329 KB stale sidecar
+     * describing the file that was destroyed, and the recovered statistics are compared against values measured
+     * before the damage rather than against constants.
      */
     // WR-03: the copy used to go straight over the target, after its sidecars had already been deleted, so a
     // refused or interrupted restore left the target truncated with no way back.
@@ -838,10 +786,9 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
 
     /*
      * WR-01: the target's sidecars were deleted before the rename that replaces it, so a rename that failed -
-     * EPERM/EBUSY from a scanner, an indexer or a stale handle is ordinary on Windows - left the main file in
-     * place with its uncheckpointed rows gone. The WAL fixture holds 40 of its 45 sessions in that sidecar, so
-     * the cost is measurable rather than theoretical. Only the incoming -> target rename is made to fail; the
-     * put-back renames must still work, which is the behaviour under test.
+     * EPERM/EBUSY from a scanner or a stale handle is ordinary on Windows - left the main file in place with its
+     * uncheckpointed rows gone. The WAL fixture holds 40 of its 45 sessions in that sidecar, so the cost is
+     * measurable. Only the incoming -> target rename is made to fail; the put-back renames must still work.
      */
     it('leaves every row of the target in place when the rename over it fails', async () => {
         const source = await makeWalFixture();
@@ -877,7 +824,7 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
      * WR-04: removePendingBackup of the displaced copy ran inside the outer try, after the rename that ends the
      * restore. The displaced file is the user's old database and its -wal - exactly what a scanner holds open on
      * Windows - so an undeletable one turned a restore that had already succeeded into a thrown failure, with
-     * <target>.replaced left on disk and a caller told to try the procedure again against the restored file.
+     * <target>.replaced left on disk.
      */
     it('reports a restore that already succeeded as a success, even if the displaced copy will not delete', async () => {
         const fx = await makeWalFixture();
@@ -943,8 +890,8 @@ describe('CUSTODY-05: restore returns a damaged database to service', () => {
 });
 
 /*
- * Retention. Phase 4's DATA-03 asks for "old backups are pruned"; the count is a parameter so
- * that phase can set its own policy without editing the module.
+ * Retention. Phase 4's DATA-03 asks for "old backups are pruned"; the count is a parameter so that phase can set
+ * its own policy without editing the module.
  */
 describe('backup retention', () => {
     it('keeps the three newest of five, deletes only the older two, and rewrites nothing', async () => {
@@ -1006,8 +953,8 @@ describe('backup retention', () => {
     /*
      * WR-02: the deletion loop had no per-entry guard, so the first EPERM/EBUSY ended the whole sweep - and both
      * callers swallow a throwing prune, so every backup older than a held one was never deleted again with no log
-     * line anywhere. A backup held open by a scanner is database-shaped, so it ranks among the readable ones and
-     * lands in the middle of the doomed list rather than harmlessly at its end.
+     * line anywhere. A backup held open by a scanner is database-shaped, so it lands in the middle of the doomed
+     * list rather than harmlessly at its end.
      */
     it('deletes the rest of the doomed backups past one it cannot delete, and says which it skipped', async () => {
         const fx = makeCleanFixture();
@@ -1045,11 +992,11 @@ describe('backup retention', () => {
     });
 
     /*
-     * WR-03: the sort was on the whole filename, which reads as the stamp only while every backup in the directory
-     * shares one basename. Flipping DATABASE_RENAME_RELEASED is the first thing that puts krono.db.*.bak and
-     * workflow.db.*.bak side by side - and with both there, retention deleted the newest backup by time and kept
-     * three that were eight months older. The header claimed "ordered by filename stamp" and "the newest
-     * database-shaped backup always survives"; neither held.
+     * WR-03: the sort was on the whole filename, which reads as the stamp only while every backup shares one
+     * basename. Flipping DATABASE_RENAME_RELEASED is the first thing that puts krono.db.*.bak and workflow.db.*.bak
+     * side by side - and with both there, retention deleted the newest backup by time and kept three eight months
+     * older. The header claimed "ordered by filename stamp" and "the newest database-shaped backup always
+     * survives"; neither held.
      */
     it('ranks by the stamp, not by the basename in front of it', () => {
         const fx = makeCleanFixture();

@@ -8,39 +8,33 @@ import { ESLint, type Linter } from 'eslint';
 /*
  * Why this file exists (BUILD-13, D-04).
  *
- * The failure it prevents is an entire file type dropping out of lint coverage without anyone
- * noticing. That is CB-7's root cause: the ~2,750 lines of inline <script> in legacy/pages/*.html
- * matched no lint configuration, nothing ever examined them, and they accumulated the thirteen
- * defects RESTRUCTURE-BRIEF.md catalogues as B1-B13 - an undefined identifier, a call to an API
- * that does not exist - that a linter would have flagged on the day each was written.
+ * The failure it prevents is an entire file type dropping out of lint coverage without anyone noticing. That is
+ * CB-7's root cause: the ~2,750 lines of inline <script> in legacy/pages/*.html matched no lint configuration,
+ * nothing ever examined them, and they accumulated the thirteen defects RESTRUCTURE-BRIEF.md catalogues as B1-B13 -
+ * an undefined identifier, a call to an API that does not exist - that a linter would have flagged on the day each
+ * was written.
  *
- * It then happened twice more in plain sight. eslint.config.js declared SpreadsheetApp,
- * ContentService and Logger for google-apps-script.gs, and no files pattern ever named .gs, so the
- * deployed Apps Script was never linted. Plan 02-03 wrote the repository's first .tsx files, and
- * no block matched those either. None of the three produced a warning: ESLint does not complain
- * about a file nothing matches, it simply never opens it, and `eslint .` exits 0 over a tree it
- * has half skipped.
+ * It then happened twice more in plain sight. eslint.config.js declared Apps Script globals for a .gs file no files
+ * pattern ever named, so the deployed script was never linted; plan 02-03 wrote the repository's first .tsx files
+ * and no block matched those either. None of the three produced a warning: ESLint does not complain about a file
+ * nothing matches, it simply never opens it, and `eslint .` exits 0 over a tree it has half skipped.
  *
- * So this file asks the linter what it would do with each file, rather than reading the config's
- * glob strings and reasoning about them. A glob that looks right but matches nothing is exactly
- * the failure BUILD-13 describes, and only the linter can say it matched nothing.
+ * So this file asks the linter what it would do with each file, rather than reading the config's glob strings. A
+ * glob that looks right but matches nothing is exactly the failure BUILD-13 describes, and only the linter can say
+ * it matched nothing.
  *
- * Concurrency (the BUILD-13 probe row in 02-04-PLAN.md): the verdict is a pure function of the
- * file list and the config. No lint cache is consulted and nothing is written, so a partial or
- * parallel run cannot produce a different answer. If `--cache` is ever added to the lint script,
- * that claim has to be re-checked - the calls below do not read the cache, but the lint gate would.
+ * Concurrency: the verdict is a pure function of the file list and the config. No lint cache is consulted and
+ * nothing is written. If `--cache` is ever added to the lint script, that claim has to be re-checked.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /*
- * Git, not a filesystem walk: the question is what this repository owns, and git's standard
- * exclusions keep out/, node_modules/ and the gitignored tooling directories away for free - the
- * position tests/custody-hygiene.test.ts takes. But not a tracked-only listing either. This suite
- * runs before the commit that adds a file, and `git ls-files` alone cannot see the very newcomer
- * that would otherwise arrive unlinted: the guard would report full coverage of a set that
- * excludes it. --cached --others --exclude-standard widens what the guard sees without widening
- * what it accepts. execFileSync with an argument array: no shell, no quoting surface.
+ * Git, not a filesystem walk: the question is what this repository owns, and git's standard exclusions keep out/,
+ * node_modules/ and the gitignored tooling directories away for free. But not a tracked-only listing either - this
+ * suite runs before the commit that adds a file, and `git ls-files` alone cannot see the very newcomer that would
+ * otherwise arrive unlinted. --cached --others --exclude-standard widens what the guard SEES without widening what
+ * it accepts. execFileSync with an argument array: no shell, no quoting surface.
  */
 const repositoryFiles = (): string[] => [
     ...new Set(
@@ -62,9 +56,8 @@ const isUnder = (file: string, dir: string): boolean => file === dir || file.sta
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.cjs', '.mjs', '.gs'];
 
 /*
- * Every other extension in the tree, each with the reason it is deliberately outside the source
- * set. The first test fails for an extension in neither list, so a new kind of file - .jsx, .vue,
- * .ps1 - is classified by a person before a filter can skip it.
+ * Every other extension in the tree, each with the reason it is deliberately outside the source set. The first test
+ * fails for an extension in neither list, so a new kind of file is classified by a person before a filter skips it.
  */
 const NON_SOURCE: Record<string, string> = {
     '.md': 'prose documentation; nothing executes it',
@@ -91,29 +84,24 @@ interface ExpiringExclusion {
 }
 
 /*
- * The expiring exclusions: directories of repository-authored code that lint deliberately does not
- * reach, each bound to the phase that deletes it.
+ * The expiring exclusions: directories of repository-authored code that lint deliberately does not reach, each
+ * bound to the phase that deletes it.
  *
- * THE LIST IS EMPTY, and that is the tripwire below having fired as designed. Its one entry was the
- * retired v1.2.1 renderer under legacy/, which SPA-14 deleted in 08-F; the ignore entry came out of
- * eslint.config.js in the same commit rather than staying behind as a rule about nothing that the next
- * directory of that name would inherit. Every line of repository-authored code is linted.
+ * THE LIST IS EMPTY, and that is the tripwire below having fired as designed. Its one entry was the retired v1.2.1
+ * renderer under legacy/, which SPA-14 deleted in 08-F; the ignore entry came out of eslint.config.js in the same
+ * commit. Every line of repository-authored code is linted.
  *
- * A new entry is a new directory of repository code that lint does not read. It has to be argued for by
- * editing the assertion below in review, not slipped in here.
+ * A new entry is a new directory of repository code that lint does not read. It has to be argued for by editing
+ * the assertion below in review, not slipped in here.
  */
 const EXPIRING_EXCLUSIONS: ExpiringExclusion[] = [];
 
 /*
- * Third-party bytes the repository carries but does not author: the Tailwind Play CDN script and
- * the fonts plan 01-05 vendored so the v1.2.1 baseline capture replays with no network. Each is
- * pinned by SHA-256 in tools/baseline/vendor/index.json and in section 3 of
- * baselines/v1.2.1/MANIFEST.md (tests/custody-hygiene.test.ts holds the two equal), so linting one
- * means editing it and breaking its pin.
- *
- * This is not an expiring exclusion, because nothing in it is repository source - and the
- * membership check is what keeps that true. An ignored file under this directory passes only if
- * the index pins it, so hand-written code dropped here fails as unlinted like anywhere else.
+ * Third-party bytes the repository carries but does not author: the Tailwind Play CDN script and the fonts plan
+ * 01-05 vendored so the v1.2.1 baseline capture replays with no network. Each is pinned by SHA-256 in
+ * tools/baseline/vendor/index.json and in section 3 of baselines/v1.2.1/MANIFEST.md, so linting one means editing
+ * it and breaking its pin. Not an expiring exclusion, because nothing in it is repository source - and the
+ * membership check is what keeps that true: hand-written code dropped here fails as unlinted like anywhere else.
  */
 const VENDOR_DIR = 'tools/baseline/vendor';
 const VENDOR_INDEX = 'tools/baseline/vendor/index.json';
@@ -128,18 +116,16 @@ const pinnedVendorFiles = (): Set<string> => {
 /*
  * What "covered" means, asked of the linter's computed configuration for the file.
  *
- * Not "the rules object is non-empty". ESLint's built-in defaults match .js, .mjs and .cjs on
- * their own, and js.configs.recommended applies to every file anything matches, so a .mjs file
- * with no block of this repository's behind it still resolves the whole recommended set.
- * Measured in plan 02-04: with the .mjs block deleted, tools/baseline/capture.mjs still resolved
- * 63 rules, none of them off. A non-empty check passes exactly the configless file this guard
- * exists to catch.
+ * Not "the rules object is non-empty". ESLint's built-in defaults match .js, .mjs and .cjs on their own, and
+ * js.configs.recommended applies to every file anything matches, so a .mjs file with no block of this repository's
+ * behind it still resolves the whole recommended set. Measured in plan 02-04: with the .mjs block deleted,
+ * tools/baseline/capture.mjs still resolved 63 rules, none of them off. A non-empty check passes exactly the
+ * configless file this guard exists to catch.
  *
- * semi and quotes are set by no default and no preset - only by this repository's own
- * extension-specific blocks - so their presence at error is the linter's proof that one of those
- * blocks matched. The two custody rules are required on every file as well: a guard that does not
- * cover the file where the violation is plausible is not defence in depth (eslint.config.js,
- * plan 01-04).
+ * semi and quotes are set by no default and no preset - only by this repository's own extension-specific blocks -
+ * so their presence at error is the linter's proof that one of those blocks matched. The two custody rules are
+ * required on every file as well: a guard that does not cover the file where the violation is plausible is not
+ * defence in depth.
  */
 const REQUIRED_RULES = ['semi', 'quotes', 'no-restricted-properties', 'no-restricted-syntax'];
 
@@ -335,9 +321,8 @@ describe('BUILD-13 / D-04: lint reaches every source file this repository owns',
 
         for (const file of source) {
             /*
-             * ESLint 9 implements isPathIgnored as calculateConfigForFile(...) === undefined. A file
-             * no block matches and a file an ignore pattern removes are the same answer, and both
-             * have to be justified, so both land in this branch.
+             * ESLint 9 implements isPathIgnored as calculateConfigForFile(...) === undefined. A file no block
+             * matches and a file an ignore pattern removes are the same answer, and both have to be justified.
              */
             if (await eslint.isPathIgnored(path.join(repoRoot, file))) {
                 const expiring = EXPIRING_EXCLUSIONS.some((ex) => isUnder(file, ex.dir));
@@ -379,9 +364,8 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
     });
 
     /*
-     * The tripwire. When Phase 8 deletes the legacy tree this goes red, and that is the whole
-     * point: it forces the ignore entry out of eslint.config.js in the same change, instead of
-     * leaving it behind as a rule about nothing that the next directory of that name inherits.
+     * The tripwire. When Phase 8 deletes the legacy tree this goes red, and that is the point: it forces the ignore
+     * entry out of eslint.config.js in the same change, instead of leaving it behind as a rule about nothing.
      */
     it('names a directory that still exists', () => {
         expect(EXPIRING_EXCLUSIONS.length, 'nothing to check: the list is empty, which is the expected state since SPA-14').toBe(0);
@@ -396,9 +380,9 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
     });
 
     /*
-     * The list here and the ignore entry in the config are one decision recorded twice; this holds
-     * them together. The probe is a hypothetical .js file, because .js is an extension the config
-     * does match - so the only way it can come back ignored is the ignore entry itself.
+     * The list here and the ignore entry in the config are one decision recorded twice; this holds them together.
+     * The probe is a hypothetical .js file, because .js is an extension the config does match - so the only way it
+     * can come back ignored is the ignore entry itself.
      */
     it('is actually ignored by eslint.config.js', async () => {
         expect(EXPIRING_EXCLUSIONS.length, 'nothing to check: the list is empty, which is the expected state since SPA-14').toBe(0);
@@ -415,9 +399,8 @@ describe('D-04: the one remaining exclusion expires with its subject', () => {
 
 describe('the rules the rewrite must not lose', () => {
     /*
-     * Per-file coverage alone could pass with the custody rules present but emptied - an option
-     * list that bans nothing still resolves at error. So the representative files are checked for
-     * what the rules actually ban, on both halves of the tree.
+     * Per-file coverage alone could pass with the custody rules present but emptied - an option list that bans
+     * nothing still resolves at error. So the representative files are checked for what the rules actually ban.
      */
     const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/baseline/archive-real-db.mjs', 'eslint.config.js'];
 
@@ -446,8 +429,8 @@ describe('the rules the rewrite must not lose', () => {
     });
 
     /*
-     * src/shared has no files yet. Asking about a hypothetical path in it is how the rule is shown
-     * to be waiting for the first one, rather than discovered missing after it lands.
+     * src/shared has no files yet. Asking about a hypothetical path in it is how the rule is shown to be waiting
+     * for the first one, rather than discovered missing after it lands.
      */
     it.each(['src/lib/db/client.ts', 'src/shared/probe.ts'])('bans importing electron in %s', async (file) => {
         const entry = await ruleEntry(file, 'no-restricted-imports');
@@ -458,7 +441,7 @@ describe('the rules the rewrite must not lose', () => {
     /*
      * ARCH-01's fourth clause. This used to assert the opposite - that src/main was free to import electron - which
      * was true of the shell but left the clause enforced by nobody: the phase-5 verifier found three modules outside
-     * the named list importing electron and nothing that would fail when a fourth did. The rule is an allowlist now.
+     * the named list importing electron and nothing that would fail when a fourth did. It is an allowlist now.
      */
     it.each([
         'src/main/index.ts', 'src/main/window.ts', 'src/main/lifecycle.ts', 'src/main/tray.ts',
@@ -671,10 +654,9 @@ describe('D-15 and D-14: import boundaries', () => {
 });
 
 /*
- * ARCH-01, criteria 3 and 11. A layering that is not linted is a comment, and the failure it prevents is the one
- * this project has already had: a rule everybody agrees with, that nothing checks, until a service imports electron
- * and its unit tests need an Electron binary to run. So each direction is probed as code the linter judges, on the
- * real files, rather than read off the config's glob strings.
+ * ARCH-01, criteria 3 and 11. A layering that is not linted is a comment, and the failure it prevents is one this
+ * project has already had: a rule everybody agrees with, that nothing checks, until a service imports electron and
+ * its unit tests need an Electron binary to run. Each direction is probed as code the linter judges.
  */
 describe('ARCH-01: lint proves the direction of the main process', () => {
     const SERVICE_FILE = 'src/main/services/stats.service.ts';
@@ -684,10 +666,10 @@ describe('ARCH-01: lint proves the direction of the main process', () => {
     const DB_FILE = 'src/lib/db/handle.ts';
 
     /*
-     * WR-05. This probe used to list `import type { SessionsRepository } from '@lib/db';` under `allowed` and assert
-     * it was not flagged. That read as coverage of the @lib/db boundary and proved nothing - the *value* import was
-     * not flagged either, and neither were better-sqlite3, ../../lib/db, ../adapters, ../window or ../container.
-     * Every one of them is a banned probe now, so deleting a line from SERVICE_LAYER_PATTERNS fails this test.
+     * WR-05. This probe used to list an `import type` under `allowed` and assert it was not flagged. That read as
+     * coverage of the @lib/db boundary and proved nothing - the *value* import was not flagged either, and neither
+     * were better-sqlite3, ../../lib/db, ../adapters, ../window or ../container. Every one is a banned probe now,
+     * so deleting a line from SERVICE_LAYER_PATTERNS fails this test.
      */
     it('refuses electron, ipc/, the database and the composition root in a service', async () => {
         const banned = [
@@ -834,10 +816,10 @@ describe('ARCH-01: lint proves the direction of the main process', () => {
  * Criterion 3's lint half (SPA-11, SPA-13), probed as code rather than read off the config.
  *
  * Both rules are here because this repository has already been bitten twice by a rule that existed only as a
- * comment - that is the whole reason lint-coverage.test.ts exists - and these two guard failures that are
- * invisible at every other gate. A concatenated class name typechecks, renders, and is simply the wrong colour
- * (C3). A querySelector written against utility classes typechecks, renders, and silently stops finding the
- * delete-all-data button the day someone changes its margin (Y2, legacy/pages/settings.html:659).
+ * comment, and these two guard failures invisible at every other gate: a concatenated class name typechecks,
+ * renders, and is simply the wrong colour (C3); a querySelector written against utility classes typechecks,
+ * renders, and silently stops finding the delete-all-data button the day someone changes its margin (Y2,
+ * legacy/pages/settings.html:659).
  */
 describe('SPA-11 / SPA-13: lint refuses a built class name and a query written against one', () => {
     const RENDERER_PROBE_FILE = 'src/renderer/src/components/ui/AlertDialog.tsx';
@@ -872,9 +854,9 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
             'el.classList.add(`bg-${tone}-100`);',
             'el.classList.toggle(\'bg-\' + tone);',
             /*
-             * CR-02: the five spellings the reviewer got past the rule, plus their siblings. The last pair is the
-             * one that matters - hoisting the concatenation to a local and passing the variable is the single most
-             * natural refactor of a banned line, and it was not merely unbanned, it was what the rule taught.
+             * CR-02: the five spellings the reviewer got past the rule, plus their siblings. The last pair matters
+             * most - hoisting the concatenation to a local and passing the variable is the most natural refactor of
+             * a banned line, and it was not merely unbanned, it was what the rule taught.
              */
             'export const a1 = <div className={[\'bg-\', tone, \'-100\'].join(\'\')} />;',
             'export const a2 = <div className={\'bg-\'.concat(tone)} />;',
@@ -944,8 +926,7 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
      * WR-04. Criterion 8 asks for a test that fails on "a second .css file under src/renderer, on a CSS module, or
      * on a per-component class rule". The third clause was enforced only for rules written INSIDE globals.css, and
      * a stylesheet does not have to be a file: the <style> element below is what legacy/renderer/shared.js:255-285
-     * did for the toast transition, and replacing it with @theme tokens is the change 07-E-SUMMARY.md presents as
-     * ARCH-05's whole point.
+     * did for the toast transition.
      */
     it('refuses a rule injected at run time and a style set on an element', async () => {
         const banned = [
@@ -1040,11 +1021,10 @@ describe('SPA-11 / SPA-13: lint refuses a built class name and a query written a
  * ARCH-03 / criterion 7: the renderer's direction of flow, probed as code.
  *
  * tests/renderer-structure.test.ts asserts the same directions against the tree, and that is not duplication - it
- * is the difference between "no file does this today" and "a file that does this fails". The tree scan cannot say
- * anything about a file nobody has written yet; lint can, and lint is what the criterion asks for.
+ * is the difference between "no file does this today" and "a file that does this fails".
  *
- * Every ban below is probed twice over: refused where ARCH-03 refuses it, and allowed in the one area ARCH-03
- * makes its home. An allowlist checked in only one direction is how a rule ends up applying nowhere.
+ * Every ban below is probed twice over: refused where ARCH-03 refuses it, and allowed in the one area ARCH-03 makes
+ * its home. An allowlist checked in only one direction is how a rule ends up applying nowhere.
  */
 describe('ARCH-03: lint proves the direction of the renderer', () => {
     const COMPONENT_FILE = 'src/renderer/src/components/ui/Modal.tsx';
@@ -1139,10 +1119,10 @@ describe('ARCH-03: lint proves the direction of the renderer', () => {
     }, 60_000);
 
     /*
-     * CR-03(a). no-restricted-imports inspects ImportDeclaration and the two export-from forms and nothing else,
-     * so every one of the four bans above - including the cross-feature one the config marks "never lifted" -
-     * was one await away from being unenforced. The syntactic rule reaches where the import rule cannot, and it
-     * is composed from the same lift set, which is what the second half of this test checks.
+     * CR-03(a). no-restricted-imports inspects ImportDeclaration and the two export-from forms and nothing else, so
+     * every one of the four bans above - including the cross-feature one the config marks "never lifted" - was one
+     * await away from being unenforced. The syntactic rule reaches where the import rule cannot, composed from the
+     * same lift set.
      */
     it('refuses the same four things asked for with a dynamic import', async () => {
         const banned: [string, string][] = [

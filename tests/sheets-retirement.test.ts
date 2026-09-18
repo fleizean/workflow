@@ -113,10 +113,9 @@ function inCodeAndStrings(file: string, names: readonly string[]): string[] {
  * any reason to say these names, in code or in prose.
  *
  * Phase 11: this used to call readV121(), which reads the last COMMITTED bytes. Over a deleted v1.2.1 file that is
- * the only place to read from and is correct; over a live application file it meant the guard scanned the previous
- * commit's text, so an uncommitted edit that put the export surface back was invisible to it - and a brand new file
- * under src/ crashed the guard with "git knows no commit carrying", which is how it was found. trackedTs() lists
- * uncommitted files on purpose; this is what makes listing them useful.
+ * correct; over a live application file it meant the guard scanned the previous commit's text, so an uncommitted
+ * edit that put the export surface back was invisible - and a brand new file under src/ crashed the guard, which
+ * is how it was found.
  */
 const inWholeText = (file: string, names: readonly string[]): string[] => {
     const source = read(file);

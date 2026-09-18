@@ -1,19 +1,14 @@
 /*
- * tests/packaging.test.ts - BUILD-08, the checkable-on-every-push half of
- * tools/ci/assert-package-contents.mjs.
+ * BUILD-08, the checkable-on-every-push half of tools/ci/assert-package-contents.mjs.
  *
- * The script's claim is about the artifact, not about the configuration that was supposed to
- * produce it: it enumerates the packaged app.asar from the archive's own header and checks every
- * path. That makes the header reader load-bearing. A reader that silently returned a partial
- * listing would report a clean package forever, so it is proven here against archives this file
- * encodes byte by byte from a known tree, with the expected listing written out longhand - the
- * real-fixtures-not-mocks convention tests/backup.test.ts established. Nothing below mocks the
- * reader or the filesystem: the on-disk cases write real packaged layouts, Windows and macOS, into
- * a temporary directory and inspect them, and the CLI cases run the script as a real process.
+ * The script's claim is about the artifact, not the configuration that was supposed to produce it: it enumerates
+ * the packaged app.asar from the archive's own header and checks every path. That makes the header reader
+ * load-bearing. A reader that silently returned a partial listing would report a clean package forever, so it is
+ * proven here against archives this file encodes byte by byte from a known tree, with the expected listing written
+ * out longhand. Nothing below mocks the reader or the filesystem.
  *
- * None of this needs a packaged binary, which is the point of exporting the pure pieces: the
- * logic is checked on every push, and the packaging workflow runs the same script against the
- * real artifact on all four legs.
+ * None of this needs a packaged binary, which is the point of exporting the pure pieces: the logic is checked on
+ * every push, and the packaging workflow runs the same script against the real artifact on all four legs.
  *
  * The asar layout, specified from the format itself (no library, no new dependency):
  *
@@ -24,8 +19,8 @@
  *   bytes 16..   J bytes of JSON, zero-padded to a 4-byte boundary
  *   bytes 8+H..  the data region; a packed file's "offset" is relative to its start
  *
- * Measured against the real dist/win-unpacked/resources/app.asar while writing this file:
- * 4, 25780, 25776, 25771, and the last packed file ends exactly at the end of the archive.
+ * Measured against the real dist/win-unpacked/resources/app.asar while writing this file: 4, 25780, 25776, 25771,
+ * and the last packed file ends exactly at the end of the archive.
  */
 
 import { afterAll, describe, expect, it } from 'vitest';

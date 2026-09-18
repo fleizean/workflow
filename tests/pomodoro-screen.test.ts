@@ -271,10 +271,9 @@ describe('CR-03: the panel routes Abandon through the confirm', () => {
  * WR-01, reproduced by the reviewer against the real repository: answer a pomodoro with "No Company" and nothing
  * to say, so the row becomes ('Pomodoro', null, ''), then open it in Work History to correct its duration and
  * save. History wrote `note: trimmedNote === '' ? null : trimmedNote`, so the untouched empty box went back as
- * NULL and the prompt returned on every visit to Home and every launch - undone again by the next edit.
- *
- * WR-02: the same NULL was written by the save form for an ordinary session, so a user who typed "Pomodoro" as a
- * session name with no company and no note created a row the prompt could not tell from one the cycle wrote.
+ * NULL and the prompt returned on every launch. WR-02: the save form wrote the same NULL for an ordinary session,
+ * so a user who typed "Pomodoro" with no company and no note created a row the prompt could not tell from a
+ * pending one.
  */
 describe('WR-01: an empty note written by a form is an answer, not an absence', () => {
     it('writes an empty string when a form that showed the field was left blank', () => {

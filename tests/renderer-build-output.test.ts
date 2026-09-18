@@ -7,35 +7,26 @@ import { fileURLToPath } from 'node:url';
 /*
  * Why this file reads the BUILD OUTPUT and not the source (BUILD-07, T-02-12, T-02-13).
  *
- * The roadmap criterion is about the document the app actually loads: "a production build loads no
- * remote resource - the CSP <meta> tag is present in the built HTML". A policy that is present in
- * src/renderer/index.html and dropped or rewritten by the bundler is indistinguishable, at runtime,
- * from a policy that was never written. And the renderer is loaded from a file URL, where the
- * response-header route (session.webRequest.onHeadersReceived) does not apply at all - so the
- * <meta> element in out/renderer/index.html is the ONLY thing enforcing anything. A source-only
- * assertion cannot see what the bundler emitted, which is why every check below reads out/.
+ * The roadmap criterion is about the document the app actually loads: "a production build loads no remote resource
+ * - the CSP <meta> tag is present in the built HTML". A policy present in src/renderer/index.html and dropped or
+ * rewritten by the bundler is indistinguishable, at runtime, from a policy that was never written. And the renderer
+ * is loaded from a file URL, where the response-header route does not apply at all - so the <meta> element in
+ * out/renderer/index.html is the ONLY thing enforcing anything.
  *
- * The remote-resource scan is scoped on purpose, per file type, rather than banning every scheme
- * everywhere:
+ * The remote-resource scan is scoped per file type rather than banning every scheme everywhere:
  *
- *   entry document  any http: or https: at all, and any protocol-relative src/href. A plain HTML
- *                   entry has no legitimate reason to carry an absolute address.
- *   emitted CSS     a url() or @import naming a remote target. Not a blanket scheme ban: Tailwind's
- *                   licence banner names its home page in a comment, and the forms plugin's data:
- *                   SVGs carry the SVG namespace address. Neither loads anything.
- *   every file      the four hosts the v1.2.1 renderer actually loaded from. The bundled React
- *                   runtime legitimately contains namespace addresses for SVG and MathML, so a
- *                   scheme ban over JavaScript would fail on it - and a guard that misfires teaches
- *                   the next reader to disable it, which is worse than not having it.
+ *   entry document  any http: or https: at all, and any protocol-relative src/href.
+ *   emitted CSS     a url() or @import naming a remote target. Not a blanket scheme ban: Tailwind's licence banner
+ *                   names its home page in a comment, and the forms plugin's data: SVGs carry the SVG namespace.
+ *   every file      the four hosts the v1.2.1 renderer actually loaded from. The bundled React runtime
+ *                   legitimately contains namespace addresses, so a scheme ban over JavaScript would fail on it -
+ *                   and a guard that misfires teaches the next reader to disable it.
  *
- * A missing build is loud, never a silent pass. out/ is gitignored and the verify job does not
- * build, so without a build this suite has nothing to check. It then registers one SKIPPED test
- * whose name says so and names the command that produces the build, and prints the same message.
- * Setting WORKFLOW_REQUIRE_BUILD_OUTPUT=1 turns that skip into a failure; any job that builds
- * before testing should set it, so a broken build cannot read as "skipped".
+ * A missing build is loud, never a silent pass. out/ is gitignored and the verify job does not build, so without
+ * one this suite registers a SKIPPED test naming the command that produces it. WORKFLOW_REQUIRE_BUILD_OUTPUT=1
+ * turns that skip into a failure, so a broken build cannot read as "skipped".
  *
- * What this does NOT prove: that no route makes a runtime request. That is a live-console
- * observation against the finished app (Phase 10: zero CSP violations on any route).
+ * What this does NOT prove: that no route makes a runtime request. That is a live-console observation.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -260,9 +251,8 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
 
     /*
      * Criterion 10, said in the two shapes the criterion itself names. The scans above already forbid a remote
-     * url() or @import in emitted CSS and the four v1.2.1 hosts in emitted code; these two are the same ban
-     * widened to the WHOLE build and narrowed to the exact spellings that were in the shipped app, so a reader
-     * checking the criterion against the suite finds it stated rather than implied.
+     * url() or @import in emitted CSS and the four v1.2.1 hosts in emitted code; these two are the same ban widened
+     * to the WHOLE build and narrowed to the exact spellings that were in the shipped app.
      */
     it('no file anywhere in ' + BUILT_ROOT + ' names cdn.tailwindcss.com', () => {
         const offenders = walk(path.join(repoRoot, BUILT_ROOT))
@@ -308,9 +298,7 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
      * WR-06. 07-E-SUMMARY.md says twice that these were checked in the emitted CSS - the width token because
      * AppShell and BottomNav are supposed to read one width, the keyframes because "@keyframes inside a @theme
      * static block is the kind of thing that is easy to assume and easy to be wrong about". Nothing asserted
-     * either. A @theme namespace typo - --width-app instead of --container-app, --animation-* instead of
-     * --animate-* - emits no rule at all, breaks the layout and the motion, and passes the whole suite. That is
-     * the C3 failure mode reappearing on the tokens slice E introduced.
+     * either. A @theme namespace typo emits no rule at all, breaks the layout and passes the whole suite.
      */
     it('the one width token and the motion tokens produced rules', () => {
         const css = emittedWith('.css').map(read).join('\n');
@@ -319,11 +307,8 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
         /*
          * `md:max-w-app` was here until 08-B: the bar centred itself at md and spanned the window below it, so
          * between 28rem and 48rem a narrow column sat above an edge-to-edge bar. It reads max-w-app at every width
-         * now, and the variant that no longer exists cannot be asserted - the guard is the bare token.
-         *
-         * The six streak tokens are 08-C's, and they are here for the reason the three motion ones are: a @theme
-         * namespace typo emits no rule at all, and a streak card that simply does not animate looks like a streak
-         * below the tier threshold rather than like a bug.
+         * now. The six streak tokens are 08-C's, here for the reason the three motion ones are: a @theme namespace
+         * typo emits no rule at all, and a streak card that does not animate looks like a low tier, not a bug.
          */
         const utilities = [
             'max-w-app', 'animate-toast-in', 'animate-toast-out', 'animate-modal-in',
@@ -346,14 +331,12 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
 
     /*
      * 08-F, found by the Phase 1 computed-style baselines. material-symbols/outlined.css declares
-     * `.material-symbols-outlined { font-size: 24px; line-height: 1; letter-spacing: normal }`. An UNLAYERED rule
-     * outranks every rule in a cascade layer, so while globals.css imported it bare it beat Tailwind's utilities
-     * layer and EVERY icon in the app rendered at 24px whatever its class said - the 48px streak glyph at half
-     * size, the 12px and 14px list glyphs at nearly double. v1.2.1 never had this: the Play CDN generated its
-     * utilities after the Google Fonts @import, so the utility won on order.
+     * `.material-symbols-outlined { font-size: 24px; ... }`. An UNLAYERED rule outranks every rule in a cascade
+     * layer, so while globals.css imported it bare it beat Tailwind's utilities layer and EVERY icon rendered at
+     * 24px whatever its class said - the 48px streak glyph at half size, the 12px list glyphs at nearly double.
+     * v1.2.1 never had this: the Play CDN generated its utilities after the Google Fonts @import.
      *
-     * The compat test compiles the classes and proves the CSS is emitted; that is a different claim from the CSS
-     * winning. This asserts the layer, which is the thing that decides.
+     * The compat test proves the CSS is emitted; that is a different claim from the CSS winning.
      */
     it('the icon stylesheet is imported into a layer, so a size utility still wins', () => {
         const sheets = emittedWith('.css').map(read);
@@ -386,9 +369,8 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
 
     /*
      * 08-F. #modal-root is a SIBLING of #root, so every dialog portals outside #app-shell - and the font, text
-     * colour and antialiasing that AppShell carries never reach one. Every modal in the app was rendering in
-     * Chromium's default font. v1.2.1 put these on <body> (legacy/pages/*.html) and appended its modals to
-     * document.body, so it never had the problem; the classes are back on <body> for the same reason.
+     * colour and antialiasing AppShell carries never reach one. Every modal in the app was rendering in Chromium's
+     * default font. v1.2.1 put these on <body> and appended its modals to document.body, so it never had it.
      */
     it('the entry document carries on <body> what v1.2.1 carried there, so a portalled dialog inherits it', () => {
         for (const [label, file] of [['source', SOURCE_ENTRY], ['built', BUILT_ENTRY]] as const) {
@@ -406,15 +388,12 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
     /*
      * Phase 10 criterion 8, first half: "a CI bundle grep proves the production renderer chunk contains no zod".
      *
-     * tests/zod-boundary.test.ts already walks the import graph from the renderer entry and refuses any value
-     * chain that reaches zod. This is the other end of the same claim, and it is the one the criterion asks for:
-     * what the BUNDLER actually emitted. A graph walk can be defeated by a resolution this project's aliases do
-     * not model; the emitted bytes cannot.
+     * tests/zod-boundary.test.ts already walks the import graph from the renderer entry and refuses any value chain
+     * that reaches zod. This is the other end of the same claim, and the one the criterion asks for: what the
+     * BUNDLER emitted. A graph walk can be defeated by a resolution this project's aliases do not model.
      *
-     * The negative control is what makes it a check rather than a hopeful grep: the same markers are REQUIRED to
-     * appear in the main-process bundle, which legitimately validates every IPC payload with zod. A marker list
-     * that had gone stale - a zod release that stopped emitting these strings - would fail there first, loudly,
-     * instead of reporting a clean renderer forever.
+     * The negative control is what makes it a check rather than a hopeful grep: the same markers are REQUIRED in
+     * the main-process bundle, so a stale marker list fails there first, loudly.
      */
     const ZOD_MARKERS = ['ZodError', 'ZodRealError', 'invalid_union', 'unrecognized_keys', '$ZodType'];
     const MAIN_BUNDLE_DIR = 'out/main';
@@ -447,19 +426,16 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
     });
 
     /*
-     * Phase 10 criterion 8, second half, on the build output: no duplicate asset.
-     *
-     * The titlebar used to import the 1024x1024 icon.png, so Vite fingerprinted a second copy of a 1.84 MB file
-     * into out/renderer beside the one out/main already needs for the tray - two identical megabytes in every
-     * installer. The check is on CONTENT, not on name: a fingerprinted copy has a different name by construction,
-     * which is exactly why a name-based check would not have caught it.
+     * Phase 10 criterion 8, second half, on the build output: no duplicate asset. The titlebar used to import the
+     * 1024x1024 icon.png, so Vite fingerprinted a second copy of a 1.84 MB file into out/renderer beside the one
+     * out/main already needs for the tray. The check is on CONTENT, not on name: a fingerprinted copy has a
+     * different name by construction, which is exactly why a name-based check would not have caught it.
      */
     /*
      * One duplicate stands, with its reason, and nothing else may join it. main and renderer are separate rollup
-     * builds with separate output directories, so an asset both of them import is emitted into both: the titlebar
-     * draws the logo and the notification adapter passes it to Windows. 8.5 KB twice is the price of that
-     * separation and it is stated here rather than waved through by a size threshold - which would also have
-     * waved through the 1.84 MB copy this check was written to catch.
+     * builds with separate output directories, so an asset both import is emitted into both: the titlebar draws the
+     * logo and the notification adapter passes it to Windows. 8.5 KB twice is the price of that separation, stated
+     * here rather than waved through by a size threshold - which would also have waved through the 1.84 MB copy.
      */
     const PERMITTED_DUPLICATES: { files: string[]; why: string }[] = [
         {

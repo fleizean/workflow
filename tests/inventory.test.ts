@@ -9,19 +9,16 @@ import { read } from './helpers/ts-imports';
 /*
  * Why these numbers are load-bearing.
  *
- * Phase 8 (SPA-14) deletes legacy/pages/*.html once the behaviour parity checklist in
- * baselines/v1.2.1/PARITY-CHECKLIST.md is fully ticked. That is a one-way door: after the
- * deletion, the record of what those 2,750 lines of inline script did is git archaeology.
+ * SPA-14 deletes legacy/pages/*.html once the behaviour parity checklist in baselines/v1.2.1/PARITY-CHECKLIST.md
+ * is fully ticked. That is a one-way door: after the deletion, the record of what those 2,750 lines of inline
+ * script did is git archaeology.
  *
- * The checklist is only trustworthy if the artifacts it cites still describe the tree. This
- * file is what makes that true. It recomputes every count from the LIVE source with the same
- * regular expressions tools/baseline/inventory.sh uses, and compares the COMMITTED artifacts
- * against them element-wise. A source change that is not regenerated therefore fails CI,
- * rather than leaving a stale file that still looks authoritative (threat T-01-11).
+ * The checklist is only trustworthy if the artifacts it cites still describe the tree. This file recomputes every
+ * count from the LIVE source with the same regular expressions tools/baseline/inventory.sh uses, and compares the
+ * COMMITTED artifacts against them element-wise, so a source change that is not regenerated fails CI (T-01-11).
  *
- * The semantics are duplicated here in TypeScript rather than shelled out to the generator on
- * purpose: the suite must behave identically on Windows and on the Ubuntu CI runner, and a
- * child process running grep is not available on both.
+ * The semantics are duplicated here in TypeScript rather than shelled out: the suite must behave identically on
+ * Windows and on the Ubuntu CI runner, and a child process running grep is not available on both.
  */
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -74,12 +71,10 @@ const IPC_CHANNEL_RE = /ipcMain\.(?:handle|on)\('([^']*)'/g;
 /*
  * grep -r --include=*.html --include=*.js legacy/ - over the v1.2.1 renderer WHEREVER IT LIVES.
  *
- * SPA-14 deleted it in 08-F. Repointing this file at baselines/v1.2.1/*.tsv would have destroyed the
- * whole point of it: those artifacts are what the counts are compared AGAINST, and a test that reads
- * the artifact and compares it with the artifact proves nothing at all. listV121/readV121 take the
- * bytes out of the commit that last carried them instead, so every count below is still RECOMPUTED
- * from the v1.2.1 source and still diffed against the committed artifact - which is exactly what makes
- * a stale artifact impossible to mistake for an authoritative one.
+ * SPA-14 deleted it in 08-F. Repointing this file at baselines/v1.2.1/*.tsv would have destroyed the whole point:
+ * those artifacts are what the counts are compared AGAINST, and a test that reads the artifact and compares it
+ * with the artifact proves nothing. listV121/readV121 take the bytes out of the commit that last carried them,
+ * so every count below is still RECOMPUTED from the v1.2.1 source and still diffed against the artifact.
  */
 const collectSources = (dir: string): string[] =>
     listV121(dir).filter((file) => file.endsWith('.html') || file.endsWith('.js'));
@@ -175,12 +170,9 @@ describe('CUSTODY-09: the v1.2.1 behavior inventory is complete and regenerable'
 /*
  * 08-REVIEW-TIMER WR-09. The generator behind four artifacts whose whole purpose is to be authoritative about a
  * tree nobody can open any more could produce them empty: `set -e` does not fail a pipeline on a non-zero LEFT
- * side without `set -o pipefail`, so a `git archive` that failed - a partial clone, a bad SHA, an unreadable
- * object - left `tar` succeeding on empty input, $SCAN an empty directory, and handlers.tsv, api-calls.tsv,
- * preload-surface.txt and ipc-channels.txt regenerated as empty files.
- *
- * The assertions above would catch the committed result, so this is a fragility rather than a hole - but a
- * generator should not be able to produce a silently empty artifact at all.
+ * side without `set -o pipefail`, so a `git archive` that failed left `tar` succeeding on empty input, $SCAN an
+ * empty directory, and all four artifacts regenerated as empty files. The assertions above would catch the
+ * committed result, so this is a fragility rather than a hole - but a generator should not be able to do it.
  */
 describe('WR-09: the inventory generator cannot regenerate an empty artifact', () => {
     const script = read('tools/baseline/inventory.sh');

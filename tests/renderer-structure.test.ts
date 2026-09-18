@@ -185,11 +185,9 @@ describe('ARCH-03: one direction of flow, asserted on the source', () => {
      *   features/history/index.ts             export { invoke } from './api/useSessions'
      *   components/ui/Modal.tsx               import { invoke } from '@renderer/features/history'
      *
-     * is individually legal - the first because api/ lifts the facade, the second because a relative sibling
-     * matches no pattern, the third because that IS the public surface - and together they put the bridge in any
-     * component. no-restricted-imports cannot see it: the ban it would have to apply is the one the first hop
-     * lifts. So the rule is decided here instead, and it is the narrowest one that closes the chain: no renderer
-     * file re-exports the facade, zustand or the query client, whatever its area. Importing them is unchanged.
+     * is individually legal, and together they put the bridge in any component. no-restricted-imports cannot see
+     * it: the ban it would have to apply is the one the first hop lifts. So the rule is decided here instead, as
+     * narrowly as closes the chain: no renderer file re-exports the facade, zustand or the query client.
      */
     it('never hands the facade, the store library or the query client on through an export', () => {
         const aliases = readAliases('electron.vite.config.ts', ['renderer', 'resolve', 'alias']);
@@ -233,9 +231,8 @@ describe('ARCH-03: one direction of flow, asserted on the source', () => {
  * that could be written; this is the claim about the files that ARE written, and it is separate on purpose - a lint
  * rule proves what would be refused, not that nothing already present slipped in before the rule existed.
  *
- * What neither can prove is that the escaping actually happens, because there is no jsdom here and no component is
- * rendered by any test. tools/smoke-packaged.mjs does that against the packaged app: it writes a company called
- * <img src=x onerror=...>, routes to #/companies, and reads back both the text and the element count.
+ * What neither can prove is that the escaping actually happens, because there is no jsdom here.
+ * tools/smoke-packaged.mjs does that against the packaged app.
  */
 describe('criterion 1 / S2: the renderer never turns text into markup', () => {
     const HTML_SINKS = /\bdangerouslySetInnerHTML\b|\b(?:inner|outer)HTML\b|\binsertAdjacentHTML\b|\bdocument\s*\.\s*write(?:ln)?\s*\(/;
@@ -280,15 +277,13 @@ describe('SPA-01: one document, and screens change inside it', () => {
  * Criterion 1's other half, and SPA-15.
  *
  * The v1.2.1 renderer is MOVED, not deleted - Phase 8 ticks the parity checklist against it and SPA-14 deletes it
- * then. The four page fragments are the exception: nothing in the repository has ever referenced them (the Phase 1
- * inventory found exactly one mention, in RESTRUCTURE-BRIEF.md, flagging them as dead), so they are deleted here
- * rather than carried. "Moved" and "deleted" are different claims, so they are asserted separately.
+ * then. The four page fragments are the exception: nothing in the repository has ever referenced them, so they are
+ * deleted here rather than carried. "Moved" and "deleted" are different claims, asserted separately.
  *
- * The unused-preload-API half of SPA-15 is not here. The four v1.2.1 APIs that were exposed and never called are
+ * The unused-preload-API half of SPA-15 is not here. The four v1.2.1 APIs exposed and never called are
  * dispositioned one by one in tests/ipc-parity.test.ts, and tests/preload-bridge.test.ts holds the v2 bridge's
- * surface equal to the contract's channel list - so an unused API cannot exist in the v2 preload without a contract
- * channel to match it. Deleting the five entries from the frozen preload.js would destroy the reference those two
- * files are measured against.
+ * surface equal to the contract's channel list. Deleting the five entries from the frozen preload.js would destroy
+ * the reference those two files are measured against.
  */
 describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragments did not come with it', () => {
     const LEGACY_PAGES = 'legacy/pages';
@@ -330,8 +325,7 @@ describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragment
     /*
      * The deletion had to leave the CUSTODY-09 inventory untouched, and it did: the fragments held no
      * addEventListener and no window.api call, so 106/21/67 are unchanged. tests/inventory.test.ts recomputes all
-     * three from legacy/ and compares them element-wise with the committed artifacts, which is the real guard -
-     * this is the pointer to it, so a reader of criterion 1 is not left wondering whether the counts moved.
+     * three from legacy/ and compares them element-wise, which is the real guard; this is the pointer to it.
      */
     it('kept the behaviour inventory measurable, by moving what the inventory counts', () => {
         for (const artifact of ['baselines/v1.2.1/handlers.tsv', 'baselines/v1.2.1/api-calls.tsv']) {
@@ -346,20 +340,17 @@ describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragment
 /*
  * Criterion 4's last mile. tests/renderer-data-path.test.ts RUNS the data path - a failing handler, the real
  * facade, the real query objects, the real client - but it cannot render a component, because this project has no
- * jsdom. So the two joints between what is executed and what is mounted are asserted here on the source: that the
- * hooks hand useQuery the very objects the other file executes, and that the subscription is mounted once, from a
- * provider, inside the client it invalidates.
+ * jsdom. So the two joints between what is executed and what is mounted are asserted here on the source.
  */
 describe('criterion 4: the executed data path is the mounted one', () => {
     const APP = path.posix.join(SRC, 'app/App.tsx');
     const SYNC = path.posix.join(SRC, 'app/providers/DataSyncProvider.tsx');
     const CHANGED_EVENT = 'data:changed';
     /*
-     * RENDERER CR-01. Every main-to-renderer event main pushes on its own schedule, not just the one this block
-     * was written for. timer:tick was subscribed from TimerPage, so it was torn down on every navigation away from
-     * / and the quit confirm then read a frozen snapshot - which meant that a persistFailing that flipped while the
-     * user was on another screen left the confirm promising "Quitting keeps it". Naming the events in a list is
-     * what stops the next one being mounted in a screen too.
+     * RENDERER CR-01. Every main-to-renderer event main pushes on its own schedule, not just the one this block was
+     * written for. timer:tick was subscribed from TimerPage, so it was torn down on every navigation away from /
+     * and the quit confirm then read a frozen snapshot - a persistFailing that flipped while the user was on
+     * another screen left the confirm promising "Quitting keeps it".
      */
     const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick', 'pomodoro:tick'];
 
@@ -445,11 +436,9 @@ describe('criterion 4: the executed data path is the mounted one', () => {
 /*
  * Criterion 4, and the obligation 08-D-SUMMARY.md left slice E. Two things mean the pomodoro mode: the clock main
  * runs in (timer.state.mode) and the preference Settings shows (settings.pomodoroEnabled). Home writes both,
- * Settings writes both, and if either ever wrote one of them alone the two screens would disagree about what the
- * app is doing - Settings reporting "off" while Home counts down a pomodoro.
- *
- * Avoiding that by remembering is what rots when a third caller appears. There is exactly one writer, it lives
- * where both screens can reach it, and this is what says so.
+ * Settings writes both, and if either wrote one alone the two screens would disagree about what the app is doing.
+ * Avoiding that by remembering is what rots when a third caller appears: there is exactly one writer, and this is
+ * what says so.
  */
 describe('criterion 4: the mode and its preference are written by one caller', () => {
     const MODE_WRITER = path.posix.join(SRC, 'features/settings/api/useTimerMode.ts');
@@ -625,11 +614,9 @@ describe('criterion 5: one Modal, one Toast, one alert, one width', () => {
      * BottomNav is `fixed bottom-0 z-50` and the overlay is `fixed inset-0 z-50`, so at equal z-index the later
      * element in the document wins. A modal rendered inside a screen sits before <BottomNav/> in AppShell and
      * loses: the bar paints bright and undimmed over the panel, and can be CLICKED THROUGH it, changing route with
-     * the dialog still mounted and taking an unsaved form with it. The shared AlertDialog happened to win because
-     * it is mounted after the nav - some dialogs above the bar, some below.
-     *
-     * v1.2.1 appended the nav to document.body and then each modal to document.body, so every modal painted over
-     * the bar. The portal is that order, restored once for every caller.
+     * the dialog still mounted. AlertDialog happened to win because it mounts after the nav - some dialogs above
+     * the bar, some below. v1.2.1 appended both to document.body, so every modal painted over the bar; the portal
+     * is that order, restored once for every caller.
      */
     it('renders the overlay into the document root, not into the screen that opened it', () => {
         expect(codeOf(MODAL), MODAL + ' no longer portals, so a screen-opened dialog is back under the nav bar')

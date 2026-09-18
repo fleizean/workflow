@@ -3,8 +3,7 @@
  *
  * tests/sheets-retirement.test.ts proved the export is gone from src/. Nothing looked at README.md or at the
  * published site, and both went on advertising it - "Google Sheets" four times on the front page, with a copyable
- * Apps Script and a "New in v1.2.1" badge over it - for the six months after the owner removed the feature. A
- * retirement guard that stops at the source is a guard over the half nobody reads.
+ * Apps Script and a "New in v1.2.1" badge over it - for the six months after the owner removed the feature.
  *
  * Every claim here is one a reader could act on: a feature that does not exist, a file that is not there, a
  * download that is not offered, a command that is not a script.

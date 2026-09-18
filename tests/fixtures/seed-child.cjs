@@ -1,30 +1,23 @@
 /*
- * tests/fixtures/seed-child.cjs
+ * Builds the ONE fixture that cannot be built in-process: a database whose -wal sidecar is non-empty on disk,
+ * holding committed rows the main file does not contain.
  *
- * Builds the ONE fixture that cannot be built in-process: a database whose -wal sidecar is
- * non-empty on disk, holding committed rows the main file does not contain.
+ * This process is forked by tests/fixtures/seed.ts and then SIGKILLed. That is not incidental and it is not
+ * tidy-able. sqlite3_close on the last connection CHECKPOINTS AND DELETES the -wal, so any fixture that ends with
+ * a clean db.close() - including one that merely lets the process exit normally - hands back a single-file
+ * database with no sidecar at all, and plan 01-08's negative control would pass forever without being able to fail.
  *
- * This process is forked by tests/fixtures/seed.ts and then SIGKILLed. That is not incidental
- * and it is not tidy-able. sqlite3_close on the last connection CHECKPOINTS AND DELETES the
- * -wal, so any fixture that ends with a clean db.close() - including one that merely lets the
- * process exit normally - hands back a single-file database with no sidecar at all. Plan
- * 01-08's negative control would then pass forever without ever being able to fail, and
- * CUSTODY-03 would be "proven" by a test with no teeth.
+ * The same mechanism is why the owner's real krono.db-wal is 0 bytes: their app was closed cleanly. The user this
+ * fixture speaks for is the one whose app was killed from the tray.
  *
- * The same mechanism is why the owner's real krono.db-wal is 0 bytes: their app was closed
- * cleanly. The user this fixture speaks for is the one whose app was killed from the tray.
+ * CommonJS on purpose - it is launched by a plain child_process.fork, with no transform step in front of it.
  *
- * CommonJS on purpose - it is launched by a plain child_process.fork, with no transform step
- * in front of it.
- *
- * Every step below is load-bearing. Skipping any one of them yields a fixture that still looks
- * fine and quietly proves nothing:
+ * Every step below is load-bearing. Skipping any one yields a fixture that still looks fine and proves nothing:
  *
  *   journal_mode = WAL          without it there is no -wal to be non-empty
- *   wal_autocheckpoint = 0      without it SQLite checkpoints at 1000 pages and the sidecar's
- *                               contents become a function of row count rather than of intent
- *   checkpoint(TRUNCATE) first  without it "rows in the main file" and "rows in the sidecar"
- *                               cannot be told apart, so the negative control measures nothing
+ *   wal_autocheckpoint = 0      without it SQLite checkpoints at 1000 pages and the sidecar's contents become a
+ *                               function of row count rather than of intent
+ *   checkpoint(TRUNCATE) first  without it "rows in the main file" and "rows in the sidecar" cannot be told apart
  *   SIGKILL, never close()      see above - a clean close deletes the evidence
  */
 

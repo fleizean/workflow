@@ -1,29 +1,21 @@
 /*
- * tests/tsconfig-strict.test.ts
+ * The standing proof for BUILD-02: strict mode, with noImplicitAny, is on in BOTH split tsconfigs, and
+ * `npm run typecheck` checks both.
  *
- * The standing proof for BUILD-02: strict mode, with noImplicitAny, is on in BOTH split tsconfigs,
- * and `npm run typecheck` checks both.
+ * Why this matters more than a style preference. TypeScript is this restructure's load-bearing decision: most of
+ * the defects the audit found in v1.2.1 - an undefined identifier, a call to an API that does not exist - are
+ * exactly what a strict compiler rejects. With strict off, or noImplicitAny off, those defects compile clean again
+ * and nothing reports it. The usual way that happens is a preset: @electron-toolkit/tsconfig's base sets
+ * noImplicitAny to false, which silently defeats strict for every project that extends it.
  *
- * Why this matters more than a style preference. TypeScript is this restructure's load-bearing
- * decision: most of the defects the audit found in v1.2.1 - an undefined identifier, a call to an
- * API that does not exist - are exactly what a strict compiler rejects. With strict off, or with
- * noImplicitAny off, those defects compile clean again and nothing at all reports it: no error,
- * no warning, just a gate that has quietly stopped gating. The usual way that happens is a preset:
- * @electron-toolkit/tsconfig's base sets noImplicitAny to false, which silently defeats strict for
- * every project that extends it. So both flags are stated explicitly, and redundantly, in both
- * files, and this test is what keeps them there.
+ * WHY THIS TEST PARSES AND DOES NOT GREP. The two tsconfigs are pure JSON by contract - no comments - precisely so
+ * this file can JSON.parse them. A textual search would be satisfied by a comment that merely mentions the flag
+ * names (a textual gate here has already matched prose once), and could not tell `true` from `"true"`. The price
+ * is that the JSON files cannot carry their own explanation, so it lives here: a comment added to either fails
+ * this test on the parse, and that is intended.
  *
- * WHY THIS TEST PARSES AND DOES NOT GREP. tsconfig.node.json and tsconfig.web.json are pure JSON
- * by contract - no comments - precisely so that this file can JSON.parse them. A textual search for
- * the flag names would be satisfied by a comment that merely mentions them (a textual gate in this
- * repository has already matched prose once, in plan 01-08), and it could not tell `true` from
- * `"true"`. Parsing reads the value the compiler reads. The price is that the JSON files cannot
- * carry their own explanation, so it lives here: if someone adds a comment to either file, this
- * test fails, loudly, on the parse, and that is intended.
- *
- * Each assertion was turned red by a deliberate mutation of one of the two configs or of
- * package.json before this file was committed, and the file restored byte-identically (plan
- * 02-02's SUMMARY records the hashes).
+ * Each assertion was turned red by a deliberate mutation before this file was committed, and the file restored
+ * byte-identically (plan 02-02's SUMMARY records the hashes).
  */
 
 import { describe, expect, it } from 'vitest';

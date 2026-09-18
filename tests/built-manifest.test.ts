@@ -1,32 +1,24 @@
 /*
- * tests/built-manifest.test.ts
+ * The standing proof for D-10: the name inside the PACKAGED application's manifest is the name in this
+ * repository's package.json, and nothing in the build configuration can change it.
  *
- * The standing proof for D-10: the name inside the PACKAGED application's manifest is the name in
- * this repository's package.json, and nothing in the build configuration can change it.
+ * Why this is its own file. tests/app-identity.test.ts pins package.json's `name`, but Electron does not read this
+ * repository's package.json at runtime - it reads the one electron-builder WRITES into the packaged app, and
+ * electron-builder can rewrite it on the way:
  *
- * Why this is its own file. tests/app-identity.test.ts pins package.json's `name`. But Electron
- * does not read this repository's package.json at runtime - it reads the one electron-builder
- * WRITES into the packaged app, and electron-builder can rewrite it on the way:
- *
- *   - its metadata-injection key deep-merges arbitrary fields (a name, a productName) into the
- *     packaged manifest (app-builder-lib's modifyMainPackageJson), so the change never appears in
- *     the source manifest at all;
+ *   - its metadata-injection key deep-merges arbitrary fields into the packaged manifest
+ *     (app-builder-lib's modifyMainPackageJson), so the change never appears in the source manifest at all;
  *   - a top-level `name` key in the builder config is a second declaration of the identity;
  *   - `directories.app` points the build at a DIFFERENT package.json, whose name nobody checks.
  *
- * Any of these moves every installed user's krono.db to an empty directory, without a crash, a
- * warning or one failing assertion in the rest of the suite. That is the C2 catastrophe Phase 1
- * exists to prevent, arriving by a door Phase 1's guard cannot see.
+ * Any of these moves every installed user's krono.db to an empty directory, without a crash, a warning or one
+ * failing assertion in the rest of the suite - the C2 catastrophe, arriving by a door Phase 1's guard cannot see.
  *
- * The YAML is read as text with FULL-LINE COMMENTS STRIPPED FIRST. This repository puts the reason
- * for every non-obvious choice into the file itself, so electron-builder.yml is dense with prose
- * about exactly the keys asserted on here. A bare match would be satisfied by an explanatory
- * comment (the misfire plan 01-08's module-shape gate hit), or defeated by one. Presence checks
- * therefore run on the stripped text only, where a comment cannot satisfy them.
+ * The YAML is read as text with FULL-LINE COMMENTS STRIPPED FIRST. electron-builder.yml is dense with prose about
+ * exactly the keys asserted here, so a bare match would be satisfied by an explanatory comment, or defeated by one.
  *
- * Each assertion was turned red by a deliberate mutation of electron-builder.yml or package.json
- * before this file was committed, and the file restored byte-identically (see plan 02-02's
- * SUMMARY for the hashes).
+ * Each assertion was turned red by a deliberate mutation before this file was committed, and the file restored
+ * byte-identically (plan 02-02's SUMMARY records the hashes).
  */
 
 import { describe, expect, it } from 'vitest';

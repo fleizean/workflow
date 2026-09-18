@@ -1,27 +1,22 @@
 /*
  * Reading a v1.2.1 file after SPA-14 deleted it.
  *
- * Five guards pinned `main.js`, `preload.js`, `database/db.js` and `legacy/**` by path, and four of
- * them protect the Core Value: the SQL transcription the migrations are checked against, the
- * behaviour inventory that authorises the deletion, the IPC parity map, and the setting defaults a
- * drift in which would change a user's daily target. Repointing those at a summary artifact would
- * have kept the names and lost the checking - the artifacts are what the guards compare AGAINST, so
- * a guard that reads the artifact and compares it with the artifact proves nothing.
+ * Five guards pinned `main.js`, `preload.js`, `database/db.js` and `legacy/**` by path, and four of them protect
+ * the Core Value: the SQL transcription the migrations are checked against, the behaviour inventory that
+ * authorises the deletion, the IPC parity map, and the setting defaults a drift in which would change a user's
+ * daily target. Repointing those at a summary artifact would have kept the names and lost the checking - the
+ * artifacts are what the guards compare AGAINST.
  *
- * Git already holds the files, and `tests/db-legacy-shapes.test.ts` has read `database/db.js` out of
- * history since Phase 4 (`git cat-file blob <commit>:database/db.js`) to replay every historical
- * shape. So the guards keep their exact strength and only change where they read from. `verify.yml`
- * checks out with `fetch-depth: 0`, which is what makes that available in CI.
+ * Git already holds the files, and tests/db-legacy-shapes.test.ts has read database/db.js out of history since
+ * Phase 4. So the guards keep their exact strength and only change where they read from; verify.yml checks out
+ * with fetch-depth: 0, which is what makes that available in CI.
  *
- * 08-REVIEW-TIMER WR-08: git is the ONLY source. This used to prefer a file on disk at the same path,
- * which was harmless while the four paths were tracked and became a hole the moment they were not -
- * any file appearing at `main.js`, `preload.js` or `database/db.js` silently became the v1.2.1
- * source of truth for the SQL transcription, the behaviour inventory, the IPC parity map, the Sheets
- * retirement scan and the setting defaults. A blob is content-addressed, so reading from git IS the
- * pin the review asked for, and the worktree can hold whatever it likes.
+ * 08-REVIEW-TIMER WR-08: git is the ONLY source. This used to prefer a file on disk at the same path, which became
+ * a hole the moment those paths were untracked - any file appearing at main.js, preload.js or database/db.js
+ * silently became the v1.2.1 source of truth. A blob is content-addressed, so reading from git IS the pin.
  *
- * On a shallow clone there is no history to read and no file on disk. `available()` says so and the
- * callers skip rather than pass: a guard that cannot look must not report green.
+ * On a shallow clone there is no history and no file on disk. available() says so and the callers skip rather
+ * than pass: a guard that cannot look must not report green.
  */
 
 import { execFileSync } from 'node:child_process';
