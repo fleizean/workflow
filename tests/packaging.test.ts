@@ -268,6 +268,12 @@ describe('matchDenied - material that must never reach a user', () => {
         ['RESTRUCTURE-BRIEF.md', 'RESTRUCTURE-BRIEF.md'],
         ['out/renderer/assets/index-DUDI11dz.js.map', '*.map'],
         ['out/main/index.ts', '*.ts|*.tsx|*.mts|*.cts'],
+        // Phase 10 criterion 8: 10.8 MB of C source, headers and node-gyp files the app never loads.
+        ['node_modules/better-sqlite3/deps/sqlite3/sqlite3.c', '*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi'],
+        ['node_modules/better-sqlite3/deps/sqlite3/sqlite3.h', '*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi'],
+        ['node_modules/better-sqlite3/src/objects/database.cpp', '*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi'],
+        ['node_modules/node-addon-api/napi.h', '*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi'],
+        ['node_modules/better-sqlite3/binding.gyp', '*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi'],
         ['src/renderer/src/App.tsx', '*.ts|*.tsx|*.mts|*.cts'],
         ['archive/krono.db', '*.db|*.db-wal|*.db-shm'],
         ['krono.db-wal', '*.db|*.db-wal|*.db-shm'],

@@ -29,6 +29,26 @@ files:
   - out/**
   - '!**/*.map'
   - '!**/*.ts'
+  # Phase 10 criterion 8, measured with tools/ci/assert-package-contents.mjs: the packager adds the whole
+  # better-sqlite3 package, and 10.2 MB of it is C source the app cannot run - the amalgamated SQLite
+  # (deps/sqlite3/sqlite3.c alone is 9.5 MB), its headers, the addon's own C++ under src/, and node-gyp's
+  # configure scaffolding under build/, which contains no compiled binary at all (verify.yml measured that:
+  # with a prebuild present every gyp target collapses to type: none). The driver resolves its addon from
+  # prebuilds/, so none of this is on any load path. The packaged smoke opens a database through the real
+  # driver on every run, which is what keeps this exclusion honest.
+  #
+  # NOT trimmed, deliberately: the seven prebuilds for platforms this installer will never run on, about
+  # 13 MB. Keeping only prebuilds/${platform}-${arch} would need a re-inclusion pattern whose failure mode
+  # is an app that cannot open its database, and two of the four packaging legs (win-arm64, mac-x64) are
+  # built by runners that cannot execute them - so nothing would catch a mistake there before a user did.
+  # Recorded as a measured deferred item instead.
+  - '!**/node_modules/better-sqlite3/deps/**'
+  - '!**/node_modules/better-sqlite3/src/**'
+  - '!**/node_modules/better-sqlite3/build/**'
+  # node-addon-api is header-only and compile-time: better-sqlite3 declares it as a dependency, so the
+  # packager carries it, but nothing under better-sqlite3/lib requires it and no prebuild needs it at load
+  # time. 375 KB of C++ headers and an empty nothing.c.
+  - '!**/node_modules/node-addon-api/**'
 
 # A native .node addon must exist as a real file on disk; it cannot be dlopen'd from inside the
 # asar archive (BUILD-05). tools/smoke-packaged.mjs proves the packaged app loads it from here.

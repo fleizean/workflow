@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -401,6 +402,113 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
         }
     });
 
+
+    /*
+     * Phase 10 criterion 8, first half: "a CI bundle grep proves the production renderer chunk contains no zod".
+     *
+     * tests/zod-boundary.test.ts already walks the import graph from the renderer entry and refuses any value
+     * chain that reaches zod. This is the other end of the same claim, and it is the one the criterion asks for:
+     * what the BUNDLER actually emitted. A graph walk can be defeated by a resolution this project's aliases do
+     * not model; the emitted bytes cannot.
+     *
+     * The negative control is what makes it a check rather than a hopeful grep: the same markers are REQUIRED to
+     * appear in the main-process bundle, which legitimately validates every IPC payload with zod. A marker list
+     * that had gone stale - a zod release that stopped emitting these strings - would fail there first, loudly,
+     * instead of reporting a clean renderer forever.
+     */
+    const ZOD_MARKERS = ['ZodError', 'ZodRealError', 'invalid_union', 'unrecognized_keys', '$ZodType'];
+    const MAIN_BUNDLE_DIR = 'out/main';
+
+    it('the production renderer chunk contains no zod', () => {
+        const scripts = emittedWith('.js');
+        expect(scripts.length, 'no JavaScript was emitted, so this grep would pass vacuously').toBeGreaterThan(0);
+        const found: string[] = [];
+        for (const file of scripts) {
+            const source = read(file);
+            for (const marker of ZOD_MARKERS) {
+                if (source.includes(marker)) found.push(file + ' contains ' + marker);
+            }
+        }
+        expect(found, 'zod reached the renderer bundle:\n  ' + found.join('\n  ')).toEqual([]);
+    });
+
+    it('the same grep finds zod in the main bundle, where it belongs', () => {
+        const scripts = walk(path.join(repoRoot, MAIN_BUNDLE_DIR)).filter((file) => file.endsWith('.js'));
+        expect(scripts.length, 'no main-process JavaScript was emitted, so the control proves nothing')
+            .toBeGreaterThan(0);
+        const main = scripts.map(read).join('\n');
+        for (const marker of ZOD_MARKERS) {
+            expect(
+                main.includes(marker),
+                marker + ' is absent from the main bundle too, so the renderer grep above is meaningless - ' +
+                'either zod stopped emitting it or main stopped validating'
+            ).toBe(true);
+        }
+    });
+
+    /*
+     * Phase 10 criterion 8, second half, on the build output: no duplicate asset.
+     *
+     * The titlebar used to import the 1024x1024 icon.png, so Vite fingerprinted a second copy of a 1.84 MB file
+     * into out/renderer beside the one out/main already needs for the tray - two identical megabytes in every
+     * installer. The check is on CONTENT, not on name: a fingerprinted copy has a different name by construction,
+     * which is exactly why a name-based check would not have caught it.
+     */
+    /*
+     * One duplicate stands, with its reason, and nothing else may join it. main and renderer are separate rollup
+     * builds with separate output directories, so an asset both of them import is emitted into both: the titlebar
+     * draws the logo and the notification adapter passes it to Windows. 8.5 KB twice is the price of that
+     * separation and it is stated here rather than waved through by a size threshold - which would also have
+     * waved through the 1.84 MB copy this check was written to catch.
+     */
+    const PERMITTED_DUPLICATES: { files: string[]; why: string }[] = [
+        {
+            files: ['out/main/chunks', 'out/renderer/assets'],
+            why: 'src/assets/icon-64.png: the titlebar imports it in the renderer build and the notification ' +
+                'adapter imports it in the main build, and the two builds emit into separate directories'
+        }
+    ];
+    const permits = (files: readonly string[]): boolean =>
+        PERMITTED_DUPLICATES.some((entry) =>
+            files.length === entry.files.length &&
+            entry.files.every((dir, index) => files[index]?.startsWith(dir + '/') === true) &&
+            new Set(files.map((file) => path.basename(file))).size === 1);
+
+    it('ships no duplicate asset that is not registered with a reason', () => {
+        const byDigest = new Map<string, string[]>();
+        for (const file of walk(path.join(repoRoot, BUILT_ROOT))) {
+            const digest = createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex');
+            byDigest.set(digest, [...(byDigest.get(digest) ?? []), file]);
+        }
+        const duplicated = [...byDigest.values()].filter((files) => files.length > 1);
+        const unexplained = duplicated.filter((files) => !permits(files));
+        expect(unexplained, 'the same bytes are shipped more than once, with no reason given:\n  ' +
+            unexplained.map((files) => files.join(' == ')).join('\n  ')).toEqual([]);
+
+        // The register cannot outlive what it excuses: every entry must still name a duplicate that exists.
+        for (const entry of PERMITTED_DUPLICATES) {
+            expect(
+                duplicated.some((files) => permits(files)),
+                'a permitted duplicate no longer exists, so the entry is stale: ' + entry.why
+            ).toBe(true);
+        }
+    });
+
+    it('ships no megabyte twice, whatever the register says', () => {
+        // The bound the register must never be widened past. The defect this replaced was two copies of a
+        // 1.84 MB PNG; a permitted duplicate that grew to that size would still be the same defect.
+        const MAX_DUPLICATED_BYTES = 64_000;
+        const byDigest = new Map<string, string[]>();
+        for (const file of walk(path.join(repoRoot, BUILT_ROOT))) {
+            const digest = createHash('sha256').update(fs.readFileSync(path.join(repoRoot, file))).digest('hex');
+            byDigest.set(digest, [...(byDigest.get(digest) ?? []), file]);
+        }
+        for (const files of [...byDigest.values()].filter((group) => group.length > 1)) {
+            const bytes = fs.statSync(path.join(repoRoot, files[0] ?? '')).size;
+            expect(bytes, files.join(' == ') + ' is duplicated at ' + bytes + ' bytes')
+                .toBeLessThanOrEqual(MAX_DUPLICATED_BYTES);
+        }
+    });
 
     it('the fonts are bundled: woff2 assets are emitted', () => {
         expect(emittedWith('.woff2').length, 'no .woff2 under ' + BUILT_DIR + ' - the fonts are not in the bundle').toBeGreaterThan(0);

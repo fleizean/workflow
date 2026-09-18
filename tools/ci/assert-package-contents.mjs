@@ -62,6 +62,7 @@
  * Their types are declared in assert-package-contents.d.mts.
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -119,6 +120,15 @@ const DENIED_RULES = Object.freeze([
     exactRule('preload.js', 'the legacy v1.2.1 preload script (D-01)'),
     prefixRule('.planning/', 'planning artifacts, which cite unpatched defects in the shipped v1.2.1'),
     exactRule('RESTRUCTURE-BRIEF.md', 'the restructure brief, which cites unpatched defects in the shipped v1.2.1'),
+    /*
+     * Phase 10 criterion 8. The packager carries the whole better-sqlite3 package, and 10.2 MB of it was the
+     * amalgamated SQLite C source, its headers and the addon's own C++ - none of it on any load path, because the
+     * driver resolves a prebuilt .node from prebuilds/. Banned on the ARTIFACT rather than trusted to the
+     * exclusion patterns in electron-builder.yml, for the reason this whole file exists: a pattern that is
+     * supposed to exclude something and an archive that actually excludes it are different claims.
+     */
+    patternRule('*.c|*.cc|*.cpp|*.h|*.hpp|*.gyp|*.gypi', /\.(c|cc|cpp|h|hpp|gyp|gypi)$/i,
+        'C or C++ source or a node-gyp build file - the app loads a prebuilt N-API addon and compiles nothing'),
     patternRule('*.map', /\.map$/i, 'a source map - it reconstructs source the app does not need to run'),
     patternRule('*.ts|*.tsx|*.mts|*.cts', /\.(ts|tsx|mts|cts)$/i, 'TypeScript source - the app runs the compiled output'),
     patternRule('*.db|*.db-wal|*.db-shm', /\.db(-wal|-shm)?$/i, "a SQLite database - an archived database is one person's data"),
@@ -352,6 +362,53 @@ export function listFilesUnder(dir) {
     return found.sort(compareCodeUnits);
 }
 
+/*
+ * Phase 10 criterion 8: "no duplicate PNGs". Judged on CONTENT, not on name.
+ *
+ * The failure it catches has already happened here: the titlebar imported the 1024x1024 icon.png, so Vite
+ * fingerprinted a second copy of a 1.84 MB file into the renderer bundle beside the one main needs for the tray -
+ * two identical megabytes in every installer, under two different names, which is precisely why a name-based check
+ * would have reported nothing. An asset imported by both the main and the renderer build is emitted into both by
+ * construction, so a SMALL duplicate is reported and allowed; a large one is a failure.
+ */
+export const MAX_DUPLICATED_BYTES = 64_000;
+
+export function findDuplicateContent(asarPath, entries, resourcesDir) {
+    const byDigest = new Map();
+    const fd = fs.openSync(asarPath, 'r');
+    const dataStart = (() => {
+        const prefix = Buffer.alloc(8);
+        fs.readSync(fd, prefix, 0, 8, 0);
+        return 8 + prefix.readUInt32LE(4);
+    })();
+    try {
+        for (const entry of entries) {
+            if (entry.size === 0 || entry.link !== undefined) continue;
+            let bytes;
+            if (entry.unpacked) {
+                const onDisk = path.join(resourcesDir, UNPACKED_DIR_NAME, entry.path);
+                if (!isFile(onDisk)) continue;
+                bytes = fs.readFileSync(onDisk);
+            } else {
+                bytes = Buffer.alloc(entry.size);
+                fs.readSync(fd, bytes, 0, entry.size, dataStart + entry.offset);
+            }
+            const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+            byDigest.set(digest, [...(byDigest.get(digest) ?? []), entry]);
+        }
+    } finally {
+        fs.closeSync(fd);
+    }
+    return [...byDigest.values()]
+        .filter((group) => group.length > 1)
+        .map((group) => ({
+            bytes: group[0].size,
+            wasted: group[0].size * (group.length - 1),
+            paths: group.map((entry) => entry.path).sort(compareCodeUnits)
+        }))
+        .sort((a, b) => b.wasted - a.wasted);
+}
+
 export function inspectPackage(appDir) {
     const resourcesDir = resolveResourcesDir(appDir);
     const asarPath = path.join(resourcesDir, ASAR_NAME);
@@ -388,8 +445,15 @@ export function inspectPackage(appDir) {
     for (const p of headerUnpacked.problems) failures.push('the header: ' + p);
     for (const p of missingUnpacked) failures.push('the header marks this unpacked but it is not on disk: ' + p);
 
+    const duplicates = findDuplicateContent(asarPath, entries, resourcesDir);
+    for (const group of duplicates.filter((g) => g.bytes > MAX_DUPLICATED_BYTES)) {
+        failures.push('the same ' + group.bytes + ' bytes are packaged ' + group.paths.length + ' times, wasting ' +
+            group.wasted + ': ' + group.paths.join(' == '));
+    }
+
     return {
         ok: failures.length === 0,
+        duplicates,
         appDir: path.resolve(appDir),
         resourcesDir,
         asarPath,
@@ -425,7 +489,12 @@ export function formatReport(inspection) {
         '--- packaged paths: bytes, U when unpacked, path ---',
         ...inspection.entries.map(entryLine),
         '--- the ' + inspection.largest.length + ' largest entries ---',
-        ...inspection.largest.map(entryLine)
+        ...inspection.largest.map(entryLine),
+        '--- duplicated content (same bytes, more than one path) ---',
+        ...(inspection.duplicates.length === 0
+            ? ['(none)']
+            : inspection.duplicates.map((group) =>
+                String(group.bytes).padStart(10) + ' x' + group.paths.length + '  ' + group.paths.join(' == ')))
     ];
     if (inspection.ok) {
         lines.push('ALLOWLIST_OK files=' + inspection.fileCount + ' bytes=' + inspection.totalBytes +

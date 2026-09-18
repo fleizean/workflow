@@ -51,6 +51,16 @@ export interface UnpackedRegionCheck {
     problems: string[];
 }
 
+/** A group of packaged entries that carry byte-identical content. */
+export interface DuplicateGroup {
+    /** Bytes in one copy. */
+    bytes: number;
+    /** Bytes wasted by the extra copies: bytes * (copies - 1). */
+    wasted: number;
+    /** Every path carrying these bytes, sorted. */
+    paths: string[];
+}
+
 export interface PackageInspection {
     ok: boolean;
     appDir: string;
@@ -62,6 +72,8 @@ export interface PackageInspection {
     /** The largest entries, biggest first - a measurement for the later bundle-size work. */
     largest: AsarEntry[];
     denied: DeniedEntry[];
+    /** Byte-identical entries packaged more than once, worst waste first. */
+    duplicates: DuplicateGroup[];
     topLevelOffenders: string[];
     /** Every file under app.asar.unpacked, as forward-slash paths relative to it. */
     unpackedOnDisk: string[];
@@ -78,6 +90,7 @@ export interface PackageInspection {
 export declare const ALLOWED_TOP_LEVEL: readonly string[];
 export declare const UNPACKED_PACKAGE: string;
 export declare const LARGEST_COUNT: number;
+export declare const MAX_DUPLICATED_BYTES: number;
 
 export declare class PackageNotFoundError extends Error {
     readonly appDir: string;
@@ -94,3 +107,6 @@ export declare function resolveResourcesDir(appDir: string): string;
 export declare function listFilesUnder(dir: string): string[];
 export declare function inspectPackage(appDir: string): PackageInspection;
 export declare function formatReport(inspection: PackageInspection): string;
+export declare function findDuplicateContent(
+    asarPath: string, entries: readonly AsarEntry[], resourcesDir: string
+): DuplicateGroup[];
