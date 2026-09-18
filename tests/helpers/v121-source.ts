@@ -46,9 +46,14 @@ export function historyAvailable(): boolean {
 /*
  * The newest commit whose tree carries the path. `--diff-filter=d` drops the deletion itself, so
  * this is the last commit that had content there - the same form the Phase 4 history walk uses.
+ *
+ * --full-history because git simplifies history by path: at a merge commit where the path is gone on
+ * both sides, the merge reads as TREESAME to its first parent and only that parent is walked - so on
+ * main after the v2 merge, and on the merge ref actions/checkout builds for every pull_request, the
+ * legacy/ commits are unreachable and every guard built on this throws.
  */
 const lastCommitWith = (rel: string): string => {
-    const sha = git(['log', '--format=%H', '--diff-filter=d', '-1', '--', rel]).trim();
+    const sha = git(['log', '--full-history', '--format=%H', '--diff-filter=d', '-1', '--', rel]).trim();
     if (sha === '') throw new Error('git knows no commit carrying ' + rel);
     return sha;
 };
