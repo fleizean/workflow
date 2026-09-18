@@ -281,9 +281,20 @@ function killAfterWriting(dbPath: string, args: readonly string[]): Promise<stri
             stdio: ['ignore', 'ignore', 'inherit', 'ipc']
         });
         let signalled = false;
+        /*
+         * What the child said it had built, kept for the failure message.
+         *
+         * Phase 10 saw this fixture fail once in roughly ten full-suite runs with "-wal does not exist", and the
+         * report could not say whether the sidecar was never written or was written and then went away between
+         * the kill and the stat. The child already measures it and sends it; discarding it threw away the one
+         * number that tells those two apart. It is not a fix - the cause is still unknown - it is the difference
+         * between the next occurrence being data and being another mystery.
+         */
+        let reported: unknown = null;
 
-        child.on('message', () => {
+        child.on('message', (message) => {
             signalled = true;
+            reported = message;
             child.kill('SIGKILL'); // never close() - that would checkpoint the evidence away
         });
 
@@ -306,7 +317,9 @@ function killAfterWriting(dbPath: string, args: readonly string[]): Promise<stri
                 assertWalNonEmpty(dbPath);
                 resolve(dbPath);
             } catch (error) {
-                reject(error instanceof Error ? error : new Error(String(error)));
+                const because = error instanceof Error ? error.message : String(error);
+                reject(new Error(because + ' The child reported ' + JSON.stringify(reported) +
+                    ' before it was killed (exit code ' + String(code) + ', signal ' + String(signal) + ').'));
             }
         });
     });
