@@ -110,8 +110,8 @@ function patternRule(rule, regex, reason) {
  * packager reads from do. The first matching rule is the one reported.
  */
 const DENIED_RULES = Object.freeze([
-    prefixRule('docs/', 'the GitHub Pages site, roughly 3.9 MB - unrelated to the application'),
-    prefixRule('assets/', 'top-level repository assets, roughly 4 MB, including three copies of one 1.8 MB image'),
+    prefixRule('docs/', 'the GitHub Pages site - unrelated to the application, and served from github.io'),
+    prefixRule('assets/', 'top-level repository assets - the README banner, which no packaged code reads'),
     prefixRule('baselines/', "parity screenshots and computed-style records captured from the author's own running app"),
     prefixRule('tools/', 'repository tooling, including tools/baseline/vendor/ - byte-exact copies of what a CDN served on one day'),
     prefixRule('legacy/', 'the retired v1.2.1 renderer - pages, flat scripts and stylesheets - kept on disk until SPA-14 signs off parity (D-01) and never shipped'),
