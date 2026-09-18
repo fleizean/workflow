@@ -864,6 +864,23 @@ if (invokedDirectly) {
     if (!write && committed !== normalise(report)) {
         failed = true;
         console.error(SCRIPT_NAME + ': baselines/v2/RESPONSIVE-MATRIX.md is not what this run produces.');
+        /*
+         * Naming the lines rather than only the fact. The gate first failed on a CI runner, where
+         * `--write` is not a thing anyone can re-run and the operator has nothing to reason from;
+         * every recorded value here is a measurement, so a machine that renders a pixel differently
+         * has to be distinguishable from a screen that actually broke.
+         */
+        const was = committed.split('\n');
+        const now = normalise(report).split('\n');
+        let shown = 0;
+        for (let n = 0; n < Math.max(was.length, now.length) && shown < 20; n += 1) {
+            if (was[n] === now[n]) continue;
+            shown += 1;
+            console.error(SCRIPT_NAME + ': line ' + (n + 1) + ' committed: ' + (was[n] ?? '(no line)'));
+            console.error(SCRIPT_NAME + ': line ' + (n + 1) + ' this run : ' + (now[n] ?? '(no line)'));
+        }
+        const total = Math.max(was.length, now.length);
+        if (shown === 20) console.error(SCRIPT_NAME + ': ...more differences past line ' + total);
         console.error(SCRIPT_NAME + ': re-run with --write once the difference is understood.');
     }
 
