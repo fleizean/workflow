@@ -110,11 +110,17 @@ const walSize = fs.existsSync(walPath) ? fs.statSync(walPath).size : 0;
 if (typeof process.send !== 'function') {
     throw new Error('seed-child.cjs: not running under fork() - no IPC channel to signal on');
 }
-// Pinned BEFORE the parent is told, not after. Staying alive holds the connection open until the
-// parent kills us; returning from here would let the event loop drain, close the database and
-// checkpoint the sidecar away. The parent kills on the message, so the keep-alive has to already be
-// in place when that message goes out rather than one statement later - otherwise there is a window,
-// however narrow, in which this process has announced readiness and is not yet pinned.
-setInterval(() => {}, 1000);
+// Pinned BEFORE the parent is told, not after. The parent kills on the message, so the keep-alive
+// has to already be in place when that message goes out rather than one statement later.
+//
+// The callback READS db, and that is the whole of it. An empty callback pins the event loop but not
+// the connection: `db` is referenced nowhere that outlives this module body, so V8 collects it and
+// better-sqlite3's finaliser calls sqlite3_close - a CLEAN close, which checkpoints the WAL into
+// krono.db and unlinks both sidecars. That is the degradation this file exists to prevent, arriving
+// from inside the process that was supposed to be preventing it. Measured on linux/node 24:
+// unpinned, both sidecars were gone within 1ms of this process going idle, every run; pinned, they
+// survive past a second. SIGKILL normally wins that race, which is why it only ever failed on a
+// loaded runner.
+setInterval(() => db.open, 1000);
 
 process.send({ ready: true, walSize: walSize });

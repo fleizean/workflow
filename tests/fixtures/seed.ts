@@ -89,7 +89,9 @@ export function assertWalNonEmpty(dbPath: string): number {
     if (!fs.existsSync(walPath)) {
         throw new Error(
             'fixture invariant violated: ' + walPath + ' does not exist. A clean close ' +
-            'checkpoints and deletes the sidecar - the fixture was closed rather than killed.'
+            'checkpoints and deletes the sidecar - the fixture was closed rather than killed. ' +
+            'If the child WAS killed, the close was its own: better-sqlite3 finalises a database ' +
+            'nothing references any more, so seed-child.cjs must keep reading db from its keep-alive.'
         );
     }
     const size = fs.statSync(walPath).size;
@@ -255,10 +257,17 @@ const walStateOf = (dbPath: string): string => {
     return fs.existsSync(walPath) ? String(fs.statSync(walPath).size) + ' bytes' : 'absent';
 };
 
-/* Whether anything removed the directory itself, which SQLite never does and rmSync always does. */
+/*
+ * Whether anything removed the directory itself, which SQLite never does and rmSync always does.
+ * With sizes, because they separate the two ways a sidecar goes missing: a clean close writes the
+ * WAL into the main file and leaves it grown, an unlink leaves it the size it already was.
+ */
 const dirListing = (dbPath: string): string => {
+    const dir = path.dirname(dbPath);
     try {
-        return JSON.stringify(fs.readdirSync(path.dirname(dbPath)));
+        return JSON.stringify(
+            fs.readdirSync(dir).map((name) => name + ':' + String(fs.statSync(path.join(dir, name)).size))
+        );
     } catch {
         return 'the directory itself is gone';
     }

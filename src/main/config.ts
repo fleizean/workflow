@@ -118,9 +118,15 @@ export const TRAY_TOOLTIP = 'Workflow';
  * publish-version.yml on release - not the releases API, which is rate limited per IP. Until the first v2 release
  * publishes it this URL is a 404, and a 404 is the same silence as no network. The host is the git remote's, and
  * tests/update-check.test.ts holds this URL to the repository field so the two cannot drift again.
+ *
+ * The repository was renamed workflow-timer -> workflow. github.com redirects the old name, so the releases
+ * link survived it; github.io does not redirect a renamed repository's Pages, so the manifest URL was a 404
+ * and a 404 is the same silence as no network - the check would simply never have reported an update. The test
+ * below proves the two constants agree with package.json; nothing proves the host answers, which is why
+ * curling it is a step in the release checklist and not a test (CI must not depend on Pages).
  */
-export const UPDATE_MANIFEST_URL = 'https://fleizean.github.io/workflow-timer/version.json';
-export const UPDATE_RELEASES_URL = 'https://github.com/fleizean/workflow-timer/releases/latest';
+export const UPDATE_MANIFEST_URL = 'https://fleizean.github.io/workflow/version.json';
+export const UPDATE_RELEASES_URL = 'https://github.com/fleizean/workflow/releases/latest';
 // Long enough to be well clear of the first paint, short enough that a session shorter than this is a session that
 // did not need telling.
 export const UPDATE_FIRST_CHECK_DELAY_MS = 30_000;

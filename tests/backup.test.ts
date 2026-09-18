@@ -2,8 +2,10 @@
 // CUSTODY-03/04/05 blocks, whose titles the validation strategy's -t filters select on.
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { fork } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
@@ -47,6 +49,8 @@ const REAL_SCHEMA = path.resolve(
     'fixtures',
     'v121-real-schema.sql'
 );
+
+const SEED_CHILD = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'seed-child.cjs');
 
 /*
  * The WAL fixture's row split, RESTATED here rather than imported from the generator - importing the constants
@@ -217,6 +221,51 @@ describe('the WAL fixture', () => {
         expect(size).toBeGreaterThan(0);
         // Not merely a header: a bare WAL header is 32 bytes and holds no committed frame.
         expect(size).toBeGreaterThan(32);
+    });
+
+    /*
+     * seed-child.cjs's keep-alive has to hold the DATABASE, not just the event loop. better-sqlite3 finalises a
+     * database nothing references any more, and that close is a CLEAN one: it checkpoints the WAL into the main
+     * file and unlinks both sidecars - the very degradation the child exists to avoid, arriving from inside it.
+     * makeWalFixture() normally outruns the finaliser because the parent SIGKILLs on the ready message, so the
+     * only way to see a keep-alive that has stopped pinning is to let a child idle and then look. That race is
+     * what failed on a loaded CI runner and passed everywhere else. Measured on linux/node 24: with the keep-alive
+     * reading db the sidecar survives past a second; with an empty callback it was gone within 1ms, every run.
+     */
+    it('keeps its -wal while the child idles, not merely until the event loop drains', async () => {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-pin-'));
+        const dbPath = path.join(dir, 'krono.db');
+        const child = fork(SEED_CHILD, [dbPath, '--empty'], { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+        try {
+            const reported = await new Promise<{ walSize: number }>((resolve, reject) => {
+                child.once('message', (message) => { resolve(message as { walSize: number }); });
+                child.once('error', reject);
+                child.once('exit', (code, signal) => {
+                    reject(new Error('the child exited before signalling ready (' +
+                        String(code) + '/' + String(signal) + ')'));
+                });
+            });
+            expect(reported.walSize, 'the child never built a sidecar, so nothing below is about the keep-alive')
+                .toBeGreaterThan(32);
+
+            await new Promise((resolve) => setTimeout(resolve, 250));
+
+            expect(
+                fs.existsSync(dbPath + '-wal'),
+                'the child closed its own database while idling - the keep-alive is pinning the event loop but ' +
+                'no longer the connection, so every WAL fixture is racing the parent\'s SIGKILL'
+            ).toBe(true);
+            expect(fs.statSync(dbPath + '-wal').size, 'something checkpointed the idle sidecar')
+                .toBe(reported.walSize);
+        } finally {
+            child.kill('SIGKILL');
+            // Best effort, as in cleanupFixtures: a dying child can hold a handle on Windows for a moment.
+            try {
+                fs.rmSync(dir, { recursive: true, force: true });
+            } catch {
+                /* leave it to the OS */
+            }
+        }
     });
 
     /*

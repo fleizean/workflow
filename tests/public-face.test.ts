@@ -91,7 +91,7 @@ describe('criterion 2: README.md describes v2, and every command in it is real',
         const url = (pkg['repository'] as Record<string, unknown> | undefined)?.['url'];
         const repository = typeof url === 'string' ? url : '';
         const slug = /github\.com\/([^/]+\/[^/.]+)/.exec(repository)?.[1] ?? '';
-        expect(slug).toBe('fleizean/workflow-timer');
+        expect(slug).toBe('fleizean/workflow');
         // The clone URL in the build instructions ends .git; the trailing suffix is not a different repository.
         const links = [...readme.matchAll(/github\.com\/([^/)\s]+\/[^/)\s#]+)/g)]
             .map((match) => (match[1] ?? '').replace(/\.git$/, ''));
