@@ -372,7 +372,9 @@ describe('REPO-06: the check runs in main, and the constants agree with the repo
         const slug = /github\.com\/([^/]+)\/([^/.]+)/.exec(String(repository));
         const owner = slug?.[1] ?? '';
         const repo = slug?.[2] ?? '';
-        expect(owner + '/' + repo).toBe('fleizean/workflow-timer');
+        // The repository was renamed workflow-timer -> workflow. github.com redirects the old name and
+        // github.io does not, so the Pages manifest was a 404 and the check could never have fired.
+        expect(owner + '/' + repo).toBe('fleizean/workflow');
         expect(config, 'the manifest URL is not the Pages site of the repository package.json names')
             .toContain('https://' + owner + '.github.io/' + repo + '/version.json');
         expect(config, 'the update item would send the browser to a different repository')

@@ -8,7 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)](https://github.com/fleizean/workflow-timer/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)](https://github.com/fleizean/workflow/releases/latest)
 
 [What it does](#what-it-does) • [Install](#install) • [Your data](#your-data) • [Build from source](#build-from-source)
 
@@ -41,7 +41,7 @@ is optional and can be switched off.
 ## Install
 
 Download the installer for your platform from the
-[latest release](https://github.com/fleizean/workflow-timer/releases/latest):
+[latest release](https://github.com/fleizean/workflow/releases/latest):
 
 | Platform | File | Notes |
 | --- | --- | --- |
@@ -114,7 +114,7 @@ has no such check, which is why going back has to be done in the order above.
 #### Workflow checks GitHub for a newer version
 
 About thirty seconds after you open it, and then once a day while it stays open, Workflow asks
-GitHub for one small file: `https://fleizean.github.io/workflow-timer/version.json`. That is the
+GitHub for one small file: `https://fleizean.github.io/workflow/version.json`. That is the
 only thing this application ever sends anywhere.
 
 **What is sent:** an ordinary HTTPS `GET` for that fixed address. No query string, no cookie, no
@@ -147,8 +147,8 @@ Requires **Node.js 24** (see `.nvmrc`). No Python, no MSVC and no Xcode command 
 `better-sqlite3` ships prebuilt N-API binaries and nothing here compiles native code.
 
 ```bash
-git clone https://github.com/fleizean/workflow-timer.git
-cd workflow-timer
+git clone https://github.com/fleizean/workflow.git
+cd workflow
 npm ci
 npm run dev
 ```
@@ -181,7 +181,7 @@ Installers land in `dist/`.
 ### Layout
 
 ```
-workflow-timer/
+workflow/
 ├── src/
 │   ├── main/         Electron main process: ipc/ validates and calls one service,
 │   │                 services/ hold the logic and know nothing of Electron,
