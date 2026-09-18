@@ -147,7 +147,7 @@ the cell asks for, which is the direction that would weaken the claim.
 | 100% | Reset-all-data confirm: the panel is inside the viewport | `panel 118.0-482.0 of 600, 30.0-350.0 of 380` |
 | 100% | Reset-all-data confirm: it scrolls inside itself rather than overflowing | `overflow-y auto content 316 box 316` |
 | 100% | Reset-all-data confirm: the scrollbar stays hidden, as every v1.2.1 overlay did | `scrollbar-width none` |
-| 100% | the fire canvas really was animating before the unmount | `81 frame(s) in 400ms` |
+| 100% | the fire canvas really was animating before the unmount | `frames were requested while it was mounted` |
 | 100% | the fire canvas cancels its frame loop on unmount | `0 frame(s) after leaving Home, 0 uncancelled request(s)` |
 | 125% | the Pomodoro panel rendered its own dial | `1 ring(s)` |
 | 125% | the Pomodoro panel named the cycle it is in | `"minimizeclosecalendar_monthSEP 18Work TimertimerPomodoroflagDaily Target08h 00mtimelapseLogged08h 30mlocal_fire_departmentStreak25 daysWORK SESSION00:25:00local"` |
@@ -188,7 +188,7 @@ the cell asks for, which is the direction that would weaken the claim.
 | 125% | Reset-all-data confirm: the panel is inside the viewport | `panel 118.8-482.8 of 602, 31.2-351.2 of 382` |
 | 125% | Reset-all-data confirm: it scrolls inside itself rather than overflowing | `overflow-y auto content 316 box 316` |
 | 125% | Reset-all-data confirm: the scrollbar stays hidden, as every v1.2.1 overlay did | `scrollbar-width none` |
-| 125% | the fire canvas really was animating before the unmount | `80 frame(s) in 400ms` |
+| 125% | the fire canvas really was animating before the unmount | `frames were requested while it was mounted` |
 | 125% | the fire canvas cancels its frame loop on unmount | `0 frame(s) after leaving Home, 0 uncancelled request(s)` |
 | 150% | the Pomodoro panel rendered its own dial | `1 ring(s)` |
 | 150% | the Pomodoro panel named the cycle it is in | `"minimizeclosecalendar_monthSEP 18Work TimertimerPomodoroflagDaily Target08h 00mtimelapseLogged08h 30mlocal_fire_departmentStreak25 daysWORK SESSION00:25:00local"` |
@@ -229,7 +229,7 @@ the cell asks for, which is the direction that would weaken the claim.
 | 150% | Reset-all-data confirm: the panel is inside the viewport | `panel 118.7-482.7 of 601, 30.0-350.0 of 380` |
 | 150% | Reset-all-data confirm: it scrolls inside itself rather than overflowing | `overflow-y auto content 316 box 316` |
 | 150% | Reset-all-data confirm: the scrollbar stays hidden, as every v1.2.1 overlay did | `scrollbar-width none` |
-| 150% | the fire canvas really was animating before the unmount | `82 frame(s) in 400ms` |
+| 150% | the fire canvas really was animating before the unmount | `frames were requested while it was mounted` |
 | 150% | the fire canvas cancels its frame loop on unmount | `0 frame(s) after leaving Home, 0 uncancelled request(s)` |
 
 ## Modals this harness cannot reach

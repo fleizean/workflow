@@ -621,8 +621,13 @@ async function runScale({ binary, scale, fixtureDir, log }) {
             loop.afterUnmount + ' after unmount');
         extras.push({
             label: 'the fire canvas really was animating before the unmount',
+            /*
+             * The count is in the run's own output, not in the report: how many frames land in 400 ms depends on
+             * what else the machine is doing, and a committed report that changes by a frame between two identical
+             * runs is a staleness guard that cries wolf. What is recorded is the fact, which is stable.
+             */
             pass: loop.whileMounted > 0,
-            detail: loop.whileMounted + ' frame(s) in 400ms'
+            detail: loop.whileMounted > 0 ? 'frames were requested while it was mounted' : 'no frame was ever requested'
         });
         extras.push({
             label: 'the fire canvas cancels its frame loop on unmount',
