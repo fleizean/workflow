@@ -18,6 +18,8 @@
         "parity:check": "node tools/baseline/parity-check.mjs",
         "matrix:check": "node tools/baseline/responsive-matrix.mjs",
         "offline:check": "node tools/offline-routes.mjs",
+        "upgrade:check": "node tools/upgrade-over-v121.mjs",
+        "instance:check": "node tools/second-instance.mjs",
         "build": "npm run typecheck && electron-vite build",
         "build:unpack": "npm run build && electron-builder --dir --publish never",
         "build:win": "npm run build && electron-builder --win --x64 --publish never",
