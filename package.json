@@ -17,6 +17,7 @@
         "baseline:diff": "node tools/baseline/diff-computed.mjs",
         "parity:check": "node tools/baseline/parity-check.mjs",
         "matrix:check": "node tools/baseline/responsive-matrix.mjs",
+        "offline:check": "node tools/offline-routes.mjs",
         "build": "npm run typecheck && electron-vite build",
         "build:unpack": "npm run build && electron-builder --dir --publish never",
         "build:win": "npm run build && electron-builder --win --x64 --publish never",
