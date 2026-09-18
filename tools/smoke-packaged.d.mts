@@ -57,6 +57,7 @@ export declare const EXPECTED_APP_USER_MODEL_ID: string;
 export declare const EXPECTED_NOTIFY_ICON_SIZE: string;
 export declare const MAX_NOTIFY_ICON_BYTES: number;
 export declare const EXPECTED_TRAY_RESET_LABEL: string;
+export declare const EXPECTED_APP_VERSION: string;
 
 export interface LaunchExit {
     readonly code: number | null;

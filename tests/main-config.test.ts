@@ -158,7 +158,7 @@ const exportedFunctions = (file: string): string[] =>
 describe('D-23: parseMainConfig is pure and never throws', () => {
     it('returns a frozen config with every value unset for an empty environment and no arguments', () => {
         const parsed = parseMainConfig({}, []);
-        expect(parsed).toEqual({ smoke: false, smokeDbPath: undefined, rendererDevUrl: undefined });
+        expect(parsed).toEqual({ smoke: false, smokeDbPath: undefined, rendererDevUrl: undefined, updateCheck: true });
         expect(Object.isFrozen(parsed), 'D-23: the parsed config must be read-only, or a module could rewrite it').toBe(true);
     });
 
@@ -167,7 +167,23 @@ describe('D-23: parseMainConfig is pure and never throws', () => {
         const parseRelative = (): ReturnType<typeof parseMainConfig> =>
             parseMainConfig({ WORKFLOW_SMOKE_DB: 'relative.db' }, ['electron', '.', '--smoke']);
         expect(parseRelative, 'D-23: parseMainConfig threw on a bad WORKFLOW_SMOKE_DB; smoke.ts owns that validation').not.toThrow();
-        expect(parseRelative()).toEqual({ smoke: true, smokeDbPath: 'relative.db', rendererDevUrl: undefined });
+        expect(parseRelative()).toEqual({ smoke: true, smokeDbPath: 'relative.db', rendererDevUrl: undefined, updateCheck: true });
+    });
+
+    /*
+     * REPO-06: the opt-out. The users did not ask for a version check and the machine is theirs, so one variable
+     * turns it off entirely - not "check less often", not "check silently": startUpdateChecks never constructs a
+     * client, so nothing is sent at all.
+     */
+    it('leaves the update check on by default and off for any non-empty opt-out value', () => {
+        expect(parseMainConfig({}, []).updateCheck, 'the default must be the documented one').toBe(true);
+        expect(parseMainConfig({ WORKFLOW_NO_UPDATE_CHECK: '' }, []).updateCheck,
+            'an empty variable is an unset variable, as it is for ELECTRON_RENDERER_URL').toBe(true);
+        for (const value of ['1', 'true', 'false', 'no', ' ']) {
+            expect(parseMainConfig({ WORKFLOW_NO_UPDATE_CHECK: value }, []).updateCheck,
+                'WORKFLOW_NO_UPDATE_CHECK=' + value + ' left the check on. Someone who sets this to "false" means ' +
+                'to be left alone, and a truthiness test would have kept calling GitHub.').toBe(false);
+        }
     });
 
     it('treats an empty ELECTRON_RENDERER_URL as unset and returns a set one as given', () => {

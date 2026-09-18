@@ -129,21 +129,50 @@ export const WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
 export const TRAY_ICON_SIZE = 16;
 export const TRAY_TOOLTIP = 'Workflow';
 
+/*
+ * REPO-06: the one thing this application asks the network for.
+ *
+ * The manifest is the Pages site's own version.json, written by .github/workflows/publish-version.yml when a release
+ * is actually published - not the releases API, which is rate limited per IP and would return several kilobytes of
+ * JSON to answer a one-field question. Until the first v2 release publishes it, this URL is a 404, and a 404 is the
+ * same silence as no network.
+ *
+ * The host is the git remote's, fleizean/workflow-timer, not the fleizean/workflow that package.json's metadata used
+ * to name; tests/update-check.test.ts holds this URL to the repository field so the two cannot drift again.
+ */
+export const UPDATE_MANIFEST_URL = 'https://fleizean.github.io/workflow-timer/version.json';
+/** Where the tray's update item sends the browser. GitHub resolves /releases/latest to the current release. */
+export const UPDATE_RELEASES_URL = 'https://github.com/fleizean/workflow-timer/releases/latest';
+// Long enough to be well clear of the first paint, short enough that a session shorter than this is a session that
+// did not need telling.
+export const UPDATE_FIRST_CHECK_DELAY_MS = 30_000;
+export const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// An unreachable host can hold a socket open indefinitely; nothing here is worth waiting on.
+export const UPDATE_REQUEST_TIMEOUT_MS = 5_000;
+// The real body is under 100 bytes. This is the ceiling on what a compromised or confused host can make main read.
+export const UPDATE_MAX_RESPONSE_BYTES = 4_096;
+/** Set to anything non-empty and the app never contacts the network at all. README.md documents it. */
+export const UPDATE_CHECK_DISABLED_ENV = 'WORKFLOW_NO_UPDATE_CHECK';
+
 export interface MainConfig {
     readonly smoke: boolean;
     readonly smokeDbPath: string | undefined;
     readonly smokeSeedTimerState: string | undefined;
     readonly rendererDevUrl: string | undefined;
+    /** REPO-06: false when the user has set UPDATE_CHECK_DISABLED_ENV, and nothing is ever sent. */
+    readonly updateCheck: boolean;
 }
 
 // Never throws: smoke.ts validates the database path, so a bad value becomes a SMOKE_FAIL report, not a crash.
 export function parseMainConfig(env: Readonly<Record<string, string | undefined>>, argv: readonly string[]): MainConfig {
     const devUrl = env[RENDERER_URL_ENV];
+    const optedOut = env[UPDATE_CHECK_DISABLED_ENV];
     return Object.freeze({
         smoke: argv.includes(SMOKE_FLAG),
         smokeDbPath: env[SMOKE_DB_ENV],
         smokeSeedTimerState: env[SMOKE_SEED_TIMER_STATE_ENV],
-        rendererDevUrl: typeof devUrl === 'string' && devUrl !== '' ? devUrl : undefined
+        rendererDevUrl: typeof devUrl === 'string' && devUrl !== '' ? devUrl : undefined,
+        updateCheck: optedOut === undefined || optedOut === ''
     });
 }
 

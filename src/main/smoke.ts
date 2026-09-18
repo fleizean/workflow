@@ -532,6 +532,19 @@ function checkOffScreenRecovery(lines: string[]): void {
  * and then the item's own click handler is run. What this does not prove is that Windows draws the menu and
  * dispatches the click; that is the same gap the titlebar's X has and it is recorded as such.
  */
+/** The disabled line that states the installed version, read off the menu the tray is showing (REPO-06). */
+function versionItemLabel(): string | undefined {
+    return appTrayMenu()?.items.find((entry) => entry.label?.startsWith('Workflow ') === true)?.label;
+}
+
+/*
+ * The update item, which must be ABSENT in a smoke launch: no check has run, so nothing has been found, and an item
+ * offering an update the app has no reason to believe in is the defect this probe exists to catch.
+ */
+function updateItemLabel(): string | undefined {
+    return appTrayMenu()?.items.find((entry) => entry.label?.startsWith('Update available') === true)?.label;
+}
+
 function checkTrayReset(lines: string[], resetCalls: () => number, aim: (win: BrowserWindow) => void): void {
     const menu = appTrayMenu();
     const item = menu?.items.find((entry) => entry.label === RESET_POSITION_LABEL);
@@ -574,15 +587,25 @@ async function checkShell(lines: string[]): Promise<string | null> {
          * click would move that one instead - and showing the smoke's window is exactly what a smoke must not do.
          */
         let resetTarget: BrowserWindow | undefined;
+        // REPO-06: the smoke never opens a browser, but the action has to exist or the update item would have no
+        // handler; the harness asserts the count stays 0, because nothing here may reach the network.
+        let releaseOpens = 0;
         const actions = {
             show: () => undefined, hide: () => undefined, isVisible: () => false,
-            resetPosition: () => { resetCalls += 1; resetWindowPosition(resetTarget); }
+            resetPosition: () => { resetCalls += 1; resetWindowPosition(resetTarget); },
+            openReleases: () => { releaseOpens += 1; }
         };
         const log = (line: string): void => { lines.push('SMOKE_TRAY_LOG=' + line); };
-        const first = createAppTray(actions, log);
-        const second = createAppTray(actions, log);
+        const first = createAppTray(actions, app.getVersion(), log);
+        const second = createAppTray(actions, app.getVersion(), log);
         lines.push('SMOKE_TRAY_CREATED=' + String(first !== undefined));
         lines.push('SMOKE_TRAY_SINGLETON=' + String(first === second));
+        // REPO-06: what the packaged binary says it is, and what its tray draws for it. Read from the app rather
+        // than from a constant, so the harness compares the built manifest with the menu the user would open.
+        lines.push('SMOKE_APP_VERSION=' + app.getVersion());
+        lines.push('SMOKE_TRAY_VERSION_ITEM=' + (versionItemLabel() ?? ''));
+        lines.push('SMOKE_TRAY_UPDATE_ITEM=' + (updateItemLabel() ?? ''));
+        lines.push('SMOKE_TRAY_RELEASE_OPENS=' + String(releaseOpens));
         checkOffScreenRecovery(lines);
         checkTrayReset(lines, () => resetCalls, (win) => { resetTarget = win; });
 

@@ -88,6 +88,15 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const V121_FIXTURE = path.join(repoRoot, 'tests', 'fixtures', 'v121.sql');
 const require = createRequire(import.meta.url);
 
+/*
+ * REPO-06: read, never restated. Every other EXPECTED_ constant above is a literal because its counterpart is a
+ * literal in source; this one's counterpart is a field that changes at every release, and a second copy of it is a
+ * second thing to forget on release day.
+ */
+export const EXPECTED_APP_VERSION = String(
+    JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version
+);
+
 /* ---------------------------------------------------------------------------------------- */
 /* Pure pieces                                                                              */
 /* ---------------------------------------------------------------------------------------- */
@@ -394,6 +403,23 @@ export function evaluateWindowRecovery({ report }) {
     check('the reset was written back, so the next launch opens where it was moved to',
         f.SMOKE_TRAY_RESET_PERSISTED === 'true',
         'persisted=' + JSON.stringify(f.SMOKE_TRAY_RESET_PERSISTED));
+
+    /*
+     * REPO-06, in the packaged binary. app.getVersion() reads the manifest electron-builder wrote, which is why
+     * this is worth asking of a real build rather than of the source: it is the only place the repository's
+     * package.json and the shipped installer can be compared.
+     */
+    check('the packaged app reports the version this repository declares',
+        f.SMOKE_APP_VERSION === EXPECTED_APP_VERSION,
+        'app=' + JSON.stringify(f.SMOKE_APP_VERSION) + ' package.json=' + JSON.stringify(EXPECTED_APP_VERSION));
+    check('the tray states the installed version',
+        f.SMOKE_TRAY_VERSION_ITEM === 'Workflow ' + EXPECTED_APP_VERSION,
+        'item=' + JSON.stringify(f.SMOKE_TRAY_VERSION_ITEM));
+    // A smoke launch runs no check, so it has found nothing, so it must offer nothing - and it must not have
+    // opened a browser either, because a packaged prover that reaches the network is not a prover.
+    check('the tray offers no update, and opened nothing, when no check has run',
+        f.SMOKE_TRAY_UPDATE_ITEM === '' && f.SMOKE_TRAY_RELEASE_OPENS === '0',
+        'item=' + JSON.stringify(f.SMOKE_TRAY_UPDATE_ITEM) + ' opens=' + JSON.stringify(f.SMOKE_TRAY_RELEASE_OPENS));
 
     return checks;
 }

@@ -17,6 +17,19 @@ export function createNodeScheduler(): SchedulerPort {
                     clearInterval(handle);
                 }
             };
+        },
+        after(delayMs, run): RepeatingTimer {
+            const handle = setTimeout(run, delayMs);
+            // Unreffed for the same reason, and it matters more here: a pending delay must not hold up a quit.
+            handle.unref();
+            let cancelled = false;
+            return {
+                cancel: () => {
+                    if (cancelled) return;
+                    cancelled = true;
+                    clearTimeout(handle);
+                }
+            };
         }
     };
 }

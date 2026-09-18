@@ -4,6 +4,8 @@
 export { createSystemClock } from './system-clock.adapter';
 export { createElectronNotifier } from './electron-notifier.adapter';
 export { createElectronRendererBus } from './electron-renderer-bus.adapter';
+export { createHttpsReleases } from './https-releases.adapter';
+export type { HttpsReleasesOptions } from './https-releases.adapter';
 export { createNodeScheduler } from './node-scheduler.adapter';
 export { createRendererSound } from './renderer-sound.adapter';
 

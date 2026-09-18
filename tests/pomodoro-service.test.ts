@@ -106,7 +106,8 @@ function harness(options: HarnessOptions = {}): Harness {
             counters.scheduled += 1;
             scheduled = run;
             return { cancel: () => { counters.cancelled += 1; scheduled = undefined; } };
-        }
+        },
+        after() { throw new Error('the pomodoro cycle schedules no one-shot delay'); }
     };
 
     const backing = options.ledger ?? rowLedger();

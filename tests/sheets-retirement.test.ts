@@ -108,7 +108,23 @@ function inCodeAndStrings(file: string, names: readonly string[]): string[] {
     ].sort();
 }
 
+/*
+ * The whole text of a file in the WORKTREE, comments included - nothing under src/shared, src/main or src/lib has
+ * any reason to say these names, in code or in prose.
+ *
+ * Phase 11: this used to call readV121(), which reads the last COMMITTED bytes. Over a deleted v1.2.1 file that is
+ * the only place to read from and is correct; over a live application file it meant the guard scanned the previous
+ * commit's text, so an uncommitted edit that put the export surface back was invisible to it - and a brand new file
+ * under src/ crashed the guard with "git knows no commit carrying", which is how it was found. trackedTs() lists
+ * uncommitted files on purpose; this is what makes listing them useful.
+ */
 const inWholeText = (file: string, names: readonly string[]): string[] => {
+    const source = read(file);
+    return occurrences(file, source, source, names).sort();
+};
+
+/** The same scan over a file SPA-14 deleted, whose bytes exist only in the commit that last carried them (WR-08). */
+const inFrozenV121 = (file: string, names: readonly string[]): string[] => {
     const source = readV121(file);
     return occurrences(file, source, source, names).sort();
 };
@@ -243,7 +259,7 @@ describe('SC4: the Sheets vocabulary is gone from the app surface', () => {
     });
 
     it.each(LEGACY_FILES)('leaves the frozen v1.2.1 file %s with its own references', (file) => {
-        expect(inWholeText(file, [...SURFACE_NAMES, ...LEGACY_NAMES]).length,
+        expect(inFrozenV121(file, [...SURFACE_NAMES, ...LEGACY_NAMES]).length,
             'the v1.2.1 pages are frozen until Phase 7: this guard must stop at src/shared and src/main').toBeGreaterThan(0);
     });
 });

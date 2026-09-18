@@ -160,6 +160,36 @@ describe('the scheduler port repeats until it is cancelled', () => {
         expect(timeouts(), 'an unref-ed tick must not keep the event loop alive by itself').toBe(baseline);
         repeat.cancel();
     });
+
+    // REPO-06: the one-shot delay the update check books before its first request.
+    it('runs a one-shot once, after its delay, and not at all if cancelled first', () => {
+        vi.useFakeTimers();
+        let runs = 0;
+        const once = createNodeScheduler().after(1000, () => { runs += 1; });
+
+        vi.advanceTimersByTime(999);
+        expect(runs, 'the one-shot fired before its delay').toBe(0);
+        vi.advanceTimersByTime(1);
+        expect(runs).toBe(1);
+        vi.advanceTimersByTime(60_000);
+        expect(runs, 'a one-shot repeated').toBe(1);
+        expect(() => { once.cancel(); }).not.toThrow();
+
+        const cancelled = createNodeScheduler().after(1000, () => { runs += 1; });
+        cancelled.cancel();
+        vi.advanceTimersByTime(5000);
+        expect(runs, 'a cancelled one-shot still fired - this is the quit path').toBe(1);
+    });
+
+    // The reason it matters more here than for the repeat: a 30-second delay that held the loop open would add
+    // thirty seconds to a quit, which is exactly what REPO-06 says must never happen.
+    it('does not hold the process open while a delay is pending', () => {
+        const timeouts = (): number => process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length;
+        const baseline = timeouts();
+        const pending = createNodeScheduler().after(60_000, () => undefined);
+        expect(timeouts(), 'a pending one-shot would delay the quit by its whole delay').toBe(baseline);
+        pending.cancel();
+    });
 });
 
 describe('createElectronPorts builds the whole port surface once', () => {

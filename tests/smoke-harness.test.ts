@@ -8,7 +8,7 @@ import {
 import { IPC_CHANNELS } from '../src/shared/ipc/channels';
 import {
     BACKUP_DIR as HARNESS_BACKUP_DIR, DATABASE_FILE as HARNESS_DATABASE_FILE,
-    DEFAULT_TIMEOUT_MS, EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX,
+    DEFAULT_TIMEOUT_MS, EXPECTED_APP_VERSION, EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX,
     EXPECTED_ICON_TEXT_MIN_WIDTH_PX, EXPECTED_IPC_CHANNELS, EXPECTED_LATEST, EXPECTED_SERVICES,
     EXPECTED_TRAY_RESET_LABEL, EXPECTED_WATCHDOG_MS, evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed,
     evaluateWindowRecovery
@@ -181,13 +181,18 @@ describe('criterion 5: an off-screen window comes back', () => {
         SMOKE_OFFSCREEN_SAVED_ON_DISPLAY: 'false',
         SMOKE_OFFSCREEN_OPENED: '745,50 430x932',
         SMOKE_OFFSCREEN_ON_DISPLAY: 'true',
-        SMOKE_TRAY_MENU: 'Show Workflow|Reset window position|separator|Quit Workflow',
+        SMOKE_TRAY_MENU: 'Workflow ' + EXPECTED_APP_VERSION +
+            '|separator|Show Workflow|Reset window position|separator|Quit Workflow',
         SMOKE_TRAY_RESET_BEFORE: '-30000,-30000 500x700',
         SMOKE_TRAY_RESET_BEFORE_ON_DISPLAY: 'false',
         SMOKE_TRAY_RESET_AFTER: '745,50 430x932',
         SMOKE_TRAY_RESET_AFTER_ON_DISPLAY: 'true',
         SMOKE_TRAY_RESET_CALLS: '1',
-        SMOKE_TRAY_RESET_PERSISTED: 'true'
+        SMOKE_TRAY_RESET_PERSISTED: 'true',
+        SMOKE_APP_VERSION: EXPECTED_APP_VERSION,
+        SMOKE_TRAY_VERSION_ITEM: 'Workflow ' + EXPECTED_APP_VERSION,
+        SMOKE_TRAY_UPDATE_ITEM: '',
+        SMOKE_TRAY_RELEASE_OPENS: '0'
     };
     const failuresFor = (fields: Record<string, string>): string[] =>
         evaluateWindowRecovery({ report: { ok: true, fields } })
@@ -226,5 +231,34 @@ describe('criterion 5: an off-screen window comes back', () => {
     it('fails a launch that saw no display at all, where every answer above would be meaningless', () => {
         expect(failuresFor({ ...recovered, SMOKE_DISPLAYS: '0' }))
             .toContain('the harness saw at least one display, so the recovery claim is about something');
+    });
+
+    /*
+     * REPO-06. The last of these is the one worth having: a smoke launch has run no check, so an update item on its
+     * menu would mean the app is offering an update it has no evidence for - which is worse than offering none.
+     */
+    it('fails a packaged build whose version is not this repository\'s', () => {
+        expect(failuresFor({ ...recovered, SMOKE_APP_VERSION: '1.2.1' }))
+            .toContain('the packaged app reports the version this repository declares');
+    });
+
+    it('fails a tray that does not say which version is installed, or says the wrong one', () => {
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_VERSION_ITEM: '' }))
+            .toEqual(['the tray states the installed version']);
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_VERSION_ITEM: 'Workflow 1.2.1' }))
+            .toEqual(['the tray states the installed version']);
+    });
+
+    it('fails a tray that offers an update no check found, or a launch that opened a browser', () => {
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_UPDATE_ITEM: 'Update available: 9.9.9' }))
+            .toEqual(['the tray offers no update, and opened nothing, when no check has run']);
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_RELEASE_OPENS: '1' }))
+            .toEqual(['the tray offers no update, and opened nothing, when no check has run']);
+    });
+
+    it('holds the version the harness expects to the one package.json declares', () => {
+        const pkg = JSON.parse(read('package.json')) as Record<string, unknown>;
+        expect(EXPECTED_APP_VERSION).toBe(String(pkg['version']));
+        expect(EXPECTED_APP_VERSION, 'the harness is still expecting a 1.x build').toMatch(/^2\./);
     });
 });

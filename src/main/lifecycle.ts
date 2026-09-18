@@ -1,9 +1,15 @@
 // App lifecycle handlers, the first interactive window, and the launch that opens the database before it.
 // The database layer arrives as launchApplication's argument, so loading this module never loads it.
 
-import { app, dialog, powerMonitor } from 'electron';
+import { app, dialog, powerMonitor, shell } from 'electron';
 import { join } from 'node:path';
-import { DATABASE_RENAME_RELEASED, PRODUCTION_DATA_DOOR_OPEN, mainConfig } from './config';
+import {
+    DATABASE_RENAME_RELEASED, PRODUCTION_DATA_DOOR_OPEN, UPDATE_CHECK_INTERVAL_MS, UPDATE_FIRST_CHECK_DELAY_MS,
+    UPDATE_MANIFEST_URL, UPDATE_MAX_RESPONSE_BYTES, UPDATE_RELEASES_URL, UPDATE_REQUEST_TIMEOUT_MS, mainConfig
+} from './config';
+import { createHttpsReleases, createNodeScheduler } from './adapters';
+import { createUpdateChecker } from './services/update.service';
+import type { UpdateChecker } from './services/update.service';
 import { activeContainer, clearActiveContainer, createContainer, disposeActiveContainer, setActiveContainer } from './container';
 import { startDatabase } from './database-startup';
 import type { DatabaseLayer, StartedDatabase } from './database-startup';
@@ -12,7 +18,8 @@ import { registerIpcHandlers } from './ipc';
 import type { HandlerContext } from './ipc';
 import { readLegacyStorage } from './legacy-storage';
 import { markQuitting } from './quit';
-import { createAppTray, destroyAppTray } from './tray';
+import { announceTrayUpdate, createAppTray, destroyAppTray } from './tray';
+import type { TrayActions } from './tray';
 import type { TimerService } from './services/timer.service';
 import {
     createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerHideNoticeStore,
@@ -59,10 +66,47 @@ export function registerLifecycle(): void {
 
     // D-32: app.exit skips this, so every exit path inside startDatabase closes the database for itself.
     app.on('will-quit', () => {
+        // REPO-06, first: cancelling is synchronous and nothing here waits on a request. A check in flight lands on
+        // a stopped checker and says nothing, which is what "never delays quit" means in practice.
+        stopUpdateChecks();
         closeDatabaseNow();
         // Windows leaves the icon in the notification area until something moves over it otherwise.
         destroyAppTray();
     });
+}
+
+let updateChecker: UpdateChecker | undefined;
+
+/**
+ * REPO-06: the version check, started once the window exists and the tray is up.
+ *
+ * Nothing is awaited: start() schedules and returns. The first check is UPDATE_FIRST_CHECK_DELAY_MS away on an
+ * unreffed timer, so a launch that is closed before then sends nothing at all.
+ */
+export function startUpdateChecks(actions: TrayActions, log: (line: string) => void): void {
+    if (!mainConfig.updateCheck || updateChecker !== undefined) {
+        return;
+    }
+    updateChecker = createUpdateChecker({
+        releases: createHttpsReleases({
+            url: UPDATE_MANIFEST_URL,
+            timeoutMs: UPDATE_REQUEST_TIMEOUT_MS,
+            maxBytes: UPDATE_MAX_RESPONSE_BYTES,
+            log
+        }),
+        scheduler: createNodeScheduler(),
+        installedVersion: app.getVersion(),
+        firstDelayMs: UPDATE_FIRST_CHECK_DELAY_MS,
+        intervalMs: UPDATE_CHECK_INTERVAL_MS,
+        announce: (version) => { announceTrayUpdate(version, actions); },
+        log
+    });
+    updateChecker.start();
+}
+
+export function stopUpdateChecks(): void {
+    updateChecker?.stop();
+    updateChecker = undefined;
 }
 
 let databaseCloser: (() => void) | undefined;
@@ -197,12 +241,17 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
                 registerWindowBoundsStore(createWindowBoundsStore(database, connection));
                 registerHideNoticeStore(createHideNoticeStore(database, connection));
                 openMainWindow();
-                createAppTray({
+                const trayActions: TrayActions = {
                     show: surfaceMainWindow,
                     isVisible: () => mainWindows()[0]?.isVisible() ?? false,
                     hide: () => { mainWindows()[0]?.hide(); },
-                    resetPosition: resetWindowPosition
-                }, (line) => { console.log(line); });
+                    resetPosition: resetWindowPosition,
+                    // WR-01 bans in-app navigation; this hands the address to the OS browser instead, and the
+                    // address is a constant, so nothing a response body says can choose where it goes.
+                    openReleases: () => { void shell.openExternal(UPDATE_RELEASES_URL); }
+                };
+                createAppTray(trayActions, app.getVersion(), (line) => { console.log(line); });
+                startUpdateChecks(trayActions, (line) => { console.log(line); });
             }
         }
     );

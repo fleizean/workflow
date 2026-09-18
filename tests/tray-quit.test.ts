@@ -9,6 +9,7 @@ import { findAll, read } from './helpers/ts-imports';
 
 interface MenuItem {
     label?: string;
+    enabled?: boolean;
     type?: string;
     click?: () => void;
 }
@@ -57,7 +58,7 @@ vi.mock('electron', () => {
 });
 
 const {
-    RESET_POSITION_LABEL, appTrayMenu, createAppTray, destroyAppTray, hasAppTray
+    RESET_POSITION_LABEL, announceTrayUpdate, appTrayMenu, createAppTray, destroyAppTray, hasAppTray
 } = await import('../src/main/tray');
 const { decideWindowClose, isQuitting, markQuitting, resetQuittingForTests } = await import('../src/main/quit');
 const { TRAY_ICON_SIZE, TRAY_TOOLTIP } = await import('../src/main/config');
@@ -72,6 +73,7 @@ interface Window {
     shown: number;
     hidden: number;
     reset: number;
+    releases: number;
 }
 
 function actionsFor(win: Window) {
@@ -79,12 +81,16 @@ function actionsFor(win: Window) {
         show: () => { win.visible = true; win.shown += 1; },
         hide: () => { win.visible = false; win.hidden += 1; },
         isVisible: () => win.visible,
-        resetPosition: () => { win.reset += 1; }
+        resetPosition: () => { win.reset += 1; },
+        openReleases: () => { win.releases += 1; }
     };
 }
 
 /** Every case that does not care about the window's state starts from the same one. */
-const freshWindow = (visible: boolean): Window => ({ visible, shown: 0, hidden: 0, reset: 0 });
+const freshWindow = (visible: boolean): Window => ({ visible, shown: 0, hidden: 0, reset: 0, releases: 0 });
+
+/** Not the real version: the menu must read whatever it is handed, not a constant this test could also read. */
+const TEST_VERSION = '9.8.7';
 
 const menuItem = (label: string): MenuItem | undefined =>
     state.menu.find((item) => item.label?.startsWith(label) === true);
@@ -99,8 +105,8 @@ describe('criterion 8: the tray', () => {
 
     it('is created once, whatever asks for it - a second launch adds no second icon', () => {
         const win: Window = freshWindow(true);
-        const first = createAppTray(actionsFor(win), () => undefined);
-        const second = createAppTray(actionsFor(win), () => undefined);
+        const first = createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
+        const second = createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
 
         expect(state.trays, 'a second tray icon appeared in the notification area').toBe(1);
         expect(second).toBe(first);
@@ -108,7 +114,7 @@ describe('criterion 8: the tray', () => {
     });
 
     it('resizes the icon rather than handing Windows a full-size PNG', () => {
-        createAppTray(actionsFor(freshWindow(true)), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
         // Under vitest the ?asset import resolves to a URL; in the packaged build it is a path on disk.
         expect(state.iconPath).toContain('icon.png');
         expect(state.resized).toEqual({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
@@ -118,7 +124,7 @@ describe('criterion 8: the tray', () => {
     it('still appears, and says so, when the icon cannot be read', () => {
         state.imageEmpty = true;
         const lines: string[] = [];
-        expect(createAppTray(actionsFor(freshWindow(true)), (line) => lines.push(line)))
+        expect(createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, (line: string) => lines.push(line)))
             .toBeDefined();
         expect(lines.join('\n')).toContain('icon could not be read');
     });
@@ -126,7 +132,7 @@ describe('criterion 8: the tray', () => {
     it('does not fail startup when no tray can be created, and leaves the app quittable', () => {
         state.trayThrows = true;
         const lines: string[] = [];
-        expect(createAppTray(actionsFor(freshWindow(true)), (line) => lines.push(line)))
+        expect(createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, (line: string) => lines.push(line)))
             .toBeUndefined();
         expect(hasAppTray()).toBe(false);
         expect(lines.join('\n')).toContain('no tray could be created');
@@ -136,7 +142,7 @@ describe('criterion 8: the tray', () => {
 
     it('toggles the window on a click, as v1.2.1 did', () => {
         const win: Window = freshWindow(true);
-        createAppTray(actionsFor(win), () => undefined);
+        createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
         const click = state.listeners.get('click');
         expect(click, 'the tray no longer answers a click').toBeDefined();
 
@@ -149,13 +155,13 @@ describe('criterion 8: the tray', () => {
 
     it('brings the window back from Show', () => {
         const win: Window = freshWindow(false);
-        createAppTray(actionsFor(win), () => undefined);
+        createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
         menuItem('Show')?.click?.();
         expect(win.visible).toBe(true);
     });
 
     it('quits from Quit, and marks the app as quitting first', () => {
-        createAppTray(actionsFor(freshWindow(true)), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
         expect(isQuitting()).toBe(false);
 
         menuItem('Quit')?.click?.();
@@ -166,7 +172,7 @@ describe('criterion 8: the tray', () => {
     });
 
     it('releases the icon when the app goes', () => {
-        createAppTray(actionsFor(freshWindow(true)), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
         destroyAppTray();
         expect(state.destroyed).toBe(1);
         expect(hasAppTray()).toBe(false);
@@ -178,19 +184,98 @@ describe('criterion 8: the tray', () => {
      */
     it('offers Reset window position, and its click reaches the action', () => {
         const win: Window = freshWindow(true);
-        createAppTray(actionsFor(win), () => undefined);
+        createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
         const item = menuItem(RESET_POSITION_LABEL);
         expect(item, 'the tray menu offers no way to recover an off-screen window').toBeDefined();
         item?.click?.();
         expect(win.reset).toBe(1);
         // Beside Show rather than beside Quit: both are ways of getting the window back, and one of them destroys
-        // nothing. A reset item under Quit is one slip away from ending the app instead of moving it.
-        expect(state.menu.findIndex((entry) => entry.label === RESET_POSITION_LABEL))
-            .toBeLessThan(state.menu.findIndex((entry) => entry.type === 'separator'));
+        // nothing. A reset item under Quit is one slip away from ending the app instead of moving it. Stated as
+        // "after Show and separated from Quit" rather than "before the first separator", because REPO-06 put a
+        // version line and its own separator above Show.
+        const show = state.menu.findIndex((entry) => entry.label === 'Show Workflow');
+        const reset = state.menu.findIndex((entry) => entry.label === RESET_POSITION_LABEL);
+        const quit = state.menu.findIndex((entry) => entry.label?.startsWith('Quit') === true);
+        expect(show, 'the menu offers no Show').toBeGreaterThanOrEqual(0);
+        expect(reset, 'Reset window position is above Show rather than beside it').toBeGreaterThan(show);
+        expect(reset, 'Reset window position is below Quit').toBeLessThan(quit);
+        expect(
+            state.menu.slice(reset, quit).some((entry) => entry.type === 'separator'),
+            'nothing separates Reset window position from Quit, so one slip ends the app instead of moving it'
+        ).toBe(true);
+    });
+
+    /*
+     * REPO-06. Two halves, and the second is the one that matters: the version line is always there, and the update
+     * line is there ONLY when a check actually found something newer. A permanent "check for updates" item would be
+     * an affordance for a thing this app does not do on demand.
+     */
+    it('states the installed version it was handed, disabled', () => {
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
+        const item = menuItem('Workflow ' + TEST_VERSION);
+        expect(item, 'the tray does not say which version is installed').toBeDefined();
+        expect(item?.enabled, 'the version line is clickable, so it reads as a command').toBe(false);
+        expect(state.menu.findIndex((entry) => entry.label === 'Workflow ' + TEST_VERSION),
+            'the version is not the first thing the menu says').toBe(0);
+    });
+
+    it('offers nothing about updates until one is found', () => {
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
+        expect(state.menu.filter((entry) => entry.label?.includes('pdate') === true),
+            'the menu talks about updates before any check has run').toEqual([]);
+    });
+
+    it('adds an update item when one is announced, and its click opens the releases page', () => {
+        const win: Window = freshWindow(true);
+        const actions = actionsFor(win);
+        createAppTray(actions, TEST_VERSION, () => undefined);
+        announceTrayUpdate('9.9.0', actions);
+
+        const item = menuItem('Update available: 9.9.0');
+        expect(item, 'a newer version was found and the tray says nothing').toBeDefined();
+        item?.click?.();
+        expect(win.releases, 'the update item leads nowhere').toBe(1);
+        // Still there, and still first: the version the user has is the fact, the update is the offer.
+        expect(state.menu[0]?.label).toBe('Workflow ' + TEST_VERSION);
+        expect(state.menu[1]?.label).toBe('Update available: 9.9.0');
+    });
+
+    it('redraws once per version and never takes the notice away', () => {
+        const win: Window = freshWindow(true);
+        const actions = actionsFor(win);
+        createAppTray(actions, TEST_VERSION, () => undefined);
+        announceTrayUpdate('9.9.0', actions);
+        const afterFirst = state.menu;
+        announceTrayUpdate('9.9.0', actions);
+        expect(state.menu, 'the same version rebuilt the menu again').toBe(afterFirst);
+        announceTrayUpdate('9.9.1', actions);
+        expect(menuItem('Update available: 9.9.1'), 'a newer announcement did not replace the old one').toBeDefined();
+        expect(menuItem('Update available: 9.9.0'), 'both announcements are on the menu').toBeUndefined();
+    });
+
+    it('announces nothing when there is no tray to announce it on', () => {
+        const win: Window = freshWindow(true);
+        state.trayThrows = true;
+        createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
+        expect(() => { announceTrayUpdate('9.9.0', actionsFor(win)); },
+            'a machine with no notification area crashed on an update notice').not.toThrow();
+        expect(state.menu, 'a menu was built for a tray that does not exist').toEqual([]);
+    });
+
+    it('forgets the version and the notice when the icon goes', () => {
+        const win: Window = freshWindow(true);
+        const actions = actionsFor(win);
+        createAppTray(actions, TEST_VERSION, () => undefined);
+        announceTrayUpdate('9.9.0', actions);
+        destroyAppTray();
+        createAppTray(actions, '1.0.0', () => undefined);
+        expect(menuItem('Workflow 1.0.0'), 'the rebuilt tray carries the old version').toBeDefined();
+        expect(menuItem('Update available'), 'the rebuilt tray inherited a notice from the previous process')
+            .toBeUndefined();
     });
 
     it('lets go of the menu with the icon, so a rebuilt tray cannot be driven through the old one', () => {
-        createAppTray(actionsFor(freshWindow(true)), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
         expect(appTrayMenu()).toBeDefined();
         destroyAppTray();
         expect(appTrayMenu()).toBeUndefined();

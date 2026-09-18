@@ -9,4 +9,6 @@ export interface RepeatingTimer {
 export interface SchedulerPort {
     /** Runs `run` about every `intervalMs`. About: the host decides how close, which is why every caller clamps. */
     every(intervalMs: number, run: () => void): RepeatingTimer;
+    /** Runs `run` once, about `delayMs` from now. Same cancel contract, so a caller holds one kind of handle. */
+    after(delayMs: number, run: () => void): RepeatingTimer;
 }

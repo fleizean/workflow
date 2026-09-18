@@ -80,7 +80,8 @@ function harness(options: HarnessOptions = {}): Harness {
                     scheduled = undefined;
                 }
             };
-        }
+        },
+        after() { throw new Error('the timer service schedules no one-shot delay'); }
     };
 
     const emitted: Emitted[] = [];
@@ -553,7 +554,10 @@ describe('CORE-07: what is persisted is a scalar, and how often', () => {
         let run: (() => void) | undefined;
         const service = createTimerService({
             clock,
-            scheduler: { every: (_ms, callback) => { run = callback; return { cancel: () => undefined }; } },
+            scheduler: {
+                every: (_ms, callback) => { run = callback; return { cancel: () => undefined }; },
+                after: () => { throw new Error('the timer service schedules no one-shot delay'); }
+            },
             bus: { emit: () => { throw new Error('the window went away'); } },
             store: { read: () => ({ accumulatedSeconds: 0, mode: 'work' }), write: () => undefined },
             log: (line) => logs.push(line)

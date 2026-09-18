@@ -15,13 +15,28 @@ export interface TrayActions {
     hide(): void;
     /** Phase 10 criterion 5: put a window nobody can reach back in the middle of the primary display. */
     resetPosition(): void;
+    /** REPO-06: opens the releases page in the user's browser. Reached only from an item that exists only when
+     * a newer version was actually found. */
+    openReleases(): void;
 }
 
 /** The label the reset item carries; tools/smoke-packaged.mjs finds the item by it. */
 export const RESET_POSITION_LABEL = 'Reset window position';
 
+/** REPO-06: what the installed version reads as. Disabled in the menu - it states a fact, it is not a command. */
+export function versionLabel(version: string): string {
+    return 'Workflow ' + version;
+}
+
+/** REPO-06: shown only when a newer version has actually been published, never as a permanent "check for updates". */
+export function updateLabel(version: string): string {
+    return 'Update available: ' + version;
+}
+
 let tray: Tray | undefined;
 let trayMenu: Menu | undefined;
+let trayVersion = '';
+let trayUpdate: string | undefined;
 
 /*
  * The menu the tray is actually showing.
@@ -40,14 +55,53 @@ function trayImage(): Electron.NativeImage {
     return image.isEmpty() ? image : image.resize({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
 }
 
+/*
+ * The menu, built from whatever is known right now. Built rather than mutated: Electron's MenuItem has no way to add
+ * one, and an item that is always there and merely disabled would be the "check for updates" affordance REPO-06
+ * deliberately does not offer.
+ */
+function rebuildMenu(actions: TrayActions): void {
+    const update = trayUpdate;
+    trayMenu = Menu.buildFromTemplate([
+        { label: versionLabel(trayVersion), enabled: false },
+        ...(update === undefined ? [] : [{ label: updateLabel(update), click: () => { actions.openReleases(); } }]),
+        { type: 'separator' },
+        { label: 'Show Workflow', click: () => { actions.show(); } },
+        // Above the separator with Show, because both are ways of getting the window back.
+        { label: RESET_POSITION_LABEL, click: () => { actions.resetPosition(); } },
+        { type: 'separator' },
+        {
+            label: 'Quit Workflow',
+            click: () => {
+                markQuitting();
+                app.quit();
+            }
+        }
+    ]);
+    tray?.setContextMenu(trayMenu);
+}
+
+/**
+ * REPO-06: a newer version was found. Idempotent and one-directional - the same version twice redraws nothing, and
+ * nothing here can take the notice away, because a check that fails later has not un-published the release.
+ */
+export function announceTrayUpdate(version: string, actions: TrayActions): void {
+    if (tray === undefined || trayUpdate === version) {
+        return;
+    }
+    trayUpdate = version;
+    rebuildMenu(actions);
+}
+
 /**
  * Quit means quit. v1.2.1's menu set its isQuiting flag before calling app.quit() for the same reason: without it
  * the close handler hides the window again and the process never ends (criterion 8).
  */
-export function createAppTray(actions: TrayActions, log: (line: string) => void): Tray | undefined {
+export function createAppTray(actions: TrayActions, version: string, log: (line: string) => void): Tray | undefined {
     if (tray !== undefined) {
         return tray;
     }
+    trayVersion = version;
     try {
         const image = trayImage();
         if (image.isEmpty()) {
@@ -61,20 +115,7 @@ export function createAppTray(actions: TrayActions, log: (line: string) => void)
     }
 
     tray.setToolTip(TRAY_TOOLTIP);
-    trayMenu = Menu.buildFromTemplate([
-        { label: 'Show Workflow', click: () => { actions.show(); } },
-        // Above the separator with Show, because both are ways of getting the window back.
-        { label: RESET_POSITION_LABEL, click: () => { actions.resetPosition(); } },
-        { type: 'separator' },
-        {
-            label: 'Quit Workflow',
-            click: () => {
-                markQuitting();
-                app.quit();
-            }
-        }
-    ]);
-    tray.setContextMenu(trayMenu);
+    rebuildMenu(actions);
 
     // v1.2.1 toggled on a click (main.js:130-139), and that is the behaviour being kept.
     tray.on('click', () => {
@@ -93,6 +134,8 @@ export function destroyAppTray(): void {
     tray?.destroy();
     tray = undefined;
     trayMenu = undefined;
+    trayVersion = '';
+    trayUpdate = undefined;
 }
 
 export function hasAppTray(): boolean {

@@ -1,7 +1,7 @@
 {
     "name": "workflow-timer",
-    "version": "1.2.1",
-    "description": "Workflow - Modern work tracking desktop application",
+    "version": "2.0.0",
+    "description": "Workflow - local-first work time tracking for Windows and macOS",
     "main": "./out/main/index.js",
     "scripts": {
         "dev": "install-electron && electron-vite dev",
@@ -38,12 +38,12 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/fleizean/workflow.git"
+        "url": "https://github.com/fleizean/workflow-timer.git"
     },
     "bugs": {
-        "url": "https://github.com/fleizean/workflow/issues"
+        "url": "https://github.com/fleizean/workflow-timer/issues"
     },
-    "homepage": "https://github.com/fleizean/workflow#readme",
+    "homepage": "https://github.com/fleizean/workflow-timer#readme",
     "devDependencies": {
         "@eslint/js": "^9.39.2",
         "@fontsource-variable/inter": "^5.3.0",

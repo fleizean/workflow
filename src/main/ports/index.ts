@@ -4,6 +4,7 @@
 export { localDayOf } from './clock.port';
 export type { ClockPort } from './clock.port';
 export type { NotificationRequest, NotifierPort } from './notifier.port';
+export type { ReleasesPort } from './releases.port';
 export type { RendererBusPort } from './renderer-bus.port';
 export type { RepeatingTimer, SchedulerPort } from './scheduler.port';
 export type { SoundPort } from './sound.port';
@@ -14,7 +15,13 @@ import type { RendererBusPort } from './renderer-bus.port';
 import type { SchedulerPort } from './scheduler.port';
 import type { SoundPort } from './sound.port';
 
-/** Everything a service may reach the outside world through; the container supplies exactly this. */
+/*
+ * Everything a service the CONTAINER holds may reach the outside world through; the container supplies exactly this.
+ *
+ * ReleasesPort is deliberately absent. The update check runs beside the tray, before and after any container exists,
+ * and createUpdateChecker names the two ports it needs in its own options - putting it here would make every
+ * container build a network client for a service the container does not hold.
+ */
 export interface AppPorts {
     readonly clock: ClockPort;
     readonly notifier: NotifierPort;

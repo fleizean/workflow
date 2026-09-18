@@ -82,7 +82,7 @@ const stubPorts = (): AppPorts => ({
     notifier: { notify: () => undefined },
     sound: { play: () => undefined },
     bus: { emit: () => undefined },
-    scheduler: { every: () => ({ cancel: () => undefined }) }
+    scheduler: { every: () => ({ cancel: () => undefined }), after: () => { throw new Error('the container schedules no one-shot delay'); } }
 });
 
 // Local noon on a Monday, so the local day is unambiguous in any zone the suite runs in.
@@ -132,7 +132,8 @@ function drivenPorts(wallOriginMs: number = WALL_ORIGIN_MS): DrivenPorts {
             every: (_intervalMs, run) => {
                 repeats.push(run);
                 return { cancel: () => { const at = repeats.indexOf(run); if (at >= 0) repeats.splice(at, 1); } };
-            }
+            },
+            after: () => { throw new Error('the container schedules no one-shot delay'); }
         }
     };
 
@@ -774,7 +775,8 @@ describe('the services the container composes', () => {
                             if (brittle) throw new Error('the notification area went away');
                         }
                     };
-                }
+                },
+                after: (delayMs, run) => driver.ports.scheduler.after(delayMs, run)
             }
         };
         const container = createContainer({

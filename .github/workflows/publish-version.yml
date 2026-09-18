@@ -1,0 +1,91 @@
+name: Publish version manifest
+
+# REPO-06. docs/version.json is what an installed copy asks "is there a newer one?", and this is the
+# only thing that writes it. It is never edited by hand and never committed alongside a version bump:
+# package.json says what THIS build is, and this file says what has actually been PUBLISHED, and the
+# difference between those two is the whole question the app is asking.
+#
+# The trigger is `released`, not `published`. `published` fires for pre-releases too, and step 5 of the
+# release checklist marks every superseded v1.x as a pre-release - so `published` would let a
+# housekeeping edit to a 2024 release rewrite the manifest. `released` fires when a release is
+# published as a full release, which is exactly the moment there is something new to download.
+on:
+  release:
+    types: [released]
+  # Available by hand for the case the release event was missed; it still reads the latest release
+  # from the API rather than taking a version as input, so it cannot be told to lie.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write                  # scoped to this job: it commits docs/version.json
+    steps:
+      - name: Checkout the default branch
+        uses: actions/checkout@v5
+        with:
+          # The branch GitHub Pages serves docs/ from, not the tag: a tag checkout commits nowhere.
+          ref: ${{ github.event.repository.default_branch }}
+
+      # Deliberately NOT github.event.release: the event payload describes the release that was just
+      # acted on, which after a re-publish of an old release is not the newest one. GitHub's own
+      # /releases/latest is the same answer the download button gives, so the manifest and the button
+      # cannot disagree.
+      - name: Read the release GitHub calls latest
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)
+          published=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .published_at)
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::no published release to describe"
+            exit 1
+          fi
+          # v2.0.0 -> 2.0.0, and nothing else is accepted: the app parses this field, and a tag that
+          # is not a version would make every installed copy compare against rubbish.
+          version="${tag#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::release tag $tag is not v<semver>; refusing to publish it as a version"
+            exit 1
+          fi
+          echo "tag=$tag"             >> "$GITHUB_OUTPUT"
+          echo "version=$version"     >> "$GITHUB_OUTPUT"
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+
+      - name: Write docs/version.json
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+          VERSION: ${{ steps.latest.outputs.version }}
+          PUBLISHED: ${{ steps.latest.outputs.published }}
+        run: |
+          set -euo pipefail
+          # jq -n rather than a heredoc: the values come from an API and go into JSON an application
+          # parses, and hand-built JSON is how a quote in a field becomes a body nobody can read.
+          jq -n \
+            --arg version "$VERSION" \
+            --arg tag "$TAG" \
+            --arg published "$PUBLISHED" \
+            --arg url "https://github.com/${GITHUB_REPOSITORY}/releases/latest" \
+            '{version: $version, tag: $tag, published: $published, url: $url}' \
+            > docs/version.json
+          cat docs/version.json
+
+      - name: Commit it, or say there was nothing to commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- docs/version.json; then
+            echo "VERSION_MANIFEST_UNCHANGED $(cat docs/version.json)"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add docs/version.json
+          git commit -m "chore(release): publish version manifest for ${{ steps.latest.outputs.tag }}"
+          git push
+          echo "VERSION_MANIFEST_PUBLISHED $(cat docs/version.json)"
