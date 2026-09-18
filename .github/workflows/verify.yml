@@ -246,5 +246,29 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      # tests/form-constraints.test.ts drives a real Electron window to prove BL-02's constraint
+      # validation stays fixed, and the hosted Linux runner has no X server, so Chromium aborts with
+      # "Missing X server or $DISPLAY". The harness passes --no-sandbox itself - the other half of the
+      # same failure, and what every other Electron launch here already passed - but a display cannot
+      # be a process argument, so it is supplied here for the whole job. Measured: with the flag and
+      # without a display the suite still fails; with both it passes.
+      - name: Start a virtual display for the Electron harness
+        run: |
+          if ! command -v Xvfb > /dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends xvfb
+          fi
+          Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp &
+          # The socket, not xdpyinfo: x11-utils is not guaranteed on the runner image.
+          for _ in $(seq 1 100); do
+            [ -S /tmp/.X11-unix/X99 ] && break
+            sleep 0.1
+          done
+          if [ ! -S /tmp/.X11-unix/X99 ]; then
+            echo "::error::Xvfb never created /tmp/.X11-unix/X99, so the Electron harness has no display"
+            exit 1
+          fi
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
       - name: Run unit tests
         run: npm test
