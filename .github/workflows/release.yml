@@ -7,6 +7,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: The tag to cut, e.g. v2.0.0. Must equal v<package.json version>.
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -25,14 +30,15 @@ jobs:
           persist-credentials: false
 
       - name: Tag must equal v<package.json version>
-        if: github.ref_type == 'tag'
+        env:
+          REQUESTED: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
         run: |
           expected="v$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-            echo "::error::tag $GITHUB_REF_NAME does not match package.json ($expected) - the installers would carry the wrong version"
+          if [ "$REQUESTED" != "$expected" ]; then
+            echo "::error::tag $REQUESTED does not match package.json ($expected) - the installers would carry the wrong version"
             exit 1
           fi
-          echo "VERSION_GATE_OK $GITHUB_REF_NAME"
+          echo "VERSION_GATE_OK $REQUESTED"
 
   # BUILD-10 / D-17: building is delegated to the packaging workflow instead of being carried here
   # as a second matrix. One definition, in package.yml, is what keeps the four legs - Windows and
@@ -111,12 +117,36 @@ jobs:
           fi
           echo "FOUR_ARTIFACTS_OK"
 
+      # A draft release does not create its tag until a person publishes it - and a tag pushed by a
+      # person starts this workflow again, which would rebuild for twenty minutes and then set the
+      # release that was just published back to draft. So a dispatch creates the tag here, through
+      # GITHUB_TOKEN, whose pushes deliberately do not start workflow runs. By the time anyone
+      # publishes the draft the tag already exists, so publishing creates nothing and starts nothing.
+      #
+      # It runs after build, so a tag is only ever cut for a commit whose four installers exist.
+      - name: Create the tag a manual run asked for
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          case "$VERSION" in
+            v*) ;;
+            *) echo "::error::$VERSION is not a v* tag, and only v* is a release"; exit 1 ;;
+          esac
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" > /dev/null 2>&1; then
+            echo "::error::tag $VERSION already exists - cutting it twice would attach these installers to a release that has already shipped"
+            exit 1
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$VERSION" -f "sha=$GITHUB_SHA" > /dev/null
+          echo "TAG_CREATED $VERSION at $GITHUB_SHA"
+
       - name: Create DRAFT release
         uses: softprops/action-gh-release@e598afbe1493e6b1bafb1f389cabb956eab91231 # v3.0.3
         with:
           # tag_name defaults to github.ref_name; on workflow_dispatch from a branch it must be given.
-          # WR-03: `manual-` so publishing the draft cannot re-match `v*`; the new tag targets the built commit.
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('manual-{0}', github.run_number) }}
+          # WR-03: a dispatch names its own tag, created by the step above; the draft targets the built commit.
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version }}
           target_commitish: ${{ github.sha }}
           draft: true                    # D-06 - a human promotes it
           prerelease: false
