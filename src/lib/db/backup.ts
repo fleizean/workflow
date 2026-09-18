@@ -239,11 +239,10 @@ function removeQuietly(pendingPath: string): void {
     }
 }
 
-// Staging files a killed copy left behind. They are unverified by construction, so none is ever kept (CR-02).
-// WR-04: housekeeping, and it runs before the source is even opened, so it must not be able to fail the backup it
-// precedes. force: true suppresses ENOENT only - a held, read-only or directory-shaped leftover still throws, and
-// used to refuse the migration on every launch. This run's own staging name is stamped, so one it cannot delete
-// never collides with it.
+// Staging files a killed copy left behind; unverified by construction, so none is ever kept (CR-02). WR-04: it runs
+// before the source is even opened, so it must not be able to fail the backup it precedes. force: true suppresses
+// ENOENT only - a held, read-only or directory-shaped leftover still throws, and used to refuse the migration on
+// every launch. This run's staging name is stamped, so one it cannot delete never collides with it.
 function sweepPendingBackups(backupDir: string): void {
     if (!fs.existsSync(backupDir)) return;
     for (const name of fs.readdirSync(backupDir)) {
@@ -295,13 +294,11 @@ function refusalReason(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
-// Restores a verified backup over `targetPath` and re-verifies the result; anything unverifiable is refused before
-// the target is touched (T-01-34). WR-03: the copy is staged beside the target and verified there, so a failing or
-// interrupted copy can never leave the target truncated with its sidecars already gone. WR-01: the target is moved
-// aside rather than deleted from, so every failure path still has the whole of it - database and -wal - to put back.
-//
-// Not on the database layer's public surface: the app has no restore action, and the failure dialog says so. It is
-// the tested recovery procedure behind DATA-03, not something src/main can reach by accident.
+// Restores a verified backup over `targetPath` and re-verifies the result; anything unverifiable is refused before the
+// target is touched (T-01-34). WR-03: staged beside the target and verified there, so an interrupted copy can never
+// leave the target truncated with its sidecars already gone. WR-01: the target is moved aside rather than deleted
+// from, so every failure path still has the whole of it to put back. Not on the public surface - the app has no
+// restore action, and this is the tested recovery procedure behind DATA-03.
 export function restoreDatabase(backupPath: string, targetPath: string): BackupVerification {
     let verification: BackupVerification;
     try {
@@ -398,17 +395,13 @@ export interface PruneOutcome {
 const stampOf = (name: string): string => BACKUP_NAME.exec(name)?.[1] ?? '';
 
 // Deletes all but the `keep` newest backups, ordered by filename stamp rather than mtime, and returns what it
-// deleted. WR-02 (iteration 2): a file that does not read as a database ranks below every one that does, whatever
-// its stamp, so retention can never spend a slot on a corrupt copy while deleting a good one. The newest
-// database-shaped backup always survives, whatever `keep` says.
-// WR-02 (iteration 3): one entry it cannot delete - held open by a scanner, left read-only by a restore tool -
-// used to end the whole sweep, so every backup older than it was never deleted again. The sweep is total, and what
-// it could not do is returned rather than lost.
-// WR-03 (iteration 4): the sort was on the WHOLE filename, which reads as the stamp only while every backup in the
-// directory shares one basename. V2-SCHEMA's rename is the first thing that puts krono.db.*.bak and
-// workflow.db.*.bak side by side, and with both present the newest backup was deleted and older ones kept.
-// `protect` is the backup this run just took: retention must never spend its sweep on the file the failure report
-// is about to name.
+// deleted. Four defects shaped it. WR-02 (2): a file that does not read as a database ranks below every one that
+// does, whatever its stamp, so retention can never spend a slot on a corrupt copy while deleting a good one - the
+// newest database-shaped backup always survives. WR-02 (3): one entry it cannot delete used to end the whole sweep,
+// so every backup older than it was never deleted again; the sweep is total and what it could not do is returned.
+// WR-03 (4): the sort was on the WHOLE filename, which reads as the stamp only while every backup shares a basename
+// - with krono.db.*.bak and workflow.db.*.bak side by side the newest was deleted and older ones kept. `protect` is
+// the backup this run just took, which retention must never spend its sweep on.
 export function pruneBackups(
     backupDir: string,
     keep: number = DEFAULT_RETAINED_BACKUPS,

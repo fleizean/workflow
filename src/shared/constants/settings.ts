@@ -25,10 +25,9 @@ export interface SettingBound {
 }
 
 /*
- * The bounds src/main/services/settings.service.ts refuses on, declared here because the Settings screen has to
- * SHOW them: the service refuses rather than clamps, so a value outside a bound has to be explainable before it is
- * sent. A screen carrying its own copy would either promise a value main refuses or refuse one main accepts, the
- * first time a bound moved. Why each bound is what it is stays with the enforcement, in the service.
+ * The bounds src/main/services/settings.service.ts refuses on, declared here because the Settings screen has to SHOW
+ * them: the service refuses rather than clamps, so a value outside a bound has to be explainable before it is sent.
+ * A screen carrying its own copy would promise a value main refuses the first time a bound moved.
  */
 export const MIN_INTERVAL_SECONDS = 60;
 export const MAX_INTERVAL_SECONDS = 14400;

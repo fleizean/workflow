@@ -96,8 +96,7 @@ export const ipcContract = {
     /*
      * WR-06: stopping the timer to record work is one call, because two cannot be atomic. `sessions:create` then
      * `timer:reset` leaves the session on disk and the seconds still counted if the process dies between them, and
-     * G3/G4 then offers the same work to be saved again; the other order zeroes the accumulator with nothing
-     * written. The session that comes back is the one that was written.
+     * G3/G4 then offers the same work again; the other order zeroes the accumulator with nothing written.
      */
     'timer:stopAndSave': { input: z.strictObject(sessionFields), output: WorkSessionSchema },
     'pomodoro:getSnapshot': { input: z.void(), output: PomodoroSnapshotSchema },
@@ -112,15 +111,14 @@ export const ipcContract = {
     'stats:dayProgress': { input: z.strictObject({ date: LocalDateSchema }), output: DayProgressSchema },
     /*
      * Owner decision 2026-09-13: the two titlebar buttons no longer mean the same thing, so the channel says which
-     * one is being asked for. v1.2.1 sent both to one hide (legacy/renderer/titlebar.js), and `window:close` - which
-     * hid rather than closed - is retired rather than quietly redefined. Where the window goes is still main's
-     * decision, not the renderer's (IPC-05): with no tray to hide to, hide minimises to the taskbar instead.
+     * is being asked for. v1.2.1 sent both to one hide (legacy/renderer/titlebar.js), and `window:close` - which hid
+     * rather than closed - is retired rather than quietly redefined. With no tray to hide to, hide minimises (IPC-05).
      */
     'window:hide': { input: z.void(), output: z.void() },
     /*
      * True once, ever. A user who believes they closed the app while it keeps counting has misunderstood something,
-     * and a misunderstanding is corrected once - a confirm on every hide only teaches people to click through
-     * dialogs. Asked before hiding, because a notice raised after it is behind a window that is no longer there.
+     * and a confirm on every hide only teaches people to click through dialogs. Asked before hiding, because a
+     * notice raised after it is behind a window that is no longer there.
      */
     'window:claimHideNotice': { input: z.void(), output: z.strictObject({ due: z.boolean() }) },
     /** Ends the process. The renderer asks only after its own confirm; main marks the quit so nothing re-hides. */
@@ -143,12 +141,10 @@ export type ChannelsMatchTheContract = [Covers<IpcChannel, DeclaredIpcChannel>, 
 export const ipcChannels: readonly IpcChannel[] = IPC_CHANNELS;
 
 /*
- * SPA-07. What a write changed, named in the vocabulary every channel is already namespaced in, so a domain and a
- * channel prefix cannot mean two different things.
- *
- * stats and pomodoro are listed although no query reads them yet: `timer:stopAndSave` really does change what a
- * streak or a day's progress would answer, and announcing it now costs an invalidation of a cache nobody has
- * subscribed to. Phase 8 adds the screens, not the announcement.
+ * SPA-07. What a write changed, in the vocabulary every channel is already namespaced in, so a domain and a channel
+ * prefix cannot mean two different things. stats and pomodoro are listed although no query reads them yet:
+ * `timer:stopAndSave` really does change what a streak would answer, and announcing it now costs an invalidation of
+ * a cache nobody has subscribed to.
  */
 export const DATA_DOMAINS = ['sessions', 'companies', 'settings', 'timer', 'pomodoro', 'stats'] as const;
 export type DataDomain = (typeof DATA_DOMAINS)[number];
@@ -156,8 +152,8 @@ const DataDomainSchema = z.enum(DATA_DOMAINS);
 
 /**
  * Which domains a successful call to each channel changed - `satisfies` over the whole contract, so a channel added
- * without an answer here is a compile error rather than a screen that quietly stops refreshing. An empty list is
- * the answer for a read, and it is stated rather than omitted.
+ * without an answer here is a compile error rather than a screen that quietly stops refreshing. An empty list is the
+ * answer for a read, and it is stated rather than omitted.
  */
 export const ipcWrites = {
     'sessions:list': [],
@@ -208,9 +204,8 @@ export const ipcEvents = {
     // The same for the cycle: every state change, including each tick, arrives as a whole snapshot.
     'pomodoro:tick': PomodoroSnapshotSchema,
     /*
-     * SPA-07: main saying what it changed, so the views that show it refresh. It carries domains and never rows -
-     * the renderer refetches through the same channels it reads with, so an event cannot become a second, quieter
-     * way for data to enter the cache.
+     * SPA-07: main saying what it changed, so the views that show it refresh. It carries domains and never rows, so
+     * an event cannot become a second, quieter way for data to enter the cache.
      */
     'data:changed': z.strictObject({ domains: z.array(DataDomainSchema).min(1) })
 } as const satisfies Readonly<Record<ChannelName, z.ZodType>>;

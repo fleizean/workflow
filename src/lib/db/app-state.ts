@@ -43,10 +43,9 @@ export const TimerStateRecordSchema = z.strictObject({
 });
 
 /*
- * WR-03: the seconds a pomodoro interval had counted when the process last stopped. Like the timer's record this is
- * a scalar count and no start timestamp, so the gap between two launches cannot be credited. The day is deliberately
- * absent: a pomodoro belongs to the day it finishes on, which is the rule an interval running across midnight
- * already follows, and storing a day that is never read would invite the question why.
+ * WR-03: the seconds a pomodoro interval had counted when the process last stopped. A scalar count and no start
+ * timestamp, so the gap between two launches cannot be credited. The day is deliberately absent: a pomodoro belongs
+ * to the day it finishes on, which is what an interval running across midnight already does.
  */
 export const PomodoroStateRecordSchema = z.strictObject({
     interval: PomodoroIntervalSchema,
@@ -73,9 +72,8 @@ export const WindowBoundsRecordSchema = z.strictObject({
 });
 
 /*
- * Owner decision 2026-09-13: the hide button says once where the window went, and never again. The row is the flag -
- * its presence is the whole answer, and the timestamp is there so a reader can see when it was set. In app_state
- * rather than in localStorage, which the renderer may not touch (ARCH-03) and main could not read anyway.
+ * Owner decision 2026-09-13: the hide button says once where the window went, and never again. The row is the flag;
+ * the timestamp is there so a reader can see when it was set. Not localStorage, which main could not read anyway.
  */
 export const HideNoticeRecordSchema = z.strictObject({ shownAt: z.string() });
 

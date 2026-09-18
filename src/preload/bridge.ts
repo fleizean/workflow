@@ -17,8 +17,7 @@ export interface RendererIpc {
 /*
  * WR-05: the renderer's typed surface says every call resolves to an IpcResult and never rejects, so a call site
  * written against the type is an unhandled rejection waiting for a value structured clone cannot carry - a Date, a
- * class instance, a Proxy. invoke throws synchronously for an argument it cannot clone and rejects for an answer it
- * cannot, and both now arrive as the failure the renderer already knows how to render.
+ * class instance, a Proxy. Both the synchronous throw and the rejection arrive as a failure the renderer can render.
  */
 const INTERNAL_FAILURE = Object.freeze({
     ok: false,

@@ -15,9 +15,8 @@ export const EpochMsSchema = z.int().nonnegative();
 export const DurationSecondsSchema = z.int().nonnegative();
 
 /*
- * WR-07: the three fields a caller writes a session with, bounded. They are separate from the schemas above
- * because those describe what is read: a week total is longer than a day by design, a running timer's elapsed
- * seconds can be, and a migrated v1.2.1 row may be.
+ * WR-07: the three fields a caller writes a session with, bounded. Separate from the schemas above because those
+ * describe what is READ: a week total is longer than a day by design, and a migrated v1.2.1 row may be too.
  */
 export const SessionDurationSecondsSchema = z.int().nonnegative().max(MAX_SESSION_DURATION_SECONDS);
 export const SessionNameSchema = z.string().min(1).max(MAX_SESSION_NAME_LENGTH)
@@ -85,9 +84,8 @@ export const TimerSnapshotSchema = z.strictObject({
     // G3/G4: time carried over from a previous launch is offered for saving or discarding, never auto-resumed.
     restoredFromPreviousLaunch: z.boolean(),
     /*
-     * WR-04: the last attempt to write the counted seconds did not land. The clock keeps running - the value is
-     * still in memory and stopping would be worse - but a reboot now costs everything since the first failure, so
-     * the user has to be able to see that they should write the time down somewhere.
+     * WR-04: the last attempt to write the counted seconds did not land. The clock keeps running, but a reboot now
+     * costs everything since the first failure, so the user has to see that they should write the time down.
      */
     persistFailing: z.boolean()
 });

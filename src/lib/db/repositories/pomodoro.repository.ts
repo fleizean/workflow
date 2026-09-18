@@ -48,13 +48,10 @@ export function createPomodoroRepository(handle: DbHandle, options: RepositoryOp
 
         countForDay(date) {
             /*
-             * WR-09: the bad row is excluded, not the day. SQLite columns are dynamically typed, so this INTEGER
-             * column will hold text or a real; summing one of those and then refusing the unsafe result collapsed
-             * the whole day to zero, which makes the long break unreachable for the rest of it and under-reports
-             * POMO-09's week. Filtered in SQL, the way the sibling aggregate dayTotals() already filters duration,
-             * and the excluded rows are reported rather than dropped in silence.
-             *
-             * coalesce for the same reason the day totals need it: sum() over no rows is NULL (DATA-05).
+             * WR-09: the bad row is excluded, not the day. SQLite columns are dynamically typed, so summing a text
+             * value and then refusing the unsafe result collapsed the whole day to zero - the long break unreachable
+             * for the rest of it, and POMO-09's week under-reported. Filtered in SQL as dayTotals() filters
+             * duration, with the excluded rows reported. coalesce because sum() over no rows is NULL (DATA-05).
              */
             const countable = sql`typeof(${pomodoroSessions.pomodoros_completed}) = 'integer'
                 AND ${pomodoroSessions.pomodoros_completed} >= 0`;

@@ -54,15 +54,13 @@ function toSession(row: WorkSessionRow): WorkSession {
 // exactly as v1.2.1 did, so the stored text keeps one format.
 /*
  * WR-10: the predicate the aggregates share with toSession. dayTotals() filtered `duration` alone while its comment
- * claimed "the same rows list() returns", so a row list() drops - a BLOB in note, a text company_id, a name that is
- * not text - was still counted in the day's total. Work History then showed eight sessions totalling seven hours
- * while the progress card, the streak and the week totals all said eight, with no visible session to explain the
- * difference and no way to edit or delete the one that caused it.
+ * claimed "the same rows list() returns", so a row list() drops - a BLOB in note, a text company_id - was still
+ * counted in the day's total. Work History showed eight sessions totalling seven hours while the progress card, the
+ * streak and the week totals said eight, with no visible session to explain it.
  *
  * created_at is the one predicate this cannot share: toSession also requires it to parse as a SQL timestamp, and
- * that parse lives in date.ts. The type check below catches a created_at that is not text at all; a text value that
- * does not parse is still counted here and still dropped by list(). That remainder is stated rather than claimed
- * away, and the liberal SQL_TIMESTAMP regex makes it narrow.
+ * that parse lives in date.ts. A text created_at that does not parse is still counted here and dropped by list();
+ * the liberal SQL_TIMESTAMP regex makes that remainder narrow.
  */
 const LISTABLE = sql`typeof(${workSessions.duration}) = 'integer' AND ${workSessions.duration} >= 0
     AND typeof(${workSessions.name}) = 'text'
@@ -121,11 +119,9 @@ export function createSessionsRepository(handle: DbHandle, options: RepositoryOp
 
         /*
          * IN-06: the write paths map outside mapRows, so a RowMappingError here is thrown rather than swallowed -
-         * the one place this layer's "a bad row is skipped, never thrown" rule is inverted, and it is deliberate.
-         * A read that drops an unreadable row loses nothing; a write that returned a WorkSession the mapper could
-         * not build would be inventing one, and swallowing it would report success with nothing to hand back. The
-         * INSERT has committed by then, so a caller who retries duplicates the session - which is why every field
-         * crossing sessions:create is bounded by the contract's schemas first, and why nothing can reach this today.
+         * the one inversion of this layer's "a bad row is skipped, never thrown" rule. A read that drops a row loses
+         * nothing; a write that returned a WorkSession the mapper could not build would be inventing one, and the
+         * INSERT has committed by then, so a caller who retries duplicates the session.
          */
         create(input) {
             const inserted = handle.insert(workSessions).values(columnsOf(input)).returning().get();

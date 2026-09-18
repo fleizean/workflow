@@ -199,11 +199,10 @@ function pruneBestEffort(backupDir: string, backupPath: string | null): PruneOut
     }
 }
 
-// WR-02: every CREATE in the v2 step carries IF NOT EXISTS, so a table of the right name in the wrong shape
-// makes the step a no-op. Checked here, inside the step's transaction and before the version bump, so such a file
-// is refused loudly rather than stamped current with columns the app cannot read.
-// WR-03: the refusal repeats on every launch, so it names the one thing that ends it. Workflow will not rename or
-// drop a table it did not create; saying "start it again" without saying that would be advice that cannot work.
+// WR-02: every CREATE in the v2 step carries IF NOT EXISTS, so a table of the right name in the wrong shape makes the
+// step a no-op. Checked inside the step's transaction and before the version bump, so such a file is refused loudly
+// rather than stamped current. WR-03: the refusal repeats on every launch, so it names the one thing that ends it -
+// Workflow will not rename or drop a table it did not create, and "start it again" alone would be advice that cannot work.
 function assertRequiredColumns(db: DatabaseType.Database, step: MigrationStep): void {
     for (const required of step.ensures ?? []) {
         const present = new Set(

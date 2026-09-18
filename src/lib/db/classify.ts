@@ -53,11 +53,9 @@ export function classify(observed: ObservedDatabase, latest: number): DbClass {
     const fingerprinted = v1xTables.every((table) => startsWith(observed.columns[table], V1X_TABLE_PREFIXES[table]));
     if (!anchored || !fingerprinted) return 'unrecognized';
 
-    // WR-03: an extra table is not grounds for refusal. A user who opened their own krono.db in a SQLite browser
-    // and left a scratch table behind would be told their file is not a Workflow database, with advice that cannot
-    // help and no way back - and adoption is the reversible side of that choice, since it backs the file up first
-    // and only ever adds. WR-05's upper bound survives as the stricter footprint a file with foreign tables must
-    // show: both anchors, not just one, so a foreign database carrying a v1.x-shaped companies is still refused.
+    // WR-03: an extra table is not grounds for refusal. A user who opened their own krono.db in a SQLite browser and
+    // left a scratch table behind would be told their file is not a Workflow database, with no way back. WR-05's
+    // upper bound survives as the stricter footprint a file with foreign tables must show: both anchors, not one.
     const foreign = tables.filter((name) => !isV1xTable(name) && name !== MILESTONE_TABLE);
     const wholeFootprint = v1xTables.includes('companies') && v1xTables.includes('work_sessions');
     if (foreign.length > 0 && !wholeFootprint) return 'unrecognized';

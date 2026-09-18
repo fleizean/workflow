@@ -14,9 +14,8 @@ export interface SkippedRowReport {
 export interface RepositoryOptions {
     /**
      * Called once per row the mapper refused. Phase 4 counts these anomalies at migration and never repairs them
-     * (D-15), so a repository that threw would brick the app for a database a third-party tool has edited, and one
-     * that dropped them silently would hide it. The default drops and says nothing; the composition root supplies
-     * the reporter.
+     * (D-15), so a repository that threw would brick the app for a database a third-party tool edited, and one that
+     * dropped them silently would hide it. The default drops; the composition root supplies the reporter.
      */
     readonly onSkippedRow?: (skipped: SkippedRowReport) => void;
 }

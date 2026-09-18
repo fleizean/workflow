@@ -1,14 +1,12 @@
 /*
  * V2-SCHEMA-02: moves v1.2.1's krono.db to v2's workflow.db, with its -wal folded in first.
  *
- * The app runs in WAL mode (client.ts:9), so committed frames can live in krono.db-wal and nowhere else - the
- * state every user who was killed from the tray is in. SQLite will not look for krono.db-wal beside workflow.db,
- * so renaming the database alone destroys those transactions with no error anywhere. The checkpoint below is not
- * an optimisation; it is the whole of why this module exists (D-32, CUSTODY-03).
+ * The app runs in WAL mode (client.ts:9), so committed frames can live in krono.db-wal and nowhere else - the state
+ * every user killed from the tray is in. SQLite will not look for krono.db-wal beside workflow.db, so renaming the
+ * database alone destroys those transactions with no error anywhere (D-32, CUSTODY-03).
  *
- * A move, never a copy: a copy leaves two databases that diverge silently. The rename is the one irreversible
- * step and it is atomic within a directory, so a crash leaves exactly one openable database - under the old name
- * before it, under the new one after it, never none and never two.
+ * A move, never a copy: a copy leaves two databases that diverge silently. The rename is atomic within a directory,
+ * so a crash leaves exactly one openable database - never none and never two.
  */
 
 import fs from 'node:fs';
@@ -96,18 +94,15 @@ function requireQuiescent(dbPath: string, stage: string): void {
 }
 
 /*
- * The move, taken with an operation that REFUSES an existing target rather than one that has to be asked about it
- * first (CR-01). fs.renameSync replaces a target silently on NTFS and on POSIX alike, and the existsSync at the top
- * of adoptLegacyDatabase is ~190 ms of checkpoint, open/close and integrity_check away from it - long enough for a
- * backup restore, a roaming profile or a sync client to put a database there and have it destroyed.
+ * The move, taken with an operation that REFUSES an existing target rather than one that has to be asked first
+ * (CR-01). fs.renameSync replaces a target silently on NTFS and POSIX alike, and the existsSync at the top of
+ * adoptLegacyDatabase is ~190 ms of checkpoint, open/close and integrity_check away from it - long enough for a
+ * backup restore or a sync client to put a database there and have it destroyed.
  *
- * fs.linkSync throws EEXIST instead, so the check and the move are one operation. A hard link is not a copy: there
- * is one inode throughout and the unlink that follows only drops the old name, so CUSTODY-03 holds. A crash between
- * the two leaves both names on the same inode, which the next launch reads as target-present and opens intact.
- *
- * Not every filesystem has hard links (exFAT, some network shares), so an EEXIST is the refusal and anything else
- * falls back to the rename with its check moved as late as it can go - narrower than it was, and still the best
- * available where linking is impossible.
+ * fs.linkSync throws EEXIST instead, so the check and the move are one operation. A hard link is not a copy: one
+ * inode throughout, and the unlink only drops the old name, so CUSTODY-03 holds. A crash between the two leaves both
+ * names on the same inode, which the next launch reads as target-present. Filesystems without hard links (exFAT,
+ * some network shares) fall back to the rename with its check moved as late as it can go.
  */
 function moveOnto(legacyPath: string, targetPath: string): void {
     try {
@@ -194,10 +189,9 @@ export function adoptLegacyDatabase(
         );
     }
     /*
-     * WR-06: the move has landed and the contents have verified, so the adoption has succeeded. A -shm that will
-     * not delete - an anti-virus or a search indexer that opened the new file, which is common on Windows right
-     * after a rename - is cosmetic, and turning it into a startup failure showed a very alarming dialog about an
-     * adoption that had fully worked. The same reasoning sweepPendingBackups already applies.
+     * WR-06: the move has landed and the contents verified, so the adoption has succeeded. A -shm that will not
+     * delete - an indexer that opened the new file, common on Windows right after a rename - is cosmetic, and
+     * turning it into a startup failure showed an alarming dialog about an adoption that had fully worked.
      */
     try {
         requireQuiescent(targetPath, 'after reading it back');
