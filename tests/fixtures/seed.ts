@@ -244,6 +244,26 @@ export function makeStaleWalFixture(dbPath: string): Promise<string> {
     return killAfterWriting(dbPath, ['--empty']);
 }
 
+/*
+ * The sidecar as the PARENT sees it, so a failure can say which side of the kill it vanished on.
+ * A SIGKILLed process cannot checkpoint, so "present when we decided to kill, absent afterwards"
+ * and "already absent when the child said it was ready" have completely different causes, and the
+ * report could not previously tell them apart.
+ */
+const walStateOf = (dbPath: string): string => {
+    const walPath = dbPath + '-wal';
+    return fs.existsSync(walPath) ? String(fs.statSync(walPath).size) + ' bytes' : 'absent';
+};
+
+/* Whether anything removed the directory itself, which SQLite never does and rmSync always does. */
+const dirListing = (dbPath: string): string => {
+    try {
+        return JSON.stringify(fs.readdirSync(path.dirname(dbPath)));
+    } catch {
+        return 'the directory itself is gone';
+    }
+};
+
 function killAfterWriting(dbPath: string, args: readonly string[]): Promise<string> {
     return new Promise<string>((resolve, reject) => {
         const child = fork(SEED_CHILD, [dbPath, ...args], {
@@ -257,10 +277,13 @@ function killAfterWriting(dbPath: string, args: readonly string[]): Promise<stri
          * it threw away the one number that tells those apart. Not a fix - the cause is still unknown.
          */
         let reported: unknown = null;
+        /* Read before the kill, so the failure message can place the loss on one side of it or the other. */
+        let sidecarAtSignal = 'not read';
 
         child.on('message', (message) => {
             signalled = true;
             reported = message;
+            sidecarAtSignal = walStateOf(dbPath);
             child.kill('SIGKILL'); // never close() - that would checkpoint the evidence away
         });
 
@@ -285,7 +308,9 @@ function killAfterWriting(dbPath: string, args: readonly string[]): Promise<stri
             } catch (error) {
                 const because = error instanceof Error ? error.message : String(error);
                 reject(new Error(because + ' The child reported ' + JSON.stringify(reported) +
-                    ' before it was killed (exit code ' + String(code) + ', signal ' + String(signal) + ').'));
+                    ' before it was killed (exit code ' + String(code) + ', signal ' + String(signal) +
+                    '). The parent saw the sidecar ' + sidecarAtSignal + ' at the moment it sent the signal, ' +
+                    'and the directory now holds ' + dirListing(dbPath) + '.'));
             }
         });
     });

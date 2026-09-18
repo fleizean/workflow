@@ -110,8 +110,11 @@ const walSize = fs.existsSync(walPath) ? fs.statSync(walPath).size : 0;
 if (typeof process.send !== 'function') {
     throw new Error('seed-child.cjs: not running under fork() - no IPC channel to signal on');
 }
-process.send({ ready: true, walSize: walSize });
-
-// Stay alive, holding the connection open, until the parent kills us. Returning from here would
-// let the event loop drain, close the database and checkpoint the sidecar away.
+// Pinned BEFORE the parent is told, not after. Staying alive holds the connection open until the
+// parent kills us; returning from here would let the event loop drain, close the database and
+// checkpoint the sidecar away. The parent kills on the message, so the keep-alive has to already be
+// in place when that message goes out rather than one statement later - otherwise there is a window,
+// however narrow, in which this process has announced readiness and is not yet pinned.
 setInterval(() => {}, 1000);
+
+process.send({ ready: true, walSize: walSize });
