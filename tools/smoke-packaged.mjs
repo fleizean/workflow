@@ -54,6 +54,8 @@ export const EXPECTED_APP_USER_MODEL_ID = 'com.workflow.timer';
 /** src/assets/icon-64.png, as the packaged app must decode it, and the ceiling that keeps it the small asset. */
 export const EXPECTED_NOTIFY_ICON_SIZE = '64x64';
 export const MAX_NOTIFY_ICON_BYTES = 64_000;
+/** src/main/tray.ts's RESET_POSITION_LABEL; tests/smoke-harness.test.ts holds the two equal. */
+export const EXPECTED_TRAY_RESET_LABEL = 'Reset window position';
 
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
@@ -349,6 +351,49 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
         'first=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_FIRST) + ' second=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_SECOND));
 
     checks.push(...evaluateNotificationIdentity({ report, expectedAppId: EXPECTED_APP_USER_MODEL_ID }));
+    checks.push(...evaluateWindowRecovery({ report }));
+
+    return checks;
+}
+
+/*
+ * Phase 10 criterion 5, both halves, against the display list the machine running this really has.
+ *
+ * Phase 5 proved the arithmetic in chooseWindowBounds over displays a test invented; what no test could do was
+ * unplug a monitor. The app is given a saved rectangle 30,000 pixels from the origin - a position no display could
+ * ever occupy - and the window Electron then opens is measured against screen.getAllDisplays(). The control beside
+ * it is the one that keeps this from being vacuous: the saved rectangle must be one this machine really refuses.
+ *
+ * The tray half pushes a real window off-screen and runs the menu item's own click handler, through the menu
+ * object the tray is showing. Windows drawing that menu and dispatching the click is the one step left to a human.
+ */
+export function evaluateWindowRecovery({ report }) {
+    const f = report.fields;
+    const checks = [];
+    const check = (label, pass, detail) => checks.push({ label, pass: Boolean(pass), detail });
+
+    check('the harness saw at least one display, so the recovery claim is about something',
+        Number(f.SMOKE_DISPLAYS) >= 1, 'displays=' + JSON.stringify(f.SMOKE_DISPLAYS));
+    check('the saved off-screen rectangle really is one this machine would refuse',
+        f.SMOKE_OFFSCREEN_SAVED_ON_DISPLAY === 'false',
+        'saved ' + JSON.stringify(f.SMOKE_OFFSCREEN_SAVED) + ' on a display: ' +
+            JSON.stringify(f.SMOKE_OFFSCREEN_SAVED_ON_DISPLAY));
+    check('a window whose saved bounds are entirely off-screen opens on a display that exists',
+        f.SMOKE_OFFSCREEN_ON_DISPLAY === 'true',
+        'opened at ' + JSON.stringify(f.SMOKE_OFFSCREEN_OPENED));
+
+    check('the tray menu offers a way back for a window nobody can reach',
+        (f.SMOKE_TRAY_MENU ?? '').includes(EXPECTED_TRAY_RESET_LABEL),
+        'menu=' + JSON.stringify(f.SMOKE_TRAY_MENU));
+    check('the window really was off-screen before the reset item was clicked',
+        f.SMOKE_TRAY_RESET_BEFORE_ON_DISPLAY === 'false',
+        'before ' + JSON.stringify(f.SMOKE_TRAY_RESET_BEFORE));
+    check('clicking it put the window back on a display, and told the action exactly once',
+        f.SMOKE_TRAY_RESET_AFTER_ON_DISPLAY === 'true' && f.SMOKE_TRAY_RESET_CALLS === '1',
+        'after ' + JSON.stringify(f.SMOKE_TRAY_RESET_AFTER) + ' calls=' + JSON.stringify(f.SMOKE_TRAY_RESET_CALLS));
+    check('the reset was written back, so the next launch opens where it was moved to',
+        f.SMOKE_TRAY_RESET_PERSISTED === 'true',
+        'persisted=' + JSON.stringify(f.SMOKE_TRAY_RESET_PERSISTED));
 
     return checks;
 }

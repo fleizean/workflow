@@ -56,7 +56,9 @@ vi.mock('electron', () => {
     };
 });
 
-const { createAppTray, destroyAppTray, hasAppTray } = await import('../src/main/tray');
+const {
+    RESET_POSITION_LABEL, appTrayMenu, createAppTray, destroyAppTray, hasAppTray
+} = await import('../src/main/tray');
 const { decideWindowClose, isQuitting, markQuitting, resetQuittingForTests } = await import('../src/main/quit');
 const { TRAY_ICON_SIZE, TRAY_TOOLTIP } = await import('../src/main/config');
 
@@ -69,15 +71,20 @@ interface Window {
     visible: boolean;
     shown: number;
     hidden: number;
+    reset: number;
 }
 
 function actionsFor(win: Window) {
     return {
         show: () => { win.visible = true; win.shown += 1; },
         hide: () => { win.visible = false; win.hidden += 1; },
-        isVisible: () => win.visible
+        isVisible: () => win.visible,
+        resetPosition: () => { win.reset += 1; }
     };
 }
+
+/** Every case that does not care about the window's state starts from the same one. */
+const freshWindow = (visible: boolean): Window => ({ visible, shown: 0, hidden: 0, reset: 0 });
 
 const menuItem = (label: string): MenuItem | undefined =>
     state.menu.find((item) => item.label?.startsWith(label) === true);
@@ -91,7 +98,7 @@ describe('criterion 8: the tray', () => {
     });
 
     it('is created once, whatever asks for it - a second launch adds no second icon', () => {
-        const win: Window = { visible: true, shown: 0, hidden: 0 };
+        const win: Window = freshWindow(true);
         const first = createAppTray(actionsFor(win), () => undefined);
         const second = createAppTray(actionsFor(win), () => undefined);
 
@@ -101,7 +108,7 @@ describe('criterion 8: the tray', () => {
     });
 
     it('resizes the icon rather than handing Windows a full-size PNG', () => {
-        createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), () => undefined);
         // Under vitest the ?asset import resolves to a URL; in the packaged build it is a path on disk.
         expect(state.iconPath).toContain('icon.png');
         expect(state.resized).toEqual({ width: TRAY_ICON_SIZE, height: TRAY_ICON_SIZE });
@@ -111,7 +118,7 @@ describe('criterion 8: the tray', () => {
     it('still appears, and says so, when the icon cannot be read', () => {
         state.imageEmpty = true;
         const lines: string[] = [];
-        expect(createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), (line) => lines.push(line)))
+        expect(createAppTray(actionsFor(freshWindow(true)), (line) => lines.push(line)))
             .toBeDefined();
         expect(lines.join('\n')).toContain('icon could not be read');
     });
@@ -119,7 +126,7 @@ describe('criterion 8: the tray', () => {
     it('does not fail startup when no tray can be created, and leaves the app quittable', () => {
         state.trayThrows = true;
         const lines: string[] = [];
-        expect(createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), (line) => lines.push(line)))
+        expect(createAppTray(actionsFor(freshWindow(true)), (line) => lines.push(line)))
             .toBeUndefined();
         expect(hasAppTray()).toBe(false);
         expect(lines.join('\n')).toContain('no tray could be created');
@@ -128,7 +135,7 @@ describe('criterion 8: the tray', () => {
     });
 
     it('toggles the window on a click, as v1.2.1 did', () => {
-        const win: Window = { visible: true, shown: 0, hidden: 0 };
+        const win: Window = freshWindow(true);
         createAppTray(actionsFor(win), () => undefined);
         const click = state.listeners.get('click');
         expect(click, 'the tray no longer answers a click').toBeDefined();
@@ -141,14 +148,14 @@ describe('criterion 8: the tray', () => {
     });
 
     it('brings the window back from Show', () => {
-        const win: Window = { visible: false, shown: 0, hidden: 0 };
+        const win: Window = freshWindow(false);
         createAppTray(actionsFor(win), () => undefined);
         menuItem('Show')?.click?.();
         expect(win.visible).toBe(true);
     });
 
     it('quits from Quit, and marks the app as quitting first', () => {
-        createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), () => undefined);
         expect(isQuitting()).toBe(false);
 
         menuItem('Quit')?.click?.();
@@ -159,10 +166,34 @@ describe('criterion 8: the tray', () => {
     });
 
     it('releases the icon when the app goes', () => {
-        createAppTray(actionsFor({ visible: true, shown: 0, hidden: 0 }), () => undefined);
+        createAppTray(actionsFor(freshWindow(true)), () => undefined);
         destroyAppTray();
         expect(state.destroyed).toBe(1);
         expect(hasAppTray()).toBe(false);
+    });
+
+    /*
+     * Phase 10 criterion 5: the user can reset the window position from the tray menu. A frameless window that has
+     * ended up off-screen has no title bar to drag and no system Move item, so the tray is the only way back.
+     */
+    it('offers Reset window position, and its click reaches the action', () => {
+        const win: Window = freshWindow(true);
+        createAppTray(actionsFor(win), () => undefined);
+        const item = menuItem(RESET_POSITION_LABEL);
+        expect(item, 'the tray menu offers no way to recover an off-screen window').toBeDefined();
+        item?.click?.();
+        expect(win.reset).toBe(1);
+        // Beside Show rather than beside Quit: both are ways of getting the window back, and one of them destroys
+        // nothing. A reset item under Quit is one slip away from ending the app instead of moving it.
+        expect(state.menu.findIndex((entry) => entry.label === RESET_POSITION_LABEL))
+            .toBeLessThan(state.menu.findIndex((entry) => entry.type === 'separator'));
+    });
+
+    it('lets go of the menu with the icon, so a rebuilt tray cannot be driven through the old one', () => {
+        createAppTray(actionsFor(freshWindow(true)), () => undefined);
+        expect(appTrayMenu()).toBeDefined();
+        destroyAppTray();
+        expect(appTrayMenu()).toBeUndefined();
     });
 });
 

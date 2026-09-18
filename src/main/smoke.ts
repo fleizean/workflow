@@ -2,7 +2,7 @@
 // modal dialog (Pitfall 6) and exits recorded rather than taken (D-37).
 // The database layer arrives as runSmoke's argument, so loading this module never loads it.
 
-import { app, BrowserWindow, nativeImage, session } from 'electron';
+import { app, BrowserWindow, nativeImage, screen, session } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
@@ -24,14 +24,18 @@ import { clearActiveContainer, createContainer, setActiveContainer } from './con
 import type { AppContainer } from './container';
 import { registerIpcHandlers, removeIpcHandlers } from './ipc';
 import { decideWindowClose, markQuitting } from './quit';
-import { createAppTray, destroyAppTray, hasAppTray } from './tray';
+import { RESET_POSITION_LABEL, appTrayMenu, createAppTray, destroyAppTray, hasAppTray } from './tray';
 import { startDatabase } from './database-startup';
 import type { LegacyImportStatus, StartedDatabase } from './database-startup';
 import { describeError } from './errors';
 import { createHideNoticeStore } from './lifecycle';
 import { LEGACY_STORAGE_PAGE, readLegacyStorage } from './legacy-storage';
 import { isSameOrInside } from './userdata-path';
-import { createMainWindow, loadRenderer, registerHideNoticeStore, shellControls } from './window';
+import {
+    createMainWindow, loadRenderer, registerHideNoticeStore, registerWindowBoundsStore, resetWindowPosition,
+    shellControls
+} from './window';
+import { isOnAnyDisplay } from './window-bounds';
 
 export type SmokeDatabase = typeof DatabaseLayerModule;
 
@@ -482,14 +486,105 @@ const READ_AUDIO_SCRIPT = `(() => {
  * quitting nothing re-hides the window. The quitting flag is set at the very end on purpose: nothing runs after it
  * but the report.
  */
+/** Whether a rectangle lands usefully on one of the displays this machine really has right now. */
+function landsOnARealDisplay(bounds: Electron.Rectangle): boolean {
+    return isOnAnyDisplay(bounds, screen.getAllDisplays().map((display) => ({ workArea: display.workArea })));
+}
+
+const describeBounds = (b: Electron.Rectangle): string =>
+    String(b.x) + ',' + String(b.y) + ' ' + String(b.width) + 'x' + String(b.height);
+
+/*
+ * Phase 10 criterion 5, first half, against the REAL display list rather than a controlled one.
+ *
+ * Phase 5 proved chooseWindowBounds' arithmetic over a list of displays a test invented; what it could not do was
+ * unplug a monitor. This gets the same effect from the other side: a saved rectangle 30,000 pixels off the origin
+ * lands on no display that could ever exist, so the fallback is exercised on whatever hardware is running the
+ * smoke - and the window Electron then opens is measured against screen.getAllDisplays(), which nothing here fakes.
+ */
+function checkOffScreenRecovery(lines: string[]): void {
+    const OFF_SCREEN = { x: -30_000, y: -30_000, width: 500, height: 700 };
+    const written: Electron.Rectangle[] = [];
+    registerWindowBoundsStore({
+        read: () => OFF_SCREEN,
+        write: (bounds) => { written.push(bounds); }
+    });
+    const probe = createMainWindow({ show: false });
+    try {
+        const opened = probe.getBounds();
+        lines.push('SMOKE_OFFSCREEN_SAVED=' + describeBounds(OFF_SCREEN));
+        lines.push('SMOKE_OFFSCREEN_OPENED=' + describeBounds(opened));
+        lines.push('SMOKE_OFFSCREEN_ON_DISPLAY=' + String(landsOnARealDisplay(opened)));
+        // The control: the saved rectangle must be one this machine really would refuse, or the claim is vacuous.
+        lines.push('SMOKE_OFFSCREEN_SAVED_ON_DISPLAY=' + String(landsOnARealDisplay(OFF_SCREEN)));
+        lines.push('SMOKE_DISPLAYS=' + String(screen.getAllDisplays().length));
+    } finally {
+        probe.destroy();
+        registerWindowBoundsStore(undefined);
+        void written;
+    }
+}
+
+/*
+ * Phase 10 criterion 5, second half: the tray item, invoked through the menu the tray is actually showing.
+ *
+ * The window is pushed off-screen first - which is the state a user reaches by unplugging the monitor it was on -
+ * and then the item's own click handler is run. What this does not prove is that Windows draws the menu and
+ * dispatches the click; that is the same gap the titlebar's X has and it is recorded as such.
+ */
+function checkTrayReset(lines: string[], resetCalls: () => number, aim: (win: BrowserWindow) => void): void {
+    const menu = appTrayMenu();
+    const item = menu?.items.find((entry) => entry.label === RESET_POSITION_LABEL);
+    lines.push('SMOKE_TRAY_MENU=' + (menu?.items.map((entry) => entry.label || entry.type).join('|') ?? ''));
+    if (item === undefined) {
+        lines.push('SMOKE_TRAY_RESET=absent');
+        return;
+    }
+    const written: Electron.Rectangle[] = [];
+    registerWindowBoundsStore({ read: () => null, write: (bounds) => { written.push(bounds); } });
+    const probe = createMainWindow({ show: false });
+    aim(probe);
+    try {
+        probe.setBounds({ x: -30_000, y: -30_000, width: 500, height: 700 });
+        const before = probe.getBounds();
+        lines.push('SMOKE_TRAY_RESET_BEFORE=' + describeBounds(before));
+        lines.push('SMOKE_TRAY_RESET_BEFORE_ON_DISPLAY=' + String(landsOnARealDisplay(before)));
+        // Electron types MenuItem.click as a bare Function, so it is narrowed here rather than called through `any`.
+        const invoke = item.click as () => void;
+        invoke();
+        const after = probe.getBounds();
+        lines.push('SMOKE_TRAY_RESET_CALLS=' + String(resetCalls()));
+        lines.push('SMOKE_TRAY_RESET_AFTER=' + describeBounds(after));
+        lines.push('SMOKE_TRAY_RESET_AFTER_ON_DISPLAY=' + String(landsOnARealDisplay(after)));
+        lines.push('SMOKE_TRAY_RESET_PERSISTED=' + String(written.length > 0));
+    } finally {
+        // resetWindowPosition shows and focuses, which is its job; the probe is put away again immediately.
+        probe.hide();
+        probe.destroy();
+        registerWindowBoundsStore(undefined);
+    }
+}
+
 async function checkShell(lines: string[]): Promise<string | null> {
     try {
-        const actions = { show: () => undefined, hide: () => undefined, isVisible: () => false };
+        let resetCalls = 0;
+        /*
+         * Which window the reset drives. In the app this is always mainWindows()[0] and the argument is never
+         * passed; here the smoke has already opened a main window of its own, so the probe has to be named or the
+         * click would move that one instead - and showing the smoke's window is exactly what a smoke must not do.
+         */
+        let resetTarget: BrowserWindow | undefined;
+        const actions = {
+            show: () => undefined, hide: () => undefined, isVisible: () => false,
+            resetPosition: () => { resetCalls += 1; resetWindowPosition(resetTarget); }
+        };
         const log = (line: string): void => { lines.push('SMOKE_TRAY_LOG=' + line); };
         const first = createAppTray(actions, log);
         const second = createAppTray(actions, log);
         lines.push('SMOKE_TRAY_CREATED=' + String(first !== undefined));
         lines.push('SMOKE_TRAY_SINGLETON=' + String(first === second));
+        checkOffScreenRecovery(lines);
+        checkTrayReset(lines, () => resetCalls, (win) => { resetTarget = win; });
 
         // A window of its own, so the one the renderer checks ran against is left alone. The finally is IN-07: a
         // throw between the two closes used to leave it in `created`, where the renderer bus would still deliver to it.

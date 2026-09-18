@@ -10,10 +10,12 @@ import {
     BACKUP_DIR as HARNESS_BACKUP_DIR, DATABASE_FILE as HARNESS_DATABASE_FILE,
     DEFAULT_TIMEOUT_MS, EXPECTED_BUNDLED_FONTS, EXPECTED_EXIT_CODES, EXPECTED_ICON_MAX_WIDTH_PX,
     EXPECTED_ICON_TEXT_MIN_WIDTH_PX, EXPECTED_IPC_CHANNELS, EXPECTED_LATEST, EXPECTED_SERVICES,
-    EXPECTED_WATCHDOG_MS, evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed
+    EXPECTED_TRAY_RESET_LABEL, EXPECTED_WATCHDOG_MS, evaluateRefusalCase, evaluateTimerCase, evaluateWalFlushed,
+    evaluateWindowRecovery
 } from '../tools/smoke-packaged.mjs';
 import { LATEST } from '../src/lib/db/migrations/registry';
 import { BACKUP_DIR, DATABASE_FILE } from '../src/main/database-startup';
+import { RESET_POSITION_LABEL } from '../src/main/tray';
 import { read } from './helpers/ts-imports';
 import type { SmokeCheck, SmokeReport } from '../tools/smoke-packaged.mjs';
 
@@ -155,5 +157,74 @@ describe('T-04-50: the harness and the app cannot drift apart on exit codes', ()
         expect(HARNESS_DATABASE_FILE).toBe(DATABASE_FILE);
         expect(HARNESS_BACKUP_DIR).toBe(BACKUP_DIR);
         expect(EXPECTED_LATEST).toBe(LATEST);
+    });
+
+    /*
+     * Phase 10 criterion 5: the harness finds the tray item by its label. Renaming the item without renaming this
+     * would leave the check looking for a menu entry that no longer exists - and it reports on the WHOLE menu
+     * string, so an absent item reads as a pass to nobody but a careless eye.
+     */
+    it('the tray reset label restates src/main/tray.ts', () => {
+        expect(EXPECTED_TRAY_RESET_LABEL).toBe(RESET_POSITION_LABEL);
+    });
+});
+
+/*
+ * Phase 10 criterion 5 again, as pure judgement. The launch supplies the numbers; what they MEAN is decided here,
+ * where the two controls can be shown to fail: a saved rectangle that was never off-screen, and a window that was
+ * already on a display before the reset was clicked, would both make the claim vacuous.
+ */
+describe('criterion 5: an off-screen window comes back', () => {
+    const recovered: Record<string, string> = {
+        SMOKE_DISPLAYS: '2',
+        SMOKE_OFFSCREEN_SAVED: '-30000,-30000 500x700',
+        SMOKE_OFFSCREEN_SAVED_ON_DISPLAY: 'false',
+        SMOKE_OFFSCREEN_OPENED: '745,50 430x932',
+        SMOKE_OFFSCREEN_ON_DISPLAY: 'true',
+        SMOKE_TRAY_MENU: 'Show Workflow|Reset window position|separator|Quit Workflow',
+        SMOKE_TRAY_RESET_BEFORE: '-30000,-30000 500x700',
+        SMOKE_TRAY_RESET_BEFORE_ON_DISPLAY: 'false',
+        SMOKE_TRAY_RESET_AFTER: '745,50 430x932',
+        SMOKE_TRAY_RESET_AFTER_ON_DISPLAY: 'true',
+        SMOKE_TRAY_RESET_CALLS: '1',
+        SMOKE_TRAY_RESET_PERSISTED: 'true'
+    };
+    const failuresFor = (fields: Record<string, string>): string[] =>
+        evaluateWindowRecovery({ report: { ok: true, fields } })
+            .filter((check: SmokeCheck) => !check.pass).map((check: SmokeCheck) => check.label);
+
+    it('passes the launch that recovered', () => {
+        expect(failuresFor(recovered)).toEqual([]);
+    });
+
+    it('fails a saved rectangle that was never off-screen, so the fallback proved nothing', () => {
+        expect(failuresFor({ ...recovered, SMOKE_OFFSCREEN_SAVED_ON_DISPLAY: 'true' }))
+            .toEqual(['the saved off-screen rectangle really is one this machine would refuse']);
+    });
+
+    it('fails a window that did not come back, and one the menu offers no way back for', () => {
+        expect(failuresFor({ ...recovered, SMOKE_OFFSCREEN_ON_DISPLAY: 'false' }))
+            .toEqual(['a window whose saved bounds are entirely off-screen opens on a display that exists']);
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_MENU: 'Show Workflow|separator|Quit Workflow' }))
+            .toEqual(['the tray menu offers a way back for a window nobody can reach']);
+    });
+
+    it('fails a reset clicked on a window that was already on screen', () => {
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_RESET_BEFORE_ON_DISPLAY: 'true' }))
+            .toEqual(['the window really was off-screen before the reset item was clicked']);
+    });
+
+    it('fails a reset that moved nothing, fired twice, or was not written back', () => {
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_RESET_AFTER_ON_DISPLAY: 'false' }))
+            .toEqual(['clicking it put the window back on a display, and told the action exactly once']);
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_RESET_CALLS: '2' }))
+            .toEqual(['clicking it put the window back on a display, and told the action exactly once']);
+        expect(failuresFor({ ...recovered, SMOKE_TRAY_RESET_PERSISTED: 'false' }))
+            .toEqual(['the reset was written back, so the next launch opens where it was moved to']);
+    });
+
+    it('fails a launch that saw no display at all, where every answer above would be meaningless', () => {
+        expect(failuresFor({ ...recovered, SMOKE_DISPLAYS: '0' }))
+            .toContain('the harness saw at least one display, so the recovery claim is about something');
     });
 });

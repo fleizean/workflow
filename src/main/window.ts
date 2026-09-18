@@ -8,7 +8,7 @@ import { MAIN_WINDOW, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './confi
 import { describeError } from './errors';
 import { decideWindowClose, isQuitting, markQuitting } from './quit';
 import { hasAppTray } from './tray';
-import { chooseWindowBounds } from './window-bounds';
+import { atLeastMinimum, chooseWindowBounds } from './window-bounds';
 import type { WindowBounds } from './window-bounds';
 
 // A failed load is logged, never fatal. ERR_ABORTED (the dev server's first-run reload superseding the load) is not
@@ -70,6 +70,14 @@ export function registerHideNoticeStore(store: HideNoticeStore | undefined): voi
 
 const MINIMUM = { width: MAIN_WINDOW.minWidth, height: MAIN_WINDOW.minHeight };
 
+/** The size a window with nothing saved opens at. One definition, so a reset returns to where a first run started. */
+function defaultWindowSize(): { width: number; height: number } {
+    return {
+        width: MAIN_WINDOW.width,
+        height: process.platform === 'darwin' ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height
+    };
+}
+
 /** Criterion 9: restored only onto a display that exists now, which is not the same as the one it was saved on. */
 function openingBounds(defaultSize: { width: number; height: number }): ReturnType<typeof chooseWindowBounds> {
     let saved: WindowBounds | null = null;
@@ -119,11 +127,7 @@ function persistBoundsOn(win: BrowserWindow): void {
 
 /** The window main.js creates today, plus the sandbox (T-02-04). */
 export function createMainWindow(options: { show: boolean }): BrowserWindow {
-    const isMac = process.platform === 'darwin';
-    const opening = openingBounds({
-        width: MAIN_WINDOW.width,
-        height: isMac ? MAIN_WINDOW.macHeight : MAIN_WINDOW.height
-    });
+    const opening = openingBounds(defaultWindowSize());
     const win = new BrowserWindow({
         width: opening.size.width,
         height: opening.size.height,
@@ -168,6 +172,41 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
         }
     });
     return win;
+}
+
+/*
+ * Phase 10 criterion 5, second half: the way back when the window is somewhere the user cannot reach.
+ *
+ * chooseWindowBounds already refuses to RESTORE a rectangle that lands on no current display, but that only helps
+ * at launch. A window dragged to a monitor that is then unplugged, or pushed off the edge by a resolution change
+ * while the app is running, stays where it is - and a frameless window has no title bar to drag it back by and no
+ * system menu to Move from. So this is the tray's answer: the default size, centred on the display Electron
+ * considers primary, visible and focused, and written back so the next launch opens there too.
+ *
+ * Deliberately the DEFAULT size rather than the current one: a window that is off-screen because it is bigger than
+ * the display it came back onto would be moved to a place it still does not fit.
+ */
+export function resetWindowPosition(target?: BrowserWindow): void {
+    // The app has exactly one main window, so the default is the whole story; the parameter exists because the
+    // packaged smoke creates probe windows of its own and has to say which one it is driving.
+    const win = target ?? mainWindows()[0];
+    if (win === undefined || win.isDestroyed()) {
+        return;
+    }
+    const size = atLeastMinimum(defaultWindowSize(), MINIMUM);
+    win.setSize(size.width, size.height);
+    win.center();
+    if (win.isMinimized()) {
+        win.restore();
+    }
+    win.show();
+    win.focus();
+    try {
+        boundsStore?.write(win.getBounds());
+    } catch (error) {
+        // The move is the point; failing to record it must not undo it.
+        console.error('src/main/window.ts: the reset window bounds could not be saved - ' + describeError(error));
+    }
 }
 
 /*

@@ -13,9 +13,26 @@ export interface TrayActions {
     /** Whether the window is on screen right now, so a click can toggle it as v1.2.1's did. */
     isVisible(): boolean;
     hide(): void;
+    /** Phase 10 criterion 5: put a window nobody can reach back in the middle of the primary display. */
+    resetPosition(): void;
 }
 
+/** The label the reset item carries; tools/smoke-packaged.mjs finds the item by it. */
+export const RESET_POSITION_LABEL = 'Reset window position';
+
 let tray: Tray | undefined;
+let trayMenu: Menu | undefined;
+
+/*
+ * The menu the tray is actually showing.
+ *
+ * Exported so the packaged smoke can invoke the reset item's own click handler rather than a rebuilt copy of it -
+ * which would prove the template and not the menu. What that still cannot prove is that Windows draws the menu and
+ * dispatches the click; that is the same gap the titlebar's X has, and it is named in the verification report.
+ */
+export function appTrayMenu(): Menu | undefined {
+    return trayMenu;
+}
 
 /** The icon, resized: Windows shows a full-size PNG as a smear in the notification area. */
 function trayImage(): Electron.NativeImage {
@@ -44,8 +61,10 @@ export function createAppTray(actions: TrayActions, log: (line: string) => void)
     }
 
     tray.setToolTip(TRAY_TOOLTIP);
-    tray.setContextMenu(Menu.buildFromTemplate([
+    trayMenu = Menu.buildFromTemplate([
         { label: 'Show Workflow', click: () => { actions.show(); } },
+        // Above the separator with Show, because both are ways of getting the window back.
+        { label: RESET_POSITION_LABEL, click: () => { actions.resetPosition(); } },
         { type: 'separator' },
         {
             label: 'Quit Workflow',
@@ -54,7 +73,8 @@ export function createAppTray(actions: TrayActions, log: (line: string) => void)
                 app.quit();
             }
         }
-    ]));
+    ]);
+    tray.setContextMenu(trayMenu);
 
     // v1.2.1 toggled on a click (main.js:130-139), and that is the behaviour being kept.
     tray.on('click', () => {
@@ -72,6 +92,7 @@ export function createAppTray(actions: TrayActions, log: (line: string) => void)
 export function destroyAppTray(): void {
     tray?.destroy();
     tray = undefined;
+    trayMenu = undefined;
 }
 
 export function hasAppTray(): boolean {

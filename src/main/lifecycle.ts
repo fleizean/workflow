@@ -16,7 +16,7 @@ import { createAppTray, destroyAppTray } from './tray';
 import type { TimerService } from './services/timer.service';
 import {
     createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerHideNoticeStore,
-    registerWindowBoundsStore, shellControls, showRenderer
+    registerWindowBoundsStore, resetWindowPosition, shellControls, showRenderer
 } from './window';
 import type { HideNoticeStore, WindowBoundsStore } from './window';
 import type { DataDomain } from '@shared/types';
@@ -200,7 +200,8 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
                 createAppTray({
                     show: surfaceMainWindow,
                     isVisible: () => mainWindows()[0]?.isVisible() ?? false,
-                    hide: () => { mainWindows()[0]?.hide(); }
+                    hide: () => { mainWindows()[0]?.hide(); },
+                    resetPosition: resetWindowPosition
                 }, (line) => { console.log(line); });
             }
         }
