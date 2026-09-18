@@ -2,6 +2,7 @@
 // in that order (BUILD-03). Above the lock only the userData policy may run; the lock-ordering suite enforces it.
 
 import { app } from 'electron';
+import { applyAppUserModelId } from './app-identity';
 import { mainConfig } from './config';
 import { describeError } from './errors';
 import { launchApplication, registerLifecycle } from './lifecycle';
@@ -19,6 +20,8 @@ if (!holdsInstanceLock) {
     // Another instance owns this userData directory and therefore its database.
     app.quit();
 } else {
+    // Before the lifecycle, before any window and before any notification can be raised (see app-identity.ts).
+    applyAppUserModelId(app, process.platform);
     registerLifecycle();
     main().catch((error: unknown) => {
         console.error('src/main/index.ts: startup failed - ' + describeError(error));

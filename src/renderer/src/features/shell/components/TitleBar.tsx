@@ -11,7 +11,13 @@
  */
 
 import type { ReactElement } from 'react';
-import iconUrl from '@assets/icon.png';
+/*
+ * The 64px icon, not the 1024px one. Vite fingerprints whatever is imported here into out/renderer/assets, so
+ * importing icon.png shipped a SECOND copy of the same 1.84 MB file beside the one the tray already needs in
+ * out/main - the duplicate PNG Phase 10 criterion 8 names, in the installer rather than in the repository - and
+ * decoded a megapixel image to draw it 24 CSS pixels wide.
+ */
+import iconUrl from '@assets/icon-64.png';
 import { useShellControls } from '../api/useShellControls';
 
 const BAR_CLASS =

@@ -45,6 +45,16 @@ export const EXPECTED_BUNDLED_FONTS = Object.freeze(['Material Symbols Outlined'
 /** How Chromium spells a resolved FILL axis in getComputedStyle().fontVariationSettings. */
 export const FILL_ON = '"FILL" 1';
 
+/*
+ * electron-builder.yml's appId, restated for plain Node, and what src/main/config.ts must call it.
+ * tests/app-identity.test.ts holds all three equal; a toast raised under any other identity points at an
+ * application Windows has no installed shortcut for.
+ */
+export const EXPECTED_APP_USER_MODEL_ID = 'com.workflow.timer';
+/** src/assets/icon-64.png, as the packaged app must decode it, and the ceiling that keeps it the small asset. */
+export const EXPECTED_NOTIFY_ICON_SIZE = '64x64';
+export const MAX_NOTIFY_ICON_BYTES = 64_000;
+
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
 export const BACKUP_DIR = 'backups';
@@ -337,6 +347,47 @@ export function evaluateSmoke({ exit, report, childEnv, fixtureDir, fixtureDb, f
     check('the hide notice was due on the first ask through the bridge and on no later one',
         f.SMOKE_HIDE_NOTICE_FIRST === 'true' && f.SMOKE_HIDE_NOTICE_SECOND === 'false',
         'first=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_FIRST) + ' second=' + JSON.stringify(f.SMOKE_HIDE_NOTICE_SECOND));
+
+    checks.push(...evaluateNotificationIdentity({ report, expectedAppId: EXPECTED_APP_USER_MODEL_ID }));
+
+    return checks;
+}
+
+/*
+ * Owner report, 2026-09-18: Windows toasts carried no app name and no icon. Two separate things have to be true,
+ * and both are read out of the PACKAGED process rather than out of the source.
+ *
+ * The identity: Electron exposes no getter, so what is provable is that the process executed setAppUserModelId and
+ * with which value - src/main/app-identity.ts records it and the smoke prints it. The value is then held equal to
+ * electron-builder.yml's appId, which is what the installer registers the shortcut under; a toast raised under any
+ * other identity points at an application Windows has no shortcut for.
+ *
+ * The icon: the adapter's own ?asset path, decoded by nativeImage inside the packaged app. A path that exists is
+ * not the claim - the claim is that it is an image with real pixels, because a silently unloadable icon is exactly
+ * the failure this catches. The byte ceiling is deliberate: the 1024x1024 icon.png is 1.84 MB and reaching for it
+ * here is the mistake the small asset exists to prevent.
+ */
+export function evaluateNotificationIdentity({ report, expectedAppId }) {
+    const f = report.fields;
+    const checks = [];
+    const check = (label, pass, detail) => checks.push({ label, pass: Boolean(pass), detail });
+    const onWindows = process.platform === 'win32';
+
+    check('the packaged process applied the AppUserModelId the installer registers',
+        onWindows ? f.SMOKE_APP_USER_MODEL_ID === expectedAppId : f.SMOKE_APP_USER_MODEL_ID === '',
+        onWindows
+            ? 'reported ' + JSON.stringify(f.SMOKE_APP_USER_MODEL_ID) + ', expected ' + JSON.stringify(expectedAppId)
+            : 'not a Windows concept; reported ' + JSON.stringify(f.SMOKE_APP_USER_MODEL_ID));
+
+    check('the notification icon the adapter passes decoded to real pixels',
+        f.SMOKE_NOTIFY_ICON_EMPTY === 'false' && f.SMOKE_NOTIFY_ICON_SIZE === EXPECTED_NOTIFY_ICON_SIZE,
+        'empty=' + JSON.stringify(f.SMOKE_NOTIFY_ICON_EMPTY) + ' size=' + JSON.stringify(f.SMOKE_NOTIFY_ICON_SIZE) +
+            ' at ' + JSON.stringify(f.SMOKE_NOTIFY_ICON ?? f.SMOKE_NOTIFY_ICON_ERROR));
+
+    const bytes = Number(f.SMOKE_NOTIFY_ICON_BYTES ?? 0);
+    check('the notification icon is the small asset, not the 1.84 MB one',
+        bytes > 0 && bytes <= MAX_NOTIFY_ICON_BYTES,
+        String(bytes) + ' bytes, ceiling ' + String(MAX_NOTIFY_ICON_BYTES));
 
     return checks;
 }

@@ -114,6 +114,15 @@ export const MAIN_WINDOW = Object.freeze({
     title: 'Workflow'
 });
 
+/*
+ * What Windows attributes a toast to. It MUST equal electron-builder.yml's appId - that is the identity the
+ * installer registers a Start Menu shortcut under, and a toast raised under any other one points at an
+ * application Windows has no shortcut for: the header then falls back to the Electron identity and a default
+ * icon, which is the state the owner photographed. tests/app-identity.test.ts reads the yml and holds the two
+ * equal, because a value that merely looks right is the failure this constant exists to prevent.
+ */
+export const APP_USER_MODEL_ID = 'com.workflow.timer';
+
 // IPC-05: a resize fires many times a second, so the bounds are written this long after the last one.
 export const WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
 // Windows draws a full-size PNG in the notification area as a smear; v1.2.1 resized to 16 too (main.js:104).

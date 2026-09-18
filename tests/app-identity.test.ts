@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { APP_USER_MODEL_ID } from '../src/main/config';
+import { applyAppUserModelId, appUserModelIdApplied } from '../src/main/app-identity';
+import { EXPECTED_APP_USER_MODEL_ID, MAX_NOTIFY_ICON_BYTES } from '../tools/smoke-packaged.mjs';
 
 /*
  * Why a JSON assertion is load-bearing here.
@@ -47,6 +50,8 @@ const readSource = (rel: string): string => {
 };
 
 const EXPECTED_NAME = 'workflow-timer';
+/** The small logo the titlebar and the notification adapter both read; see the icon test below. */
+const NOTIFICATION_ICON_ASSET = 'src/assets/icon-64.png';
 
 const BUILDER_CONFIG = 'electron-builder.yml';
 const builderConfig = readSource(BUILDER_CONFIG);
@@ -188,6 +193,58 @@ describe('CUSTODY-02: the userData path cannot silently move', () => {
             }
         }
         expect(offenders).toEqual([]);
+    });
+
+    it('the AppUserModelId the app applies is the appId the installer registers', () => {
+        /*
+         * Owner report, 2026-09-18: Windows toasts carried the Electron identity and a default icon because
+         * setAppUserModelId was never called. Setting it to the WRONG value is worse than not setting it - the
+         * toast then points at an application Windows has no installed shortcut for, so it cannot resolve a name
+         * or a logo and has no reason to fall back. So the three places that spell the identity are held equal:
+         * electron-builder.yml (what NSIS registers the shortcut under), src/main/config.ts (what the app applies)
+         * and tools/smoke-packaged.mjs (what the packaged launch is checked against).
+         */
+        const declared = /^appId:\s*(\S+)\s*$/m.exec(builderConfig);
+        expect(declared, BUILDER_CONFIG + ' declares no appId').not.toBeNull();
+        const appId = declared?.[1];
+        expect(APP_USER_MODEL_ID, 'src/main/config.ts disagrees with ' + BUILDER_CONFIG).toBe(appId);
+        expect(EXPECTED_APP_USER_MODEL_ID, 'tools/smoke-packaged.mjs disagrees with ' + BUILDER_CONFIG).toBe(appId);
+    });
+
+    it('applyAppUserModelId sets the identity on Windows and nothing anywhere else', () => {
+        const calls: string[] = [];
+        const target = { setAppUserModelId: (id: string) => { calls.push(id); } };
+        expect(applyAppUserModelId(target, 'win32')).toBe(APP_USER_MODEL_ID);
+        expect(calls).toEqual([APP_USER_MODEL_ID]);
+        expect(appUserModelIdApplied()).toBe(APP_USER_MODEL_ID);
+        // The negative control: the same function on a platform that has no such concept must touch nothing.
+        expect(applyAppUserModelId(target, 'darwin')).toBeNull();
+        expect(calls).toEqual([APP_USER_MODEL_ID]);
+    });
+
+    it('the notification icon is a small dedicated asset, not one of the four copies of the 1.84 MB logo', () => {
+        /*
+         * src/assets/icon-64.png is load-bearing: the titlebar and the notification adapter both read it, and it
+         * is what keeps a megabyte out of out/renderer. Phase 11 removes the DUPLICATE copies of the big logo -
+         * this asserts the small one is not swept up with them, and that nothing has quietly grown it back.
+         */
+        const iconPath = path.join(repoRoot, NOTIFICATION_ICON_ASSET);
+        expect(fs.existsSync(iconPath), NOTIFICATION_ICON_ASSET + ' is missing').toBe(true);
+        const bytes = fs.readFileSync(iconPath);
+        expect(bytes.length).toBeLessThanOrEqual(MAX_NOTIFY_ICON_BYTES);
+        // PNG signature, then the IHDR width and height at their fixed offsets.
+        expect(bytes.subarray(0, 8).toString('latin1')).toBe('\x89PNG\r\n\x1a\n');
+        expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([64, 64]);
+
+        const adapter = readSource('src/main/adapters/electron-notifier.adapter.ts');
+        const titleBar = readSource('src/renderer/src/features/shell/components/TitleBar.tsx');
+        expect(adapter, 'the notifier must read the small asset').toContain('icon-64.png');
+        expect(titleBar, 'the titlebar must read the small asset').toContain('icon-64.png');
+        // The 1024x1024 original may still be read by the tray, which resizes it; nothing else may reach for it.
+        // A module SPECIFIER, not a mention: electron.vite.config.ts and several comments name the path in prose.
+        const IMPORTS_BIG_ICON = /(?:\bfrom\s*|\brequire\s*\(\s*|\bimport\s*\(\s*)['"][^'"]*assets\/icon\.png(?:\?\w+)?['"]/;
+        const bigReaders = sourceFiles().filter((file) => IMPORTS_BIG_ICON.test(readSource(file)));
+        expect(bigReaders, 'only the tray may read the 1.84 MB icon').toEqual(['src/main/tray.ts']);
     });
 
     it('the setPath allowlist has exactly one entry, and it still names a real call', () => {

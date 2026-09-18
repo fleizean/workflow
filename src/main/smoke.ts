@@ -2,7 +2,7 @@
 // modal dialog (Pitfall 6) and exits recorded rather than taken (D-37).
 // The database layer arrives as runSmoke's argument, so loading this module never loads it.
 
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, nativeImage, session } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import { API_BRIDGE_KEY, SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
@@ -18,6 +18,8 @@ import {
     SMOKE_SETTINGS_TARGET_TEXT, SMOKE_SOUND_ID, SMOKE_STORAGE_FLUSH_MS, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS,
     SMOKE_XSS_COMPANY_NAME, mainConfig
 } from './config';
+import { NOTIFICATION_ICON_PATH } from './adapters/electron-notifier.adapter';
+import { appUserModelIdApplied } from './app-identity';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
 import { registerIpcHandlers, removeIpcHandlers } from './ipc';
@@ -44,6 +46,27 @@ function describeLegacyImport(status: LegacyImportStatus): string {
     return 'failed' in status
         ? 'failed'
         : 'timerState=' + status.timerState + ' goalDate=' + status.goalDate;
+}
+
+/*
+ * The notification icon, judged as bytes rather than as a path that looks right. `?asset` resolves against the
+ * build output, so dev and packaged can differ - and an icon that silently fails to load draws nothing while every
+ * source-level assertion still passes. nativeImage decoding it is what proves the file is there and is an image.
+ */
+function describeNotificationIcon(): string[] {
+    try {
+        const image = nativeImage.createFromPath(NOTIFICATION_ICON_PATH);
+        const size = image.getSize();
+        return [
+            'SMOKE_NOTIFY_ICON=' + NOTIFICATION_ICON_PATH,
+            'SMOKE_NOTIFY_ICON_BYTES=' + String(fs.existsSync(NOTIFICATION_ICON_PATH)
+                ? fs.statSync(NOTIFICATION_ICON_PATH).size : 0),
+            'SMOKE_NOTIFY_ICON_SIZE=' + String(size.width) + 'x' + String(size.height),
+            'SMOKE_NOTIFY_ICON_EMPTY=' + String(image.isEmpty())
+        ];
+    } catch (error) {
+        return ['SMOKE_NOTIFY_ICON_ERROR=' + describeError(error)];
+    }
 }
 
 let watchdog: NodeJS.Timeout | undefined;
@@ -81,7 +104,11 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
     const lines = [
         'SMOKE_APP_NAME=' + appName,
         'SMOKE_APP_DATA=' + appData,
-        'SMOKE_USER_DATA=' + userData
+        'SMOKE_USER_DATA=' + userData,
+        // The identity this process really applied, and the icon the notifier really passes. Both read from the
+        // modules that own them rather than re-derived here, so a mismatch is a failure rather than a duplicate.
+        'SMOKE_APP_USER_MODEL_ID=' + String(appUserModelIdApplied() ?? ''),
+        ...describeNotificationIcon()
     ];
     armWatchdog(lines);
     const fail = (reason: string): SmokeOutcome => ({ ok: false, lines: [...lines, 'SMOKE_FAIL=' + reason] });
