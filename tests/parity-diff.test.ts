@@ -21,6 +21,8 @@ import { repoRoot } from './helpers/ts-imports';
 import {
     PAGES, SETTLED, colourToHex, normalise, oklabToSrgb, settledReason, splitTopLevel
 } from '../tools/baseline/diff-computed.mjs';
+import { FORCED_CHILD_ENV, childEnvironment } from '../tools/baseline/probe-userdata.mjs';
+import { UPDATE_CHECK_DISABLED_ENV } from '../src/main/config';
 
 const REPORT = path.join(repoRoot, 'baselines', 'v1.2.1', 'VISUAL-PARITY-DIFF.md');
 const report = fs.readFileSync(REPORT, 'utf8');
@@ -132,5 +134,58 @@ describe('WR-07: the gate is reachable from the command line', () => {
     it('is invoked by the workflow that has a packaged build to photograph', () => {
         const workflow = fs.readFileSync(path.join(repoRoot, '.github', 'workflows', 'package.yml'), 'utf8');
         expect(workflow, 'nothing runs the parity gate').toContain('parity:check');
+    });
+});
+
+/*
+ * Phase 11: the gate failed three times running, on a different page and a different property each time, because
+ * the answer was where the operator's mouse was. At 1920x1080 the window fills the screen, the real pointer lands
+ * on whatever is under it, and Chromium applies :hover - which the vocabulary diff reads as a colour v1.2.1 never
+ * had. It was caught as `oklab(0.684327 -0.0772989 -0.129777 / 0.9)` on the Settings Save button, Tailwind's
+ * hover:bg-primary/90, normalising to #13a4ece6.
+ */
+describe('the capture does not depend on where the mouse is', () => {
+    const capture = fs.readFileSync(path.join(repoRoot, 'tools', 'baseline', 'capture-v2.mjs'), 'utf8');
+
+    it('stops the OS pointer reaching the content before any route is captured', () => {
+        expect(capture, 'the capture reads hover states off whatever the pointer happens to be over')
+            .toContain('setIgnoreMouseEvents(true)');
+        expect(
+            capture.indexOf('setIgnoreMouseEvents(true)'),
+            'mouse events are disabled after the first route has already been captured'
+        ).toBeLessThan(capture.indexOf('await captureRoute('));
+    });
+
+    it('would report a hover colour as a difference, which is why the line above matters', () => {
+        // Not a hypothetical: this is the exact value the failing runs produced, through the real normaliser.
+        expect(normalise('background-color', 'oklab(0.684327 -0.0772989 -0.129777 / 0.9)')).toBe('#13a4ece6');
+        expect(settledReason('settings', 'background-color', 'v2', '#13a4ece6'),
+            'a hover colour was added to the settled register instead of being kept out of the capture')
+            .toBeUndefined();
+    });
+});
+
+/*
+ * REPO-06: a harness launches the real application, which asks GitHub for a version manifest thirty seconds
+ * after its window opens - and a parity capture runs for about a minute. Every launcher takes its environment
+ * from childEnvironment(), so the opt-out is set there once.
+ */
+describe('no harness reaches the network', () => {
+    it('forces the update check off for every child process', () => {
+        expect(FORCED_CHILD_ENV).toEqual({ WORKFLOW_NO_UPDATE_CHECK: '1' });
+        expect(Object.keys(FORCED_CHILD_ENV)[0], 'the harness sets a variable src/main/config.ts does not read')
+            .toBe(UPDATE_CHECK_DISABLED_ENV);
+        expect(childEnvironment({}).env['WORKFLOW_NO_UPDATE_CHECK']).toBe('1');
+        // And it wins over an ambient value, so a shell that exported an empty string cannot re-enable it.
+        expect(childEnvironment({ WORKFLOW_NO_UPDATE_CHECK: '' }).env['WORKFLOW_NO_UPDATE_CHECK']).toBe('1');
+    });
+
+    it('is what a launcher actually passes to the app', () => {
+        for (const tool of ['baseline/capture-v2.mjs', 'baseline/responsive-matrix.mjs', 'offline-routes.mjs',
+            'upgrade-over-v121.mjs', 'second-instance.mjs', 'smoke-packaged.mjs']) {
+            expect(fs.readFileSync(path.join(repoRoot, 'tools', tool), 'utf8'),
+                'tools/' + tool + ' builds its own environment instead of taking childEnvironment()')
+                .toContain('childEnvironment()');
+        }
     });
 });

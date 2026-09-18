@@ -230,8 +230,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 export const SCRUBBED_ENV = ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS'];
 
+/*
+ * REPO-06: no harness may reach the network. Every launcher below runs the real application, which thirty
+ * seconds after its window opens asks GitHub whether a newer version exists - and a parity capture takes about
+ * a minute. That request fails silently and changes no measurement, but a measurement harness that phones a
+ * third party is a measurement of that third party's availability too, and `npm run offline:check` claims the
+ * app reaches nothing at all. Set for every child, in one place, rather than remembered per launcher.
+ */
+export const FORCED_CHILD_ENV = Object.freeze({ WORKFLOW_NO_UPDATE_CHECK: '1' });
+
 export function childEnvironment(base = process.env) {
-    const env = { ...base };
+    const env = { ...base, ...FORCED_CHILD_ENV };
     const removed = [];
     for (const name of SCRUBBED_ENV) {
         if (env[name] !== undefined) {

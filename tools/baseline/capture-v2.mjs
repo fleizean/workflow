@@ -187,6 +187,23 @@ export async function runCaptureV2(options = {}) {
 
         await page.waitForLoadState('load');
 
+        /*
+         * Phase 11: the verdict must not depend on where the operator's mouse is.
+         *
+         * At 1920x1080 the window fills a 1920x1080 screen, so the real pointer is inside it, Chromium applies
+         * :hover to whatever it lands on, and the vocabulary diff reads that as a colour v1.2.1 never rendered.
+         * Reproduced as `background-color: oklab(0.684327 -0.0772989 -0.129777 / 0.9)` on the Settings Save
+         * button - Tailwind's hover:bg-primary/90 - which normalises to #13a4ece6 and stood unexplained. Three
+         * consecutive runs each failed on a DIFFERENT page and property, because the answer was the pointer.
+         *
+         * setIgnoreMouseEvents stops the OS pointer reaching the content at all, which is the only version of
+         * this that a resize cannot undo: moving or resizing a window under the cursor makes Windows deliver a
+         * fresh WM_MOUSEMOVE, so a synthetic move alone is re-overwritten by the next setContentSize.
+         */
+        await win.evaluate((browserWindow) => { browserWindow.setIgnoreMouseEvents(true); });
+        /* Clears any hover the window had already picked up between opening and the line above. */
+        await page.mouse.move(-1, -1);
+
         for (const route of routes) {
             log(SCRIPT_NAME + ': ' + route.page + ' (' + route.hash + ')');
             written.push(...await captureRoute(page, win, route, sizes, out, log));
