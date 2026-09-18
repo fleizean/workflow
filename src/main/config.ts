@@ -66,8 +66,16 @@ export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
 export const USER_DATA_DIR_SWITCH = 'user-data-dir';
-// D-36: while false, a packaged non-smoke launch refuses the production krono.db. Only Phase 10 (REL-04) flips it.
-export const PRODUCTION_DATA_DOOR_OPEN = false;
+/*
+ * D-36, opened at the first v2 release (REL-04). While it was false a packaged launch refused the production
+ * krono.db, which is what kept every build made during this milestone away from real tracked time. A shipped
+ * application has to open it, so this is the release that turns it on.
+ *
+ * It governs PACKAGED launches only. An unpackaged build still cannot reach the production directory - that is
+ * applyUnpackagedUserDataPath in userdata-path.ts, which moves dev userData to its own -dev folder and throws if
+ * it is ever asked to do so from a packaged app. Opening this door does not widen that one.
+ */
+export const PRODUCTION_DATA_DOOR_OPEN = true;
 
 /*
  * V2-SCHEMA-02: while false, the app opens krono.db and adopts nothing, as every shipped version has. Flipping it is

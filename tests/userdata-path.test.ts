@@ -438,7 +438,16 @@ describe('D-36: the production-data door', () => {
         });
     });
 
-    it('ships closed: PRODUCTION_DATA_DOOR_OPEN is the literal false in ' + CONFIG, () => {
+    /*
+     * D-36 was "ships closed" for the whole milestone: a packaged build refused the production krono.db, so
+     * nothing made along the way could reach real tracked time. REL-04 opened it for 2.0.0, because an
+     * application that will not open its user's database is not an application.
+     *
+     * What this test protects changed with it. It no longer guards the value - the release decided that - it
+     * guards the SHAPE: a literal boolean written in config.ts, not an env read, not an argv flag, not a
+     * computed expression. A door that can be opened by the environment is not a door.
+     */
+    it('is a literal boolean in ' + CONFIG, () => {
         const sourceFile = ts.createSourceFile(CONFIG, fs.readFileSync(path.join(repoRoot, CONFIG), 'utf8'), ts.ScriptTarget.Latest, true);
         const declarations = sourceFile.statements
             .filter((statement): statement is ts.VariableStatement => ts.isVariableStatement(statement))
@@ -446,8 +455,23 @@ describe('D-36: the production-data door', () => {
             .flatMap((statement) => [...statement.declarationList.declarations])
             .filter((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === 'PRODUCTION_DATA_DOOR_OPEN');
         expect(declarations.map((declaration) => declaration.initializer?.kind),
-            'D-36: the door may only open in a Phase 10 REL-04 change behind its own checkpoint, and that change updates this test')
-            .toEqual([ts.SyntaxKind.FalseKeyword]);
-        expect(PRODUCTION_DATA_DOOR_OPEN).toBe(false);
+            'D-36: the door must stay a literal in config.ts - an environment or argv read would let anything open it')
+            .toEqual([ts.SyntaxKind.TrueKeyword]);
+        expect(PRODUCTION_DATA_DOOR_OPEN).toBe(true);
+    });
+
+    /*
+     * The half that opening the door must NOT have widened. Packaged and open is the release; unpackaged is still
+     * refused at a different gate, so a dev build cannot reach the production directory whatever this flag says.
+     */
+    it('still refuses an unpackaged launch at the production directory, door or no door', () => {
+        withProductionFixture(({ target }) => {
+            for (const doorOpen of [true, false]) {
+                expect(
+                    productionDataDoorRefuses({ isPackaged: false, doorOpen, userDataDir: target, productionDir: target }),
+                    'this gate only ever judged packaged launches; the unpackaged one is applyUnpackagedUserDataPath'
+                ).toBe(false);
+            }
+        });
     });
 });
