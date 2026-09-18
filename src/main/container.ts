@@ -1,7 +1,5 @@
-// The one composition root (ARCH-01): adapters, then repositories over the connection database-startup.ts opened,
-// then the services. It opens nothing itself - the door, the classification and the migration stay in
-// database-startup.ts - and it names no Electron API, only the adapter factories that do.
-// The database layer arrives as an argument, so loading this module still loads no database code (D-10).
+// The one composition root (ARCH-01): adapters, repositories over the connection database-startup.ts opened, then
+// services. It opens nothing and names no Electron API; the database layer arrives as an argument (D-10).
 
 import { instantFromEpochMs } from '@shared/utils/date';
 import { createElectronPorts } from './adapters';
@@ -40,11 +38,10 @@ export interface Repositories {
 }
 
 /**
- * WR-06: the one composition the renderer cannot build for itself. Stopping the timer to record work was two
- * independent invokes - `sessions:create` then `timer:reset` - and two invokes cannot be atomic. Killed between
- * them, create-then-reset leaves the session on disk *and* the seconds in the accumulator, which G3/G4 then offers
- * the user to save again (invented time); reset-then-create zeroes the accumulator with nothing written (destroyed
- * time). Both are the Core Value, so the pairing belongs below IPC, in one transaction.
+ * WR-06: the one composition the renderer cannot build for itself. Stopping the timer to record work was two invokes
+ * - `sessions:create` then `timer:reset` - and two invokes cannot be atomic. Killed between them, create-then-reset
+ * leaves the session on disk *and* the seconds in the accumulator for G3/G4 to offer again (invented time);
+ * reset-then-create zeroes the accumulator with nothing written (destroyed time).
  */
 export interface TimerCommands extends TimerService {
     stopAndSave(values: SessionValues): WorkSession;
@@ -61,9 +58,9 @@ export interface Services {
 }
 
 /*
- * CORE-13: the goal decision is asked on the timer's tick rather than on a clock of its own, but not on every one of
- * them - answering it costs a day-totals read, and a daily goal is not something a few seconds late matters to. Once
- * it has fired the answer is free, so this bounds only the cost of not having reached the target yet.
+ * CORE-13: the goal decision rides the timer's tick rather than a clock of its own, but not every one of them -
+ * answering costs a day-totals read. Once it has fired the answer is free, so this bounds only the cost of not
+ * having reached the target yet.
  */
 export const GOAL_EVALUATION_INTERVAL_SECONDS = 10;
 
@@ -87,9 +84,9 @@ export interface ContainerInput {
 }
 
 /*
- * A database a third-party tool edited can hold many unmappable rows, and every list() would report each one again.
- * So a given table/column/row/reason is reported once per run, and the whole reporter falls silent after this many
- * distinct reports: a log that fills the disk is a worse outcome than an anomaly reported once and then counted.
+ * A database a third-party tool edited can hold many unmappable rows, and every list() would report each again. So a
+ * given table/column/row/reason is reported once per run, and the reporter falls silent after this many distinct
+ * ones: a log that fills the disk is worse than an anomaly reported once and then counted.
  */
 export const SKIPPED_ROW_REPORT_LIMIT = 50;
 
@@ -193,9 +190,8 @@ export function createContainer(input: ContainerInput): AppContainer {
     let lastGoalCheckAt = -GOAL_EVALUATION_INTERVAL_SECONDS;
 
     /*
-     * WR-04: a write failure was logged to a stdout no packaged user sees. The clock keeps running - the value is
-     * still in memory and stopping would be worse - but a reboot then costs everything since the first failure. Once
-     * per run of failures, so a full disk does not become a notification every second, and re-armed by a success.
+     * WR-04: a write failure was logged to a stdout no packaged user sees. The clock keeps running, but a reboot then
+     * costs everything since the first failure. Once per run of failures, and re-armed by a success.
      */
     let persistFailureAnnounced = false;
     function watchPersistence(snapshot: TimerSnapshot): void {
@@ -209,7 +205,6 @@ export function createContainer(input: ContainerInput): AppContainer {
         }
     }
 
-    /** The tick's way in: how often the question is worth its cost, and whose seconds count when it is asked. */
     function evaluateGoal(snapshot: TimerSnapshot, counted: CountedDay): void {
         // A reset rewinds elapsedSeconds, so the mark rewinds with it - otherwise the rest of the day would be spent
         // waiting for a second the restarted clock will never reach.
@@ -229,35 +224,30 @@ export function createContainer(input: ContainerInput): AppContainer {
         }
         lastGoalCheckAt = snapshot.elapsedSeconds;
         /*
-         * WR-10: in pomodoro mode the cycle writes each completed interval as its own session row, which the day's
-         * total already counts. Adding the main clock's seconds on top would count the same wall clock twice and
-         * announce at roughly half the target. Under-counting delays a notification; over-counting invents a day
-         * that was not worked, and this app exists not to invent time.
+         * WR-10: in pomodoro mode each completed interval is its own session row, which the day's total already
+         * counts. Adding the main clock's seconds would count the same wall clock twice and announce at roughly half
+         * the target. Under-counting delays a notification; over-counting invents a day that was not worked.
          */
         announceGoalIfReached(snapshot.mode === 'pomodoro' ? null : counted);
     }
 
     /*
-     * The day's own total: the seconds already written to a row plus the part of the running accumulation counted on
-     * that same local day (CORE-08, B7). Scoping the second term is CR-01 - stats.today() is day-scoped and the
-     * timer's accumulation is not, so adding them whole credited last night's unsaved hours to this morning. A
-     * restored accumulation is counted on no day and adds nothing until the timer counts fresh seconds; saving it as
-     * a session is what says which day it belongs to, which is the question G3/G4 puts to the user.
+     * The day's own total: seconds already written to a row plus the part of the running accumulation counted on that
+     * same local day (CORE-08, B7). Scoping the second term is CR-01 - stats.today() is day-scoped and the timer's
+     * accumulation is not, so adding them whole credited last night's unsaved hours to this morning.
      *
-     * Reachable from every path that can carry the day over the line, not from the tick alone: a pomodoro-only day,
-     * a day typed in on History and a timer paused inside the sampling window each used to pass the target in
-     * silence. goal.evaluate records the day before it answers yes, so asking three times announces once.
+     * Reachable from every path that can carry the day over the line, not the tick alone: a pomodoro-only day, a day
+     * typed in on History and a timer paused inside the sampling window each passed the target in silence.
+     * goal.evaluate records the day before it answers yes, so asking three times announces once.
      *
-     * A caller that measures the day by what is on disk passes null. The tick is the only one that adds running
-     * seconds, so a save that does not also reset cannot have the same seconds counted as a row and as a total.
+     * A caller measuring the day by what is on disk passes null; only the tick adds running seconds.
      */
     function announceGoalIfReached(counted: CountedDay | null): void {
         try {
             /*
-             * WR-08: what this costs matters, because the tick is one of its callers and every millisecond a tick
-             * runs late beyond MAX_CREDIT_MS is work the user did that is deleted. One bounded settings read is all
-             * that is unconditional; the day's own total is read only when an answer could still change today -
-             * which is never, once the target has been announced or while the notification is off.
+             * WR-08: the tick is one of the callers, and every millisecond it runs late beyond MAX_CREDIT_MS is work
+             * that is deleted. One bounded settings read is unconditional; the day's total is read only when the
+             * answer could still change today.
              */
             const current = settings.get();
             const goalSettings = {
@@ -302,9 +292,9 @@ export function createContainer(input: ContainerInput): AppContainer {
     });
 
     /*
-     * POMO-01: the work session and the pomodoro row are written together, before anything asks the user which
-     * company it was for. Killing the app at that prompt therefore loses no time - the session is already on disk,
-     * unattributed, and Phase 8's prompt attributes it with an ordinary session update.
+     * POMO-01: the work session and the pomodoro row are written together, before anything asks which company it was
+     * for. Killing the app at that prompt loses no time - the row is on disk, unattributed, and Phase 8's prompt
+     * attributes it with an ordinary session update.
      */
     function recordCompletion(completion: PomodoroCompletion): void {
         if (completion.interval === 'work') {
@@ -326,9 +316,8 @@ export function createContainer(input: ContainerInput): AppContainer {
                 throw error;
             }
         }
-        // IN-01: outside the write's failure envelope and inside one of their own. These run after the transaction
-        // committed, so an OS that refused a notification must not be reported as an interval that could not be
-        // recorded - nor, after CR-01, leave the cycle holding an interval that is safely on disk.
+        // IN-01: after the commit and inside a failure envelope of their own, so an OS that refused a notification is
+        // not reported as an interval that could not be recorded.
         try {
             ports.notifier.notify(notificationForCompletion(completion.interval));
             ports.sound.play('pomodoroCompleted');
@@ -340,10 +329,9 @@ export function createContainer(input: ContainerInput): AppContainer {
         announceGoalIfReached(null);
 
         /*
-         * SPA-07, and the one write nobody asked for: the cycle ends on main's own scheduler, so the session row
-         * above appears with no IPC call behind it. Every other change reaches the renderer because it made the
-         * call; this one would leave Work History showing yesterday's list until something else happened to
-         * refetch. Announced after the notification, so a bus failure cannot cost the interval its warning.
+         * SPA-07: the cycle ends on main's own scheduler, so the row above appears with no IPC call behind it and
+         * Work History would show yesterday's list until something else refetched. Announced after the
+         * notification, so a bus failure cannot cost the interval its warning.
          */
         if (completion.interval === 'work') {
             ports.bus.emit('data:changed', { domains: ['sessions', 'pomodoro', 'stats'] });
@@ -372,14 +360,10 @@ export function createContainer(input: ContainerInput): AppContainer {
     const sessions = createSessionsService(repositories.sessions, repositories.companies);
 
     /*
-     * WR-02: at most one accumulator counts at a time. The two services each own a clock and a repeat, and neither
-     * can see the other - by design, since a service that knew about its sibling would be a composition. So the
-     * invariant belongs here, and it is enforced rather than documented: starting one pauses the other.
-     *
-     * Paused, not reset. Whatever the other one was holding is time the user really worked, and it stays counted
-     * and savable; only the counting stops. Without this a 25-minute interval is written as a session row AND left
-     * sitting in the main accumulator for the user to save again - fifty minutes recorded for twenty-five worked,
-     * which is the invented-time half of the Core Value this phase exists to make unreachable.
+     * WR-02: at most one accumulator counts at a time. Neither service can see the other, so the invariant belongs
+     * here and is enforced rather than documented: starting one pauses the other. Paused, not reset - whatever the
+     * other held is time really worked. Without this a 25-minute interval is written as a row AND left in the main
+     * accumulator to save again: fifty minutes recorded for twenty-five worked.
      */
     const exclusive = {
         timer: (): TimerSnapshot => { pomodoro.pause(); return timer.start(); },
@@ -388,13 +372,10 @@ export function createContainer(input: ContainerInput): AppContainer {
 
     /*
      * WR-06: the insert and the discard as one transaction, in that order. The discard writes before it forgets
-     * (timer.creditSaved), so every way this can fail leaves the session unwritten and the seconds still counted
-     * - never a session on disk beside an accumulator the user is asked to save a second time, and never an
-     * accumulator zeroed with nothing written. A crash mid-transaction is SQLite's rollback and the same answer.
-     *
-     * CR-01: what is dropped is what the session row took, not everything the clock was holding. The Save dialog
-     * reads the counted value when it opens and this clock keeps running under it, so zeroing regardless destroyed
-     * whatever was counted between opening the form and submitting it.
+     * (timer.creditSaved), so every failure leaves the session unwritten and the seconds still counted - never a
+     * session on disk beside an accumulator the user is asked to save again, never an accumulator zeroed with
+     * nothing written. CR-01: what is dropped is what the row took, not everything the clock held - the Save dialog
+     * reads the counted value when it opens and this clock keeps running under it.
      */
     function stopAndSave(values: SessionValues): WorkSession {
         const written = transaction(() => {

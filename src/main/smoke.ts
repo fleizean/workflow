@@ -1,6 +1,5 @@
-// The --smoke launch for tools/smoke-packaged.mjs: the real D-30 bootstrap, with reports on stdout instead of a
-// modal dialog (Pitfall 6) and exits recorded rather than taken (D-37).
-// The database layer arrives as runSmoke's argument, so loading this module never loads it.
+// The --smoke launch for tools/smoke-packaged.mjs: the real D-30 bootstrap, reporting on stdout instead of a modal
+// (Pitfall 6) and recording exits rather than taking them (D-37). The database layer arrives as runSmoke's argument.
 
 import { app, BrowserWindow, nativeImage, screen, session } from 'electron';
 import { isAbsolute, join } from 'node:path';
@@ -53,9 +52,9 @@ function describeLegacyImport(status: LegacyImportStatus): string {
 }
 
 /*
- * The notification icon, judged as bytes rather than as a path that looks right. `?asset` resolves against the
- * build output, so dev and packaged can differ - and an icon that silently fails to load draws nothing while every
- * source-level assertion still passes. nativeImage decoding it is what proves the file is there and is an image.
+ * The notification icon judged as bytes, not as a path that looks right. `?asset` resolves against the build output,
+ * so dev and packaged can differ, and an icon that silently fails to load draws nothing while every source-level
+ * assertion passes. nativeImage decoding it is what proves the file is there and is an image.
  */
 function describeNotificationIcon(): string[] {
     try {
@@ -78,12 +77,9 @@ let watchdog: NodeJS.Timeout | undefined;
 let reportedSoFar: readonly string[] = [];
 
 /*
- * A smoke launch has no window on screen and no tray icon, so a run that never finishes is a process only Task
- * Manager can end - and on a developer's machine it is invisible until something else goes wrong. It ends itself
- * instead, and it ends FAILING: a hang is a real failure, and a watchdog that exited 0 would hide one.
- *
- * unref'd, so the watchdog can never itself be the reason the process is still alive; Electron's app keeps the loop
- * running, which is exactly the condition it exists to break.
+ * A hung smoke launch is a process with no window and no tray, which only Task Manager can end. It ends itself
+ * instead, and it ends FAILING: a watchdog that exited 0 would hide a real failure. unref'd, so it can never itself
+ * be the reason the process is still alive.
  */
 function armWatchdog(lines: readonly string[]): void {
     reportedSoFar = lines;
@@ -177,11 +173,9 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
                 registerHideNoticeStore(createHideNoticeStore(layer, connection));
                 win = createMainWindow({ show: false });
                 /*
-                 * The smoke plays the bundled notification to prove the file is in the bundle and decodes; it has no
-                 * reason to be audible to whoever is running it, and every run used to come out of the developer's
-                 * speakers. Muted here rather than in the sound path: nothing outside smoke mode reaches this line,
-                 * and what checkSound reads - a play, a file: src, a decoded duration, no MediaError - is decode
-                 * state, which muting does not touch.
+                 * The smoke plays the bundled notification to prove the file is in the bundle and decodes; every run
+                 * used to come out of the developer's speakers. Muted here rather than in the sound path - what
+                 * checkSound reads is decode state, which muting does not touch.
                  */
                 win.webContents.setAudioMuted(true);
                 lines.push('SMOKE_WINDOW_CREATED=true');
@@ -220,10 +214,8 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         if (win === undefined) {
             return fail('startup returned a database without ever opening a main window');
         }
-        /*
-         * Before the first render, because the Settings form seeds its fields once from what the database held
-         * when it opened. Restored below, so the launch leaves the injected database as it found it.
-         */
+        // Before the first render, because the Settings form seeds its fields once from what the database held when
+        // it opened. Restored below, so the launch leaves the injected database as it found it.
         const settingsBefore = container.services.settings.get();
         container.services.settings.update({
             dailyTargetSeconds: SMOKE_SETTINGS_TARGET_SECONDS,
@@ -295,7 +287,7 @@ async function seedLegacyTimerState(raw: string): Promise<string | null> {
     return null;
 }
 
-/** The built container, or the reason it could not be built. The caller disposes it. */
+/** The caller disposes it. */
 function buildContainer(
     layer: SmokeDatabase,
     connection: StartedDatabase['db'],
@@ -323,8 +315,8 @@ function buildContainer(
 
 /*
  * Criteria 6, 7 and 10 inside the packaged app: the page calls through the generated bridge, a malformed payload is
- * refused by main before any service runs, a main-process tick is delivered to a subscription, and the disposer that
- * subscription returned actually stops the next one.
+ * refused before any service runs, a main-process tick reaches a subscription, and the disposer it returned stops
+ * the next one.
  */
 async function checkBridge(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
     try {
@@ -478,14 +470,6 @@ const READ_AUDIO_SCRIPT = `(() => {
     };
 })()`;
 
-/*
- * Criterion 8 in the packaged app: one tray icon however often it is asked for, a close raised by the system - Alt+F4,
- * a session ending - that hides the window while the app is running, and a close that lets it go once the app is
- * quitting. The titlebar's X is a different path as of 2026-09-13: it asks app:quit, which ends the process, and the
- * smoke cannot take that path without ending itself. What it proves is the consequence - that once the app is
- * quitting nothing re-hides the window. The quitting flag is set at the very end on purpose: nothing runs after it
- * but the report.
- */
 /** Whether a rectangle lands usefully on one of the displays this machine really has right now. */
 function landsOnARealDisplay(bounds: Electron.Rectangle): boolean {
     return isOnAnyDisplay(bounds, screen.getAllDisplays().map((display) => ({ workArea: display.workArea })));
@@ -495,12 +479,10 @@ const describeBounds = (b: Electron.Rectangle): string =>
     String(b.x) + ',' + String(b.y) + ' ' + String(b.width) + 'x' + String(b.height);
 
 /*
- * Phase 10 criterion 5, first half, against the REAL display list rather than a controlled one.
- *
- * Phase 5 proved chooseWindowBounds' arithmetic over a list of displays a test invented; what it could not do was
- * unplug a monitor. This gets the same effect from the other side: a saved rectangle 30,000 pixels off the origin
- * lands on no display that could ever exist, so the fallback is exercised on whatever hardware is running the
- * smoke - and the window Electron then opens is measured against screen.getAllDisplays(), which nothing here fakes.
+ * Phase 10 criterion 5, first half, against the REAL display list. Phase 5 proved chooseWindowBounds' arithmetic over
+ * displays a test invented; what it could not do was unplug a monitor. A saved rectangle 30,000 pixels off the origin
+ * lands on no display that could exist, so the fallback is exercised on whatever hardware runs the smoke - and the
+ * window Electron opens is measured against screen.getAllDisplays(), which nothing here fakes.
  */
 function checkOffScreenRecovery(lines: string[]): void {
     const OFF_SCREEN = { x: -30_000, y: -30_000, width: 500, height: 700 };
@@ -525,26 +507,25 @@ function checkOffScreenRecovery(lines: string[]): void {
     }
 }
 
-/*
- * Phase 10 criterion 5, second half: the tray item, invoked through the menu the tray is actually showing.
- *
- * The window is pushed off-screen first - which is the state a user reaches by unplugging the monitor it was on -
- * and then the item's own click handler is run. What this does not prove is that Windows draws the menu and
- * dispatches the click; that is the same gap the titlebar's X has and it is recorded as such.
- */
 /** The disabled line that states the installed version, read off the menu the tray is showing (REPO-06). */
 function versionItemLabel(): string | undefined {
     return appTrayMenu()?.items.find((entry) => entry.label?.startsWith('Workflow ') === true)?.label;
 }
 
 /*
- * The update item, which must be ABSENT in a smoke launch: no check has run, so nothing has been found, and an item
- * offering an update the app has no reason to believe in is the defect this probe exists to catch.
+ * The update item, which must be ABSENT in a smoke launch: no check has run, so an item offering an update the app
+ * has no reason to believe in is the defect this probe exists to catch.
  */
 function updateItemLabel(): string | undefined {
     return appTrayMenu()?.items.find((entry) => entry.label?.startsWith('Update available') === true)?.label;
 }
 
+/*
+ * Phase 10 criterion 5, second half: the tray item, invoked through the menu the tray is actually showing. The
+ * window is pushed off-screen first - the state a user reaches by unplugging the monitor it was on - and then the
+ * item's own click handler is run. What this does not prove is that Windows draws the menu and dispatches the
+ * click; that is the same gap the titlebar's X has.
+ */
 function checkTrayReset(lines: string[], resetCalls: () => number, aim: (win: BrowserWindow) => void): void {
     const menu = appTrayMenu();
     const item = menu?.items.find((entry) => entry.label === RESET_POSITION_LABEL);
@@ -578,13 +559,19 @@ function checkTrayReset(lines: string[], resetCalls: () => number, aim: (win: Br
     }
 }
 
+/*
+ * Criterion 8 in the packaged app: one tray icon however often it is asked for, a system-raised close - Alt+F4, a
+ * session ending - that hides the window while the app runs, and a close that lets it go once the app is quitting.
+ * The titlebar's X is a different path as of 2026-09-13: it asks app:quit, which the smoke cannot take without
+ * ending itself, so what is proved is the consequence - that once quitting, nothing re-hides the window. The
+ * quitting flag is set at the very end on purpose: nothing runs after it but the report.
+ */
 async function checkShell(lines: string[]): Promise<string | null> {
     try {
         let resetCalls = 0;
         /*
-         * Which window the reset drives. In the app this is always mainWindows()[0] and the argument is never
-         * passed; here the smoke has already opened a main window of its own, so the probe has to be named or the
-         * click would move that one instead - and showing the smoke's window is exactly what a smoke must not do.
+         * Which window the reset drives. In the app this is always mainWindows()[0]; here the smoke has already
+         * opened one of its own, so the probe has to be named or the click would show that one instead.
          */
         let resetTarget: BrowserWindow | undefined;
         // REPO-06: the smoke never opens a browser, but the action has to exist or the update item would have no
@@ -641,7 +628,6 @@ async function checkShell(lines: string[]): Promise<string | null> {
     return null;
 }
 
-/** Returns the failure reason, or null when every check passed. */
 function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: string[]): string | null {
     const { openDatabase, closeDatabase } = layer;
     try {
@@ -665,7 +651,7 @@ function checkInjectedDatabase(layer: SmokeDatabase, dbPath: string, lines: stri
     return null;
 }
 
-/** Returns the failure reason, or null when every check passed. The window is the one startup opened. */
+/** The window is the one startup opened. */
 async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<string | null> {
     try {
         await loadRenderer(win);
@@ -712,11 +698,9 @@ async function checkRenderer(win: BrowserWindow, lines: string[]): Promise<strin
 }
 
 /*
- * SPA-08: networking off for the whole launch, and every remote request counted.
- *
- * enableNetworkEmulation is the switch; the webRequest filter is the witness. Together they answer the question
- * criterion 2 actually asks - not "does it look right online" but "did anything try to leave the machine". file://
- * never matches the filter, so the app's own documents and assets are untouched by it.
+ * SPA-08: networking off for the whole launch, and every remote request counted. enableNetworkEmulation is the
+ * switch; the webRequest filter is the witness, answering "did anything try to leave the machine" rather than "does
+ * it look right online". file:// never matches the filter, so the app's own documents are untouched.
  */
 function goOffline(lines: string[]): () => number {
     let attempts = 0;
@@ -734,16 +718,13 @@ function goOffline(lines: string[]): () => number {
 }
 
 /*
- * SPA-08/SPA-09 inside the packaged app, with networking already off.
+ * SPA-08/SPA-09 inside the packaged app, networking already off. A .material-symbols-outlined span holding an icon
+ * name renders as ONE glyph roughly as wide as the font size; the same name without the icon font renders as the
+ * literal words, several times wider - the C4 failure. A control span at the same size is measured beside it, so the
+ * assertion is a comparison rather than a magic number.
  *
- * The measurement is the one that separates a working icon font from the failure C4 describes: a
- * .material-symbols-outlined span holding an icon name renders as ONE glyph roughly as wide as the font size, while
- * the same name without the icon font renders as the literal words and is several times wider. A control span with
- * the same text at the same size is measured beside it, so the assertion is a comparison rather than a magic number.
- *
- * The FILL reading is the other half. The bottom navigation marks its active tab with a Tailwind
- * arbitrary-property utility, and a utility whose CSS was never emitted leaves the computed value empty - which is
- * how C3 shows up. Reading it off the live element is how that gets noticed here instead of by eye in Phase 8.
+ * The FILL reading is the other half: the bottom nav marks its active tab with a Tailwind arbitrary-property utility,
+ * and a utility whose CSS was never emitted leaves the computed value empty - which is how C3 shows up.
  */
 async function probeAssets(win: BrowserWindow, lines: string[]): Promise<string | null> {
     try {
@@ -801,9 +782,9 @@ function assetProbeScript(): string {
 }
 
 /*
- * SPA-10 end to end: main decides a sound is due, the renderer plays one, and what it plays is a file inside the
- * app. HTMLMediaElement.play is wrapped before the event is raised, because the element the renderer creates is
- * private to it - the wrapper is how the page reports which src was asked for and whether the bytes decoded.
+ * SPA-10 end to end: main decides a sound is due, the renderer plays one, and what it plays is a file inside the app.
+ * HTMLMediaElement.play is wrapped before the event is raised, because the element the renderer creates is private to
+ * it - the wrapper is how the page reports which src was asked for and whether the bytes decoded.
  */
 async function checkSound(win: BrowserWindow, container: AppContainer, lines: string[]): Promise<string | null> {
     try {

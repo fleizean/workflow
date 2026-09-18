@@ -1,10 +1,7 @@
 /*
- * REPO-06: whether a newer version exists, decided here so that no part of the decision needs a network to test.
- *
- * Three guarantees this file is the whole of. It never blocks startup - start() schedules and returns, and the only
- * async value in the file is awaited inside a callback nobody holds. It never delays quit - stop() cancels the
- * timers and latches, so a request still in flight announces nothing when it lands. And it fails silently: the port
- * says undefined for every failure, and undefined is not an event.
+ * REPO-06: whether a newer version exists, decided here so no part of the decision needs a network to test. It never
+ * blocks startup - start() schedules and returns. It never delays quit - stop() cancels the timers and latches, so a
+ * request still in flight announces nothing. And it fails silently: the port says undefined, which is not an event.
  */
 
 import type { RepeatingTimer, SchedulerPort } from '../ports';

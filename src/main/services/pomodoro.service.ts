@@ -1,7 +1,6 @@
-// CORE-11/CORE-12: the pomodoro cycle as a state machine. It owns no clock and no counter - time comes from the
-// ClockPort the timer service reads, and how many pomodoros today has seen comes from the database on every question
-// that could have changed the answer. v1.2.1 kept the count in `pomodoroSessionCount` (legacy/renderer/timer.js:16),
-// which every restart and every toggle of the mode reset to zero (timer.js:114, 124).
+// CORE-11/CORE-12: the pomodoro cycle as a state machine. It owns no clock and no counter - today's count comes from
+// the database. v1.2.1 kept it in `pomodoroSessionCount` (legacy/renderer/timer.js:16), which every restart and every
+// toggle of the mode reset to zero (timer.js:114, 124).
 
 import { DEFAULT_SETTINGS } from '@shared/constants/settings';
 import { localDayOf } from '../ports';
@@ -40,8 +39,7 @@ export interface PomodoroLedger {
 /*
  * WR-03: what an unfinished interval had counted. The timer persists every five seconds precisely because losing
  * counted time is unacceptable, and the cycle held its seconds in memory alone - a quit at minute 49 of a 50-minute
- * interval started the next launch from zero. Like the timer's record this is a count and no start timestamp, so
- * the gap between two launches cannot be credited.
+ * interval started the next launch from zero. A count and no start timestamp, as the timer's record is.
  */
 export interface PersistedPomodoroState {
     readonly interval: PomodoroInterval;
@@ -61,9 +59,8 @@ export interface PomodoroServiceInput {
     readonly store: PomodoroStateStore;
     readonly durations: () => PomodoroDurations;
     /**
-     * Called when an interval reaches its target, before the next one is decided. A work completion must be recorded
-     * synchronously here (POMO-01's one transaction); the next interval is then derived from what the database
-     * holds, so a caller that records nothing gets a count that did not move - which is the truthful answer.
+     * Called when an interval reaches its target, before the next is decided. A work completion must be recorded
+     * synchronously here (POMO-01's one transaction); the next interval is derived from what the database holds.
      */
     readonly onCompleted: (completion: PomodoroCompletion) => void;
     /** Every state change, including each tick, so a bridge can push snapshots without this module knowing IPC. */
@@ -202,10 +199,9 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
     }
 
     /*
-     * CORE-12, the whole of it. The break that follows a work interval is decided from the rows the database holds
-     * for today, read after the caller has recorded this one - not from anything this module counted. So an aborted
-     * interval, which records nothing, cannot advance the cycle, and a restart, which remembers nothing, cannot
-     * reset it.
+     * CORE-12, the whole of it. The break that follows work is decided from the rows the database holds for today,
+     * read after the caller recorded this one. So an aborted interval, which records nothing, cannot advance the
+     * cycle, and a restart, which remembers nothing, cannot reset it.
      */
     function nextAfterWork(): PomodoroInterval {
         const { sessionsUntilLongBreak } = settings();
@@ -254,11 +250,8 @@ export function createPomodoroService(input: PomodoroServiceInput): PomodoroServ
 
     /*
      * IN-02: one read of the monotonic clock, credited and rebased together - timer.service.ts's own credit(now).
-     * Two reads dropped the interval between them, and the whole point of exporting creditableMs was that the two
-     * modules answer this question the same way.
-     *
-     * The timer's clamp, not a second one: no tick may credit more than two seconds of interval progress, so sleep,
-     * hibernation or a stalled event loop cannot finish a pomodoro nobody worked (CORE-04).
+     * Two reads dropped the interval between them. The timer's clamp, not a second one: no tick may credit more than
+     * two seconds of progress, so sleep or a stalled event loop cannot finish a pomodoro nobody worked (CORE-04).
      */
     function credit(now: number): void {
         elapsedMs += creditableMs(now - lastTickAt);

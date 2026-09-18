@@ -1,6 +1,5 @@
 // Criterion 8: the difference between closing the window and quitting the app. v1.2.1 kept this in an `isQuiting`
-// variable in main.js and read it inside the close handler; the decision is the same and is written here as a
-// function, so what the window does with a close is something a test can ask rather than something only a user can.
+// variable read inside the close handler; written as a function, it is something a test can ask.
 
 export type CloseDecision = 'hide' | 'close';
 
@@ -27,10 +26,9 @@ export interface WindowCloseState {
 }
 
 /**
- * Hide, unless the app is on its way out, or unless there is nowhere to hide to. Hiding on close is what puts the app
- * in the tray and keeps the timer counting; doing it while quitting is what made v1.2.1's window refuse to go away,
- * and doing it with no tray leaves a process only Task Manager can end - which costs the user the seconds the timer
- * was holding (WR-03).
+ * Hide, unless the app is on its way out, or unless there is nowhere to hide to. Hiding while quitting is what made
+ * v1.2.1's window refuse to go away; hiding with no tray leaves a process only Task Manager can end, which costs the
+ * user the seconds the timer was holding (WR-03).
  */
 export function decideWindowClose(state: WindowCloseState): CloseDecision {
     return state.quitting || !state.hasTray ? 'close' : 'hide';

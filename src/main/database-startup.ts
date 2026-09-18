@@ -56,9 +56,8 @@ export interface StartedDatabase {
 
 /*
  * V2-SCHEMA-02: the filename change is the app's work, not the user's. A release that only changed DATABASE_FILE
- * would let every installed user open v2, find no workflow.db, get a brand-new empty database and conclude their
- * history had been deleted - so the move happens here, before the probe, and a failure to make it stops startup
- * rather than falling through to a fresh file.
+ * would let every installed user open v2, find no workflow.db and conclude their history had been deleted - so the
+ * move happens here, before the probe, and a failure to make it stops startup rather than falling through.
  */
 function adoptRenamedDatabase(
     layer: DatabaseLayer,
@@ -94,13 +93,10 @@ function adoptRenamedDatabase(
         return true;
     } catch (error) {
         /*
-         * WR-01: the path shown to the user was the legacy name while the sentence and the advice were chosen by
-         * probing the target, so a user whose whole history had just been moved was told "there was nothing here
-         * before it" and "nothing of yours was renamed or replaced", under a path that no longer existed.
-         *
-         * The move landed only when the new name is there AND the old one is gone. Both present is either this
-         * module refusing a target that appeared, or a hard link whose old name would not unlink - and in both of
-         * those the legacy file is exactly where it was, which is what 'unchanged' says.
+         * WR-01: the path shown was the legacy name while the sentence and the advice were chosen by probing the
+         * target, so a user whose history had just been moved was told "there was nothing here before it", under a
+         * path that no longer existed. The move landed only when the new name is there AND the old one is gone;
+         * both present means the legacy file is exactly where it was, which is what 'unchanged' says.
          */
         const moved = fs.existsSync(dbPath) && !fs.existsSync(legacyPath);
         reportFailure(ports, {
@@ -226,10 +222,9 @@ function reportFailure(
     ports.exit(EXIT_CODES.databaseFailed);
 }
 
-// CR-02: what the dialog tells the user about their file is read back off the file, not inferred from where the
-// throw came from. The connection is closed by now, so this read-only probe sees what the next launch would.
-// WR-01: whether the file is there is part of what changed. A fresh install's file is created by openDatabase and
-// is at version 0 either way, so comparing versions alone told that user nothing was created next to a new krono.db.
+// CR-02: what the dialog tells the user about their file is read back off the file, not inferred from where the throw
+// came from; the connection is closed by now, so this sees what the next launch would. WR-01: whether the file is
+// there is part of what changed - a fresh install's file is at version 0 either way.
 function observeChange(
     layer: DatabaseLayer,
     dbPath: string,

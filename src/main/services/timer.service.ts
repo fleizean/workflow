@@ -1,6 +1,5 @@
-// CORE-04..07, CORE-14: the authoritative clock. It lives in main because the app hides to the tray and Chromium
-// throttles a hidden window's timers to roughly once per minute, so a renderer-owned tick undercounts exactly when
-// the user is most likely to be working (X1). Time is read only through ClockPort.monotonicNow.
+// CORE-04..07, CORE-14: the authoritative clock. It lives in main because Chromium throttles a hidden window's timers
+// to roughly once a minute, so a renderer-owned tick undercounts exactly when the user is working (X1).
 
 import { localDayOf } from '../ports';
 import type { LocalDate, TimerMode, TimerSnapshot, TimerStatus } from '@shared/types';
@@ -11,8 +10,8 @@ export const TICK_MS = 1000;
 /*
  * The whole guarantee: no single tick can credit more than this, so no amount of sleep, hibernation, VM pause or
  * lid-close can inject phantom work time (CORE-04). Two ticks' worth, so an event loop that stalls for a second and
- * a half still credits the second and a half the user really worked - the clamp bounds invention without destroying
- * real work. It needs no OS cooperation, which is why it and not powerMonitor is the primitive.
+ * a half still credits it - the clamp bounds invention without destroying real work. It needs no OS cooperation,
+ * which is why it and not powerMonitor is the primitive.
  */
 export const MAX_CREDIT_MS = 2 * TICK_MS;
 
@@ -21,9 +20,8 @@ export const PERSIST_INTERVAL_MS = 5000;
 
 /*
  * powerMonitor fires suspend and resume in pairs, but not on every sleep path. If a suspend arrives and its resume
- * never does, ticks start landing again on schedule while the service is still gated - so this many consecutive
- * ticks lift the gate. The cost of the self-heal is bounded (three seconds uncounted); the cost of not having it is
- * a clock that has silently stopped, which is the other half of the Core Value.
+ * never does, ticks land again on schedule while the service is still gated - so this many consecutive ticks lift
+ * the gate. Three seconds uncounted, against a clock that has silently stopped.
  */
 export const GATED_TICK_LIMIT = 3;
 
@@ -54,13 +52,15 @@ export interface TimerServiceInput {
     readonly bus: RendererBusPort;
     readonly store: TimerStateStore;
     /**
-     * Every snapshot this service pushes, handed to the composition root so a decision that has to be made on the
-     * tick - the daily goal - can be made against the one clock rather than by starting a second (CORE-13). The
-     * second argument is the day-scoped part of the accumulation, which is the only part a day may be credited with.
+     * Every snapshot this service pushes, handed to the composition root so a tick-time decision - the daily goal -
+     * is made against the one clock rather than a second one (CORE-13). The second argument is the day-scoped part
+     * of the accumulation, which is the only part a day may be credited with.
      */
     readonly onSnapshot?: (snapshot: TimerSnapshot, counted: CountedDay) => void;
-    /** A persistence failure is reported, never thrown: a full disk must not stop the clock the user is watching. */
-    // The one exception is the last flush at dispose, which has no later chance to try again (WR-02).
+    /**
+     * A persistence failure is reported, never thrown: a full disk must not stop the clock the user is watching. The
+     * one exception is the last flush at dispose, which has no later chance to try again (WR-02).
+     */
     readonly log: (line: string) => void;
 }
 
@@ -72,13 +72,12 @@ export interface TimerService {
     reset(): TimerSnapshot;
     /**
      * What a save leaves behind, refusing to happen unless it reached the disk: the write comes first, so a throw
-     * leaves every counted second exactly where it was. That is what lets a caller put this and a session insert
-     * in one transaction and have neither duplication nor loss on either side of a crash (WR-06).
+     * leaves every counted second where it was. That is what lets a caller put this and a session insert in one
+     * transaction with neither duplication nor loss on either side of a crash (WR-06).
      *
-     * Only the seconds that reached a session row are dropped (CR-01). The Save dialog reads the counted value
-     * when it opens and this clock keeps running under it, so a caller that submits the number it read a minute
-     * ago used to have the remainder destroyed for it - five minutes of real work recorded nowhere, reproduced.
-     * Whatever was not written stays counted, paused, where the user can still save it.
+     * Only the seconds that reached a session row are dropped (CR-01). The Save dialog reads the counted value when
+     * it opens and this clock keeps running under it, so a caller submitting the number it read a minute ago used to
+     * have the remainder destroyed - five minutes of real work recorded nowhere, reproduced.
      */
     creditSaved(savedSeconds: number): void;
     /** Changes the mode and nothing else - not the status, and above all not the accumulated time (CORE-14, CB-1). */
@@ -137,14 +136,10 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         const state = snapshot();
         try {
             /*
-             * IN-05: the bus is inside the catch too. RendererBusPort documents delivery as best effort - "an event
-             * nobody can receive is not an error the service that raised it has to handle" - and the adapter catches
-             * webContents.send, but the destructure ahead of that catch is outside it. A throw from there would
-             * escape into the setInterval callback as an uncaught main-process exception. Nothing would be lost -
-             * the credit and the persist both happen before this - but the contract says it cannot fail, and now
-             * the code makes that true rather than relying on mainWindows() filtering destroyed windows.
-             *
-             * And after both: an observer that throws must not stop the clock the user is watching.
+             * IN-05: the bus is inside the catch too. RendererBusPort documents delivery as best effort and the
+             * adapter catches webContents.send, but the destructure ahead of that catch is outside it; a throw from
+             * there would escape into the setInterval callback as an uncaught main-process exception. And after
+             * both: an observer that throws must not stop the clock the user is watching.
              */
             bus.emit('timer:tick', state);
             onSnapshot?.(state, counted());
@@ -172,7 +167,6 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         }
     }
 
-    /** Credits the clamped monotonic delta since the last observation, and rebases it. */
     function credit(now: number): void {
         const delta = now - lastTickAt;
         lastTickAt = now;
@@ -180,10 +174,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             const earned = creditableMs(delta);
             /*
              * WR-08: every millisecond past the clamp is time the user may really have worked, and it is gone. The
-             * clamp is still right - it is the only defence against a sleep that powerMonitor did not announce -
-             * but "a stall this long does not happen in main" was an argument, and this makes it an observation.
-             * Most of what lands here will be exactly that unannounced sleep; a run that accumulates seconds of it
-             * while the machine was plainly awake is the case worth finding.
+             * clamp is still right - it is the only defence against a sleep powerMonitor did not announce - but "a
+             * stall this long does not happen in main" was an argument, and this makes it an observation.
              */
             if (Number.isFinite(delta) && delta > MAX_CREDIT_MS) {
                 const lost = Math.round(delta - MAX_CREDIT_MS);
@@ -342,9 +334,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             if (status === 'running' && !gated) {
                 credit(clock.monotonicNow());
             }
-            // WR-07: the repeat is about to go, so 'running' would be a snapshot insisting on a clock that has
-            // stopped - and start() early-returns on a running timer, which left it unable to be re-armed.
-            // Everything is credited and flushed below, so 'paused' is the truthful word for what is left.
+            // WR-07: the repeat is about to go, so 'running' would insist on a clock that has stopped - and start()
+            // early-returns on a running timer, which left it unable to be re-armed. Everything is credited below.
             status = status === 'running' ? 'paused' : status;
             try {
                 // Flushed before the repeat is stopped, and retried once: the connection closes next, so a failure

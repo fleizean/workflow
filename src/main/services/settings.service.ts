@@ -13,22 +13,18 @@ export interface SettingsStore {
 }
 
 /*
- * Why these bounds and not others. The numbers live in @shared/constants/settings, because the Settings screen has
- * to show a bound it cannot enforce; this stays the only place that enforces one.
+ * Why these bounds. The numbers live in @shared/constants/settings, because the Settings screen has to show a bound
+ * it cannot enforce; this stays the only place that enforces one.
  *
- * A minute is the floor for every duration because v1.2.1's settings UI is a number of minutes, so anything shorter
- * is untypable there - and a pomodoro of a few seconds is a completion loop that would write a row a second.
+ * A minute is the floor for every duration: v1.2.1's settings UI is a number of minutes, so anything shorter is
+ * untypable there, and a pomodoro of a few seconds writes a row a second. Four hours caps the intervals - the point
+ * of the cap is the floor's, to refuse a value no one meant to type.
  *
- * The daily target is capped at a full day: a target above 86400 can never be met, so the streak could never advance
- * and the goal notification could never fire - a value that silently disables two features is worse than a refusal.
+ * The daily target is capped at a full day: above 86400 it can never be met, so the streak could never advance and
+ * the goal could never fire - a value that silently disables two features is worse than a refusal.
  *
- * Four hours caps the pomodoro intervals. A work interval is bounded by attention, not by the clock, and the point
- * of the cap is the same as the floor's: to refuse a value no one meant to type, not to have an opinion about
- * anyone's technique.
- *
- * The long-break cycle must be at least 1 - the derivation in pomodoro.service.ts takes completedToday modulo this
- * number, and a stored 0 would make the next break NaN rather than wrong. Twelve is the ceiling because a cycle
- * longer than that cannot complete inside a working day, so the long break would never arrive.
+ * The long-break cycle must be at least 1 - pomodoro.service.ts takes completedToday modulo it, and a stored 0 makes
+ * the next break NaN. Twelve is the ceiling: a longer cycle cannot complete inside a working day.
  */
 export {
     MAX_DAILY_TARGET_SECONDS, MAX_INTERVAL_SECONDS, MAX_SESSIONS_UNTIL_LONG_BREAK, MIN_INTERVAL_SECONDS,

@@ -31,7 +31,6 @@ function isSupersededNavigation(error: unknown): boolean {
 const created: BrowserWindow[] = [];
 let everCreated = false;
 
-/** The main windows still alive, in creation order. */
 export function mainWindows(): BrowserWindow[] {
     return created.filter((win) => !win.isDestroyed());
 }
@@ -176,15 +175,12 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
 
 /*
  * Phase 10 criterion 5, second half: the way back when the window is somewhere the user cannot reach.
+ * chooseWindowBounds refuses to RESTORE a rectangle landing on no current display, but that only helps at launch. A
+ * window on a monitor that is then unplugged stays where it is, and a frameless window has no title bar to drag it
+ * back by. So: the default size, centred on the primary display, shown, focused, and written back.
  *
- * chooseWindowBounds already refuses to RESTORE a rectangle that lands on no current display, but that only helps
- * at launch. A window dragged to a monitor that is then unplugged, or pushed off the edge by a resolution change
- * while the app is running, stays where it is - and a frameless window has no title bar to drag it back by and no
- * system menu to Move from. So this is the tray's answer: the default size, centred on the display Electron
- * considers primary, visible and focused, and written back so the next launch opens there too.
- *
- * Deliberately the DEFAULT size rather than the current one: a window that is off-screen because it is bigger than
- * the display it came back onto would be moved to a place it still does not fit.
+ * The DEFAULT size rather than the current one - a window off-screen because it is bigger than the display it came
+ * back onto would be moved somewhere it still does not fit.
  */
 export function resetWindowPosition(target?: BrowserWindow): void {
     // The app has exactly one main window, so the default is the whole story; the parameter exists because the
@@ -210,9 +206,8 @@ export function resetWindowPosition(target?: BrowserWindow): void {
 }
 
 /*
- * IPC-05: what the titlebar's two buttons do. v1.2.1 sent both of them to one hide (main.js:638-648), so X put the
- * app in the tray rather than ending it; the owner separated them on 2026-09-13 and the channel names now say which
- * is which. Both act on the first main window - there is only ever one.
+ * IPC-05: what the titlebar's two buttons do. v1.2.1 sent both to one hide (main.js:638-648), so X put the app in the
+ * tray rather than ending it; the owner separated them on 2026-09-13. Both act on the first main window.
  */
 export const shellControls = {
     /** To the tray while there is one; with none there is nothing to come back from, so the taskbar (WR-03). */
@@ -221,10 +216,8 @@ export const shellControls = {
         if (hasAppTray()) { win?.hide(); } else { win?.minimize(); }
     },
 
-    /*
-     * A failure here must not cost the user the hide: the notice is an explanation, and an app that refuses to get
-     * out of the way because it could not write a flag is worse than one that explains itself twice.
-     */
+    // A failure here must not cost the user the hide: an app that refuses to get out of the way because it could not
+    // write a flag is worse than one that explains itself twice.
     claimHideNotice(): { due: boolean } {
         try {
             return { due: hideNoticeStore?.claim() ?? false };
@@ -235,10 +228,9 @@ export const shellControls = {
     },
 
     /*
-     * Criterion 8 (Phase 5): the flag first, exactly as the tray's own Quit item does it - without it the close
-     * handler below hides the window again and the process never ends. app.quit() runs before-quit and will-quit, so
-     * the timer flushes what it has counted and the database closes; the seconds come back paused on the next
-     * launch (G3/G4). app.exit() would skip all of that.
+     * Criterion 8 (Phase 5): the flag first, exactly as the tray's Quit item does it - without it the close handler
+     * above hides the window again and the process never ends. app.quit() runs before-quit and will-quit, so the
+     * timer flushes and the database closes; app.exit() would skip all of that.
      */
     quit(): void {
         markQuitting();

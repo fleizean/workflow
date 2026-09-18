@@ -1,10 +1,9 @@
-// CORE-13: whether the daily goal has just been reached and the user should be told. Only the decision lives here -
-// raising the notification and playing the sound belong to the notifier and sound adapters, which is why the service
-// stays Electron-free and testable.
+// CORE-13: whether the daily goal has just been reached. Only the decision lives here - raising the notification and
+// playing the sound belong to the adapters, which is why this stays Electron-free and testable.
 //
 // v1.2.1 answered this twice and got it wrong both ways (index.html:944-949, 964-982). The sound was guarded by
-// localStorage.lastGoalNotificationDate, which main cannot read and a cleared profile forgets; the notification was
-// guarded by an in-memory `playedSound` that re-armed on every reload, so it fired once per launch. That is B1.
+// localStorage.lastGoalNotificationDate, which main cannot read and a cleared profile forgets; the notification by an
+// in-memory `playedSound` that re-armed on every reload, so it fired once per launch. That is B1.
 
 import { localDayOf } from '../ports';
 import type { LocalDate } from '@shared/types';

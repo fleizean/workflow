@@ -7,17 +7,13 @@ import { describeError } from '../errors';
 import type { NotifierPort } from '../ports';
 
 /*
- * The logo in the toast. The AppUserModelID (src/main/app-identity.ts) is what makes Windows attribute the
- * notification to the installed app; this is the belt to that brace, and the only thing that supplies an icon at
- * all on the paths where the identity does not.
+ * The logo in the toast: the belt to app-identity.ts's brace, and the only thing that supplies an icon at all on the
+ * paths where the identity does not.
  *
- * A 64x64 asset, not src/assets/icon.png. That file is 1024x1024 and 1.84 MB, it already exists four times in this
- * repository, and decoding a megabyte to draw a 48px square is the kind of waste Phase 10 criterion 8 is about.
- * icon-64.png is derived from it with Electron's own nativeImage resize and is load-bearing: it is what the
- * titlebar and this notifier both read, so it must not be tidied away with the copies.
- *
- * Exported so tools/smoke-packaged.mjs can check the path the adapter ACTUALLY passes rather than re-deriving one -
- * a ?asset import resolves against the build output, which is the thing that can differ between dev and packaged.
+ * A 64x64 asset, not src/assets/icon.png - that file is 1024x1024 and 1.84 MB, and decoding a megabyte to draw a 48px
+ * square is what Phase 10 criterion 8 is about. icon-64.png is load-bearing: the titlebar and this notifier both read
+ * it, so it must not be tidied away with the copies. Exported so tools/smoke-packaged.mjs can check the path the
+ * adapter ACTUALLY passes - a ?asset import resolves against the build output, which can differ between dev and packaged.
  */
 export const NOTIFICATION_ICON_PATH = notificationIconPath;
 
@@ -25,9 +21,8 @@ export const NOTIFICATION_ICON_PATH = notificationIconPath;
 export function createElectronNotifier(log: (line: string) => void): NotifierPort {
     /*
      * Read at most once, and not before the first notification. Decoding at construction time would run inside
-     * createElectronPorts, which the unit suite builds in plain Node where `electron` is a path string and
-     * nativeImage does not exist - so the composition root would throw on a module this adapter merely decorates.
-     * undefined means "not tried yet"; null means "tried and there is nothing usable", which is only logged once.
+     * createElectronPorts, which the unit suite builds in plain Node where nativeImage does not exist. undefined
+     * means "not tried yet"; null means "tried and there is nothing usable", which is logged once.
      */
     let icon: Electron.NativeImage | null | undefined;
     const iconOrNull = (): Electron.NativeImage | null => {

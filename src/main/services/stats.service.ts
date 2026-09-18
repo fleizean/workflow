@@ -1,7 +1,5 @@
-// CORE-08: the streak and the day and week totals, as pure functions over day totals. No database handle, no clock
-// and no Electron - the caller passes the day totals a repository read and the local day its clock reported.
-//
-// B7 is closed by the input type. v1.2.1 compared ONE session's duration against the daily target
+// CORE-08: the streak and the day and week totals, as pure functions over day totals. No database handle, no clock and
+// no Electron. B7 is closed by the input type: v1.2.1 compared ONE session's duration against the daily target
 // (work-history.html:484), so a day worked in several short blocks never counted. Nothing here can see a session.
 
 import { addDays, diffDays, isoWeekday, startOfWeek } from '@shared/utils/date';

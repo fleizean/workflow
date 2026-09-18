@@ -11,9 +11,8 @@ import type { StatsService } from '../services/stats.service';
 import type { TimerCommands } from '../container';
 
 /**
- * What the titlebar drives (IPC-05). The two buttons mean different things as of the owner's 2026-09-13 decision:
- * one puts the window away, the other ends the process. Where "away" is - the tray or the taskbar - is main's
- * decision, taken in window.ts.
+ * What the titlebar drives (IPC-05). The two buttons mean different things as of the owner's 2026-09-13 decision: one
+ * puts the window away, the other ends the process. Where "away" is - tray or taskbar - is decided in window.ts.
  */
 export interface ShellControls {
     hide(): void;

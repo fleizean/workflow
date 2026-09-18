@@ -1,6 +1,5 @@
-// IPC-05 / criterion 9: where the window opens, decided as arithmetic so it can be tested without a screen.
-// Electron-free on purpose - window.ts passes in what Electron reported, and a test passes in a monitor that was
-// unplugged between two launches.
+// IPC-05 / criterion 9: where the window opens, as arithmetic so it can be tested without a screen. Electron-free -
+// window.ts passes in what Electron reported, and a test passes in a monitor unplugged between two launches.
 
 export interface WindowBounds {
     readonly x: number;
@@ -20,9 +19,8 @@ export interface DisplayArea {
 }
 
 /*
- * How much of the window has to land on a display for the position to be worth restoring. A title bar the user can
- * reach is the whole point, so the height is small and the width is not: a window 20 px onto the screen is a window
- * nobody can grab, and the app would look as if it had failed to open.
+ * How much of the window has to land on a display for the position to be worth restoring. A window 20 px onto the
+ * screen is one nobody can grab, and the app would look as if it had failed to open.
  */
 export const MIN_VISIBLE_WIDTH = 120;
 export const MIN_VISIBLE_HEIGHT = 40;
@@ -45,10 +43,9 @@ interface Landing {
 }
 
 /*
- * IN-02: ranked by how much of the overlap is usable rather than by its raw area. A 2000x30 sliver and a 150x400
- * landing have the same area, so on the wrong display order the sliver won and the window fell back to the default
- * even though a usable position existed. Capping each side at the minimum makes any usable landing outrank any
- * unusable one; the size reported is still the real overlap.
+ * IN-02: ranked by how much of the overlap is usable rather than by raw area. A 2000x30 sliver and a 150x400 landing
+ * have the same area, so on the wrong display order the sliver won and the window fell back to the default even
+ * though a usable position existed. Capping each side at the minimum makes any usable landing outrank any unusable one.
  */
 const usableArea = (width: number, height: number): number =>
     Math.min(width, MIN_VISIBLE_WIDTH) * Math.min(height, MIN_VISIBLE_HEIGHT);
@@ -70,7 +67,6 @@ function largestOverlap(bounds: WindowBounds, displays: readonly DisplayArea[]):
     return { display, size: { width, height } };
 }
 
-/** The largest rectangle the window shares with any one display. */
 export function visibleArea(bounds: WindowBounds, displays: readonly DisplayArea[]): WindowSize {
     return largestOverlap(bounds, displays).size;
 }
@@ -99,8 +95,7 @@ export function atLeastMinimum(size: WindowSize, minimum: WindowSize): WindowSiz
  * WR-04: a size no larger than the display it is coming back onto. persistBoundsOn saves a maximised window's
  * rectangle, so a user who maximised on a 3840x2160 monitor and relaunched on a 1920x1080 laptop got a frameless
  * window bigger than the screen: both resize edges off it, and no title bar to double-click. The minimum still wins
- * over the display - a screen too small for the minimum is one the app cannot be used on either way - and the
- * position is left where the user put it unless shrinking the window took it off the screen.
+ * over the display, and the position is left where the user put it unless shrinking took it off the screen.
  */
 export function withinWorkArea(
     bounds: WindowBounds,
@@ -131,9 +126,8 @@ const usable = (bounds: WindowBounds | null): bounds is WindowBounds =>
     bounds.width > 0 && bounds.height > 0;
 
 /**
- * Criterion 9: saved bounds are restored only onto a display that currently exists. A monitor unplugged between two
- * launches, or a resolution change, therefore opens the window where it can be seen rather than where it used to be.
- * The default size is the caller's; the default position is Electron's, which centres on the primary display.
+ * Criterion 9: saved bounds are restored only onto a display that currently exists, so a monitor unplugged between
+ * two launches opens the window where it can be seen. The default position is Electron's, centred on the primary.
  */
 export function chooseWindowBounds(
     saved: WindowBounds | null,

@@ -1,6 +1,5 @@
 // Criterion 7: the payload is validated here, in main, against the channel's own schema - before the handler exists,
-// let alone before a service runs. A renderer that sends the wrong shape gets an IpcResult error and the database is
-// never consulted.
+// let alone before a service runs. A renderer that sends the wrong shape never reaches the database.
 
 import { ipcContract, ipcWrites } from '@shared/ipc/contract';
 import { invalidInputError, toIpcError } from './errors';
@@ -41,8 +40,8 @@ export function createDispatch(input: DispatchInput): Dispatch {
 
     /*
      * After the answer is shaped and before it is returned. The renderer is told which domains moved, not what they
-     * now hold, so it refetches through the ordinary read channels - an event that carried rows would be a second
-     * way for data to enter the cache, and the two would drift.
+     * hold, so it refetches through the ordinary read channels - an event carrying rows would be a second way for
+     * data to enter the cache, and the two would drift.
      */
     function announceChange(channel: IpcChannel): void {
         const domains = ipcWrites[channel];

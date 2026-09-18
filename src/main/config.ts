@@ -8,33 +8,27 @@ export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 // Set by `electron-vite dev` to the renderer dev server's address.
 export const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
 /*
- * Text only the Home route renders, which the smoke launch waits for; tests/main-config.test.ts pins it to the
- * harness (D-24). A stat-card label rather than a heading, because Home has no visible heading - v1.2.1's
- * index.html carries a hidden one - and because "Home" is also the bottom navigation's first item, so a marker of
- * "Home" would be satisfied by the chrome even if the route itself rendered nothing.
+ * Text only the Home route renders, which the smoke launch waits for (D-24, pinned by tests/main-config.test.ts). A
+ * stat-card label rather than "Home", which the bottom nav would satisfy even if the route rendered nothing.
  */
 export const RENDERER_MARKER_TEXT = 'Daily Target';
 // SPA-01: the second route the smoke visits, and the heading it must find there. Reaching it changes no document.
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
 /*
- * Criterion 1 / S2: the route that lists companies, and the name one of them is given. The payload is the brief's
- * own, verbatim - v1.2.1 built the row with innerHTML and hung an onclick= off the name, escaping the apostrophe
- * and nothing else, so this exact string ran. Escaped, it is text on a screen and there is no <img> at all.
+ * Criterion 1 / S2: the brief's XSS payload verbatim. v1.2.1 built the row with innerHTML and hung an onclick= off
+ * the name, escaping the apostrophe and nothing else, so this exact string ran.
  */
 export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
 export const SMOKE_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
 /*
- * Criterion 4: the handle the delete-all-data button is reached by on the settings route. v1.2.1 reached that exact
- * button with document.querySelector('.mt-8.mb-8 button') (legacy/pages/settings.html:659), so a spacing tweak
- * detached it; the smoke probes for this identifier and for that selector finding nothing.
+ * Criterion 4: v1.2.1 reached the delete-all-data button with document.querySelector('.mt-8.mb-8 button')
+ * (legacy/pages/settings.html:659), so a spacing tweak detached it. The smoke probes for this identifier, and for
+ * that selector finding nothing.
  */
 export const RENDERER_DESTRUCTIVE_TESTID = 'reset-all-data';
 export const RENDERER_LEGACY_DESTRUCTIVE_SELECTOR = '.mt-8.mb-8 button';
-/*
- * What the settings probe writes before the window loads, and what the screen must then show for it. Written
- * first, and not after: the form seeds its fields once, from what the database held when it opened.
- */
+// Written before the window loads, not after: the form seeds its fields once, from what the database held when it opened.
 export const SMOKE_SETTINGS_TARGET_SECONDS = 27_000;
 export const SMOKE_SETTINGS_TARGET_TEXT = '07:30';
 /** The four numbers the pomodoro section offers once it is enabled (features/settings/settings-view.ts). */
@@ -44,11 +38,9 @@ export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
 export const SMOKE_EXIT_FALLBACK_MS = 3_000;
 /*
- * The whole smoke launch's deadline. A smoke window is never shown and a smoke launch creates no tray, so a run that
- * hangs is a process with nothing to click and no way out but Task Manager - the WR-03 shape, applied to the test
- * harness instead of the app. Shorter than the harness's own 90 s kill (tools/smoke-packaged.mjs DEFAULT_TIMEOUT_MS),
- * so a stuck run names its own reason rather than being killed anonymously; tests/smoke-harness.test.ts holds the
- * two in that order.
+ * The smoke launch's deadline: a smoke window is never shown and creates no tray, so a hung run has nothing to click
+ * and no way out but Task Manager. Shorter than the harness's own 90 s kill (tools/smoke-packaged.mjs
+ * DEFAULT_TIMEOUT_MS) so a stuck run names its own reason; tests/smoke-harness.test.ts holds the two in that order.
  */
 export const SMOKE_WATCHDOG_MS = 60_000;
 // WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
@@ -58,10 +50,8 @@ export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
 export const SMOKE_TICK_WAIT_MS = 1_500;
 
 /*
- * SPA-08/SPA-09 smoke probe. The icon is rendered at this size and must measure about this wide as a GLYPH; the
- * same name as literal text is several times wider, which is exactly the failure self-hosting only the woff2
- * produces. SMOKE_ICON_MAX_WIDTH_PX leaves room for hinting; SMOKE_ICON_TEXT_MIN_WIDTH_PX is the width below which
- * the control would not prove the two are distinguishable.
+ * SPA-08/SPA-09: the icon must measure about this wide as a GLYPH. The same name rendered as literal text is several
+ * times wider - the failure self-hosting only the woff2 produces. The max leaves room for hinting.
  */
 export const SMOKE_ICON_NAME = 'local_fire_department';
 export const SMOKE_ICON_FONT_SIZE_PX = 24;
@@ -74,19 +64,15 @@ export const SMOKE_SOUND_ID = 'goalReached';
 // flushStorageData is asynchronous; app.exit must not race it (D-37 seed mode).
 export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 
-/** Appended to the application name to form the development userData directory name. */
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
-/** The Chromium switch a launcher uses to name the userData directory explicitly. */
 export const USER_DATA_DIR_SWITCH = 'user-data-dir';
 // D-36: while false, a packaged non-smoke launch refuses the production krono.db. Only Phase 10 (REL-04) flips it.
 export const PRODUCTION_DATA_DOOR_OPEN = false;
 
 /*
- * V2-SCHEMA-02: while false, the app opens krono.db and adopts nothing, exactly as every shipped version has.
- * Flipping it is a one-way door for the user who takes that release: startup moves krono.db to workflow.db, and
- * v1.2.1 reinstalled afterwards finds no database and shows an empty app. The data is intact under the new name
- * and comes back by renaming the file, but the downgrade safety Phase 4 preserved ends here. Flipped once, with
- * PRODUCTION_DATA_DOOR_OPEN, at the release (REL-04/REL-05).
+ * V2-SCHEMA-02: while false, the app opens krono.db and adopts nothing, as every shipped version has. Flipping it is
+ * a one-way door - startup renames krono.db to workflow.db, and v1.2.1 reinstalled afterwards finds no database. The
+ * data comes back by renaming the file, but Phase 4's downgrade safety ends there. Flipped at the release (REL-04/05).
  */
 export const DATABASE_RENAME_RELEASED = false;
 
@@ -115,11 +101,9 @@ export const MAIN_WINDOW = Object.freeze({
 });
 
 /*
- * What Windows attributes a toast to. It MUST equal electron-builder.yml's appId - that is the identity the
- * installer registers a Start Menu shortcut under, and a toast raised under any other one points at an
- * application Windows has no shortcut for: the header then falls back to the Electron identity and a default
- * icon, which is the state the owner photographed. tests/app-identity.test.ts reads the yml and holds the two
- * equal, because a value that merely looks right is the failure this constant exists to prevent.
+ * MUST equal electron-builder.yml's appId - the identity the installer registers the Start Menu shortcut under. A
+ * toast raised under any other one falls back to the Electron name and a default icon, which is the state the owner
+ * photographed. tests/app-identity.test.ts reads the yml and holds the two equal.
  */
 export const APP_USER_MODEL_ID = 'com.workflow.timer';
 
@@ -130,18 +114,12 @@ export const TRAY_ICON_SIZE = 16;
 export const TRAY_TOOLTIP = 'Workflow';
 
 /*
- * REPO-06: the one thing this application asks the network for.
- *
- * The manifest is the Pages site's own version.json, written by .github/workflows/publish-version.yml when a release
- * is actually published - not the releases API, which is rate limited per IP and would return several kilobytes of
- * JSON to answer a one-field question. Until the first v2 release publishes it, this URL is a 404, and a 404 is the
- * same silence as no network.
- *
- * The host is the git remote's, fleizean/workflow-timer, not the fleizean/workflow that package.json's metadata used
- * to name; tests/update-check.test.ts holds this URL to the repository field so the two cannot drift again.
+ * REPO-06: the one thing this application asks the network for. The Pages site's own version.json, written by
+ * publish-version.yml on release - not the releases API, which is rate limited per IP. Until the first v2 release
+ * publishes it this URL is a 404, and a 404 is the same silence as no network. The host is the git remote's, and
+ * tests/update-check.test.ts holds this URL to the repository field so the two cannot drift again.
  */
 export const UPDATE_MANIFEST_URL = 'https://fleizean.github.io/workflow-timer/version.json';
-/** Where the tray's update item sends the browser. GitHub resolves /releases/latest to the current release. */
 export const UPDATE_RELEASES_URL = 'https://github.com/fleizean/workflow-timer/releases/latest';
 // Long enough to be well clear of the first paint, short enough that a session shorter than this is a session that
 // did not need telling.

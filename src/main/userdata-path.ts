@@ -98,10 +98,9 @@ export interface DoorInput {
 /**
  * D-36: a packaged launch must not open the production krono.db while the door is closed.
  *
- * WR-10: smoke mode used to be exempt, which left runSmoke's own checks as the only thing between the packaged
- * app and the real database - the same protection in two modules with no structural link, and an unguarded path
- * for any future caller that passed smoke: true. The smoke satisfies this door the way a developer does, by
- * pointing --user-data-dir somewhere else, which runSmoke requires of it anyway.
+ * WR-10: smoke mode used to be exempt, leaving runSmoke's own checks as the only thing between the packaged app and
+ * the real database, and an unguarded path for any future caller that passed smoke: true. The smoke satisfies this
+ * door the way a developer does, by pointing --user-data-dir elsewhere, which runSmoke requires of it anyway.
  */
 export function productionDataDoorRefuses(input: DoorInput): boolean {
     return input.isPackaged && !input.doorOpen && isSameOrInside(input.productionDir, input.userDataDir);

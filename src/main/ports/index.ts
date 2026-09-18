@@ -16,10 +16,8 @@ import type { SchedulerPort } from './scheduler.port';
 import type { SoundPort } from './sound.port';
 
 /*
- * Everything a service the CONTAINER holds may reach the outside world through; the container supplies exactly this.
- *
- * ReleasesPort is deliberately absent. The update check runs beside the tray, before and after any container exists,
- * and createUpdateChecker names the two ports it needs in its own options - putting it here would make every
+ * Everything a service the CONTAINER holds may reach the outside world through. ReleasesPort is deliberately absent:
+ * the update check runs beside the tray, before and after any container exists, and putting it here would make every
  * container build a network client for a service the container does not hold.
  */
 export interface AppPorts {

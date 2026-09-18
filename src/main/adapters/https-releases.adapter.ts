@@ -1,10 +1,9 @@
 /*
  * ReleasesPort over one HTTPS GET, in MAIN. It cannot live in the renderer: its CSP is `default-src 'self'` and a
- * fetch from there is a violation, which is the point of REPO-06 putting the check behind a port at all.
+ * fetch from there is a violation, which is why REPO-06 puts the check behind a port at all.
  *
- * What leaves this machine is a GET of a fixed URL with no query string, no body, no cookie, no User-Agent and no
- * identifier of any kind. GitHub's servers see the IP address that any web request shows them, and that this file
- * was asked for. README.md says so in those words; tests/update-check.test.ts holds the two together.
+ * What leaves this machine is a GET of a fixed URL with no query string, body, cookie, User-Agent or identifier of
+ * any kind. README.md says so in those words; tests/update-check.test.ts holds the two together.
  */
 
 import https from 'node:https';

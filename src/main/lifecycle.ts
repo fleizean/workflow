@@ -78,10 +78,8 @@ export function registerLifecycle(): void {
 let updateChecker: UpdateChecker | undefined;
 
 /**
- * REPO-06: the version check, started once the window exists and the tray is up.
- *
- * Nothing is awaited: start() schedules and returns. The first check is UPDATE_FIRST_CHECK_DELAY_MS away on an
- * unreffed timer, so a launch that is closed before then sends nothing at all.
+ * REPO-06: the version check, started once the window exists and the tray is up. Nothing is awaited - the first check
+ * is UPDATE_FIRST_CHECK_DELAY_MS away on an unreffed timer, so a launch closed before then sends nothing at all.
  */
 export function startUpdateChecks(actions: TrayActions, log: (line: string) => void): void {
     if (!mainConfig.updateCheck || updateChecker !== undefined) {
@@ -141,9 +139,8 @@ export function closeDatabaseNow(): void {
 let powerHandlersRegistered = false;
 
 /**
- * CORE-06: powerMonitor is the precision layer over the clamp, not a substitute for it — it makes a suspended
- * interval exactly zero rather than merely bounded. It is usable only after app.whenReady(), so it is registered
- * with the container rather than in registerLifecycle.
+ * CORE-06: powerMonitor is the precision layer over the clamp, not a substitute - it makes a suspended interval
+ * exactly zero rather than merely bounded. Usable only after app.whenReady(), so it is registered with the container.
  */
 export function registerPowerMonitor(timer: TimerService): void {
     // IN-06: the closure below holds the timer of whichever container registered first, and this flag keeps it
@@ -184,10 +181,7 @@ function createWindowBoundsStore(layer: DatabaseLayer, connection: StartedDataba
     };
 }
 
-/**
- * The one-time hide notice: read and set in one step, so two hides in flight cannot both be told they are the first.
- * Owner decision 2026-09-13.
- */
+/** Read and set in one step, so two hides in flight cannot both be told they are the first (owner, 2026-09-13). */
 export function createHideNoticeStore(layer: DatabaseLayer, connection: StartedDatabase['db']): HideNoticeStore {
     return {
         claim: () => {
@@ -213,9 +207,9 @@ function announceChange(domains: readonly DataDomain[]): void {
 // D-30: the database is probed, refused or migrated before the first window; a refusal exits here, not deeper.
 export async function launchApplication(database: DatabaseLayer): Promise<void> {
     /*
-     * Before the database, deliberately. The window opens inside startDatabase, so a renderer that calls on its first
-     * paint must find the channel answered - an unregistered channel rejects the invoke with Electron's own words,
-     * while an unbuilt container is an IpcResult the renderer can render. Registration is for the life of the app.
+     * Before the database, deliberately: the window opens inside startDatabase, so a renderer calling on its first
+     * paint must find the channel answered. An unregistered channel rejects the invoke with Electron's own words,
+     * while an unbuilt container is an IpcResult the renderer can render.
      */
     registerIpcHandlers({ context: handlerContext, announce: announceChange, log: (line) => { console.log(line); } });
 

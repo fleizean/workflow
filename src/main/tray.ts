@@ -8,15 +8,13 @@ import { describeError } from './errors';
 import { markQuitting } from './quit';
 
 export interface TrayActions {
-    /** Bring the window back from the tray. */
     show(): void;
     /** Whether the window is on screen right now, so a click can toggle it as v1.2.1's did. */
     isVisible(): boolean;
     hide(): void;
     /** Phase 10 criterion 5: put a window nobody can reach back in the middle of the primary display. */
     resetPosition(): void;
-    /** REPO-06: opens the releases page in the user's browser. Reached only from an item that exists only when
-     * a newer version was actually found. */
+    /** REPO-06: reached only from an item that exists only when a newer version was actually found. */
     openReleases(): void;
 }
 
@@ -39,11 +37,9 @@ let trayVersion = '';
 let trayUpdate: string | undefined;
 
 /*
- * The menu the tray is actually showing.
- *
- * Exported so the packaged smoke can invoke the reset item's own click handler rather than a rebuilt copy of it -
- * which would prove the template and not the menu. What that still cannot prove is that Windows draws the menu and
- * dispatches the click; that is the same gap the titlebar's X has, and it is named in the verification report.
+ * Exported so the packaged smoke can invoke the reset item's own click handler rather than a rebuilt copy, which
+ * would prove the template and not the menu. What it still cannot prove is that Windows draws the menu and
+ * dispatches the click - the same gap the titlebar's X has, named in the verification report.
  */
 export function appTrayMenu(): Menu | undefined {
     return trayMenu;
@@ -56,9 +52,8 @@ function trayImage(): Electron.NativeImage {
 }
 
 /*
- * The menu, built from whatever is known right now. Built rather than mutated: Electron's MenuItem has no way to add
- * one, and an item that is always there and merely disabled would be the "check for updates" affordance REPO-06
- * deliberately does not offer.
+ * Built rather than mutated: Electron's MenuItem has no way to add one, and an item always there but disabled would
+ * be the "check for updates" affordance REPO-06 deliberately does not offer.
  */
 function rebuildMenu(actions: TrayActions): void {
     const update = trayUpdate;
@@ -82,8 +77,8 @@ function rebuildMenu(actions: TrayActions): void {
 }
 
 /**
- * REPO-06: a newer version was found. Idempotent and one-directional - the same version twice redraws nothing, and
- * nothing here can take the notice away, because a check that fails later has not un-published the release.
+ * REPO-06: idempotent and one-directional - the same version twice redraws nothing, and nothing here takes the notice
+ * away, because a check that fails later has not un-published the release.
  */
 export function announceTrayUpdate(version: string, actions: TrayActions): void {
     if (tray === undefined || trayUpdate === version) {
