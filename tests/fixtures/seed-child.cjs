@@ -117,10 +117,11 @@ if (typeof process.send !== 'function') {
 // the connection: `db` is referenced nowhere that outlives this module body, so V8 collects it and
 // better-sqlite3's finaliser calls sqlite3_close - a CLEAN close, which checkpoints the WAL into
 // krono.db and unlinks both sidecars. That is the degradation this file exists to prevent, arriving
-// from inside the process that was supposed to be preventing it. Measured on linux/node 24:
-// unpinned, both sidecars were gone within 1ms of this process going idle, every run; pinned, they
-// survive past a second. SIGKILL normally wins that race, which is why it only ever failed on a
-// loaded runner.
+// from inside the process that was meant to prevent it. Measured by polling from the parent with
+// nothing here changed: unpinned, both sidecars were gone 5-21ms after the ready message on Windows
+// and 202-688ms on linux, 10 runs of 10 each, krono.db left grown by the frames the close wrote in;
+// pinned, they survive past 20 seconds. The SIGKILL normally lands within a few milliseconds and
+// wins that race, which is why this only ever failed on a loaded runner.
 setInterval(() => db.open, 1000);
 
 process.send({ ready: true, walSize: walSize });

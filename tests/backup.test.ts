@@ -229,8 +229,11 @@ describe('the WAL fixture', () => {
      * file and unlinks both sidecars - the very degradation the child exists to avoid, arriving from inside it.
      * makeWalFixture() normally outruns the finaliser because the parent SIGKILLs on the ready message, so the
      * only way to see a keep-alive that has stopped pinning is to let a child idle and then look. That race is
-     * what failed on a loaded CI runner and passed everywhere else. Measured on linux/node 24: with the keep-alive
-     * reading db the sidecar survives past a second; with an empty callback it was gone within 1ms, every run.
+     * what failed on a loaded CI runner and passed everywhere else.
+     *
+     * The wait is about three times the slowest measured loss: with an empty callback the sidecar was gone
+     * 5-21ms after the ready message on Windows and 202-688ms on linux, 10 runs of 10 each. With the callback
+     * reading db it survives past 20 seconds, so nothing here is racing anything.
      */
     it('keeps its -wal while the child idles, not merely until the event loop drains', async () => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wft-pin-'));
@@ -248,7 +251,7 @@ describe('the WAL fixture', () => {
             expect(reported.walSize, 'the child never built a sidecar, so nothing below is about the keep-alive')
                 .toBeGreaterThan(32);
 
-            await new Promise((resolve) => setTimeout(resolve, 250));
+            await new Promise((resolve) => setTimeout(resolve, 2000));
 
             expect(
                 fs.existsSync(dbPath + '-wal'),
