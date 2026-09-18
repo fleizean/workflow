@@ -209,6 +209,43 @@ jobs:
         if: matrix.smoke && runner.os == 'Windows'
         run: npm run parity:check
 
+      # Phase 10 criteria 1-4: five window sizes x three Windows display scales, four routes in each of the
+      # fifteen cells, plus the modals at the 600px floor, the Pomodoro panel and the fire canvas's frame loop
+      # across a real unmount. It drives the packaged app, which only this job has.
+      #
+      # Windows only, for the same two reasons parity:check is: the criterion is about WINDOWS display scaling,
+      # and the committed report under baselines/v2/ is a staleness guard that would have to hold on two
+      # platforms at once to run on both.
+      - name: Check all fifteen responsive cells against the packaged app (criteria 1-4)
+        if: matrix.smoke && runner.os == 'Windows'
+        run: npm run matrix:check
+
+      # Phase 10 criterion 7: Chromium's network stack offline, every http/https/ws request cancelled and
+      # recorded in main, then all four routes - fonts, glyph widths, filled variants, the bundled sound, and
+      # zero CSP violations captured rather than assumed. Windows only for the staleness-guard reason above.
+      - name: Render every route with the network off (criterion 7)
+        if: matrix.smoke && runner.os == 'Windows'
+        run: npm run offline:check
+
+      # Phase 10 criterion 6, reproduced in CI: a populated v1.2.1 database migrated by the packaged app, read
+      # back through the app's own bridge - every session, company, setting and the streak.
+      #
+      # The archived copy of a real user's database is the other half of this criterion and is NOT here: it is
+      # owner-gated (tests/db-archive-proof.test.ts sits behind an approval environment variable for a reason -
+      # it is one person's tracked time and it does not belong on a hosted runner).
+      #
+      # And IPC-07, which the Phase 5 verifier left open because no test started a SECOND packaged process
+      # against a held lock: the binary is launched twice over one profile and the second is required to quit.
+      #
+      # Windows only. V2-QUAL-03 makes runtime acceptance Windows-only this milestone, and a macOS failure here
+      # could not be investigated - there is no macOS hardware. The two macOS legs still build, assert and
+      # allowlist-check, which is exactly what criterion 9 claims and no more.
+      - name: Install over v1.2.1 and launch twice from one profile (criterion 6, IPC-07)
+        if: matrix.smoke && runner.os == 'Windows'
+        run: |
+          npm run upgrade:check
+          npm run instance:check
+
       # A skip that prints its reason is a different thing from a check that silently did nothing.
       # These two artifacts are built, size-checked and allowlist-checked, and never executed.
       - name: Smoke launch skipped on a cross-architecture leg
