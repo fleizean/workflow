@@ -59,6 +59,10 @@ jobs:
       # errors; the renormalise assertion catches the actual D-13 regression - a blob
       # committed with line endings that disagree with .gitattributes, which surfaces
       # later as "whole file changed" on a file nobody edited.
+      # v121-sql.ts is excluded for the same reason as baselines/: it transcribes v1.2.1's SQL and its
+      # trailing spaces are the contract, because sqlite_master stores CREATE text verbatim. Nothing is
+      # lost by excluding it - db-v121-transcription.test.ts pins the whole file byte-for-byte, which is
+      # a stronger guard than this check.
       # WR-05: only what this run's range introduces - frozen legacy files already carry trailing
       # whitespace, and --ignore-cr-at-eol hides D-13's CRLF-to-LF rewrite of them.
       - name: Check whitespace and line-ending contract
@@ -82,7 +86,7 @@ jobs:
             exit 1
           fi
           echo "Whitespace check over $(git rev-parse --short "$base")..$(git rev-parse --short HEAD) ($EVENT_NAME)"
-          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**'
+          git diff --check --ignore-cr-at-eol "$base" HEAD -- . ':!baselines/**' ':!tools/baseline/vendor/**' ':!tests/helpers/v121-sql.ts'
           git add --renormalize .
           if ! git diff --cached --quiet; then
             echo "::error::Committed line endings disagree with .gitattributes in:"
