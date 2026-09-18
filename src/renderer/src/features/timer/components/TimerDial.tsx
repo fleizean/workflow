@@ -28,6 +28,22 @@ const HEADLINE_CLASS: Record<'normal' | 'exceeded', string> = {
     exceeded: 'text-red-400 text-sm font-bold uppercase tracking-[0.2em] mb-3 mt-5'
 };
 
+/*
+ * Phase 10 criterion 3: the ring is sized from the height available instead of being pinned at 300px.
+ *
+ * v1.2.1 wrote `max-w-[300px]`, which is a phone-shaped window's number. Dragged short it pushed the controls
+ * below the fold; dragged to 1920x1080 it stayed the same 300px in the middle of a screen with room for far
+ * more. `aspect-square` with `w-full` is what keeps it circular: the width is min(column, the clamp below) and
+ * the height follows it, so no axis is set independently and the ring cannot become an ellipse.
+ *
+ * 32vh is chosen rather than a slope of 1, so that the DEFAULT window (430x932, where MAIN_WINDOW opens) lands
+ * on 298px - within two pixels of what v1.2.1 drew, which is the size the Phase 1 baselines were captured at.
+ * The floor keeps the digits legible at the 600px minimum and the ceiling stops a 4K window drawing a dinner
+ * plate. Measured across all 15 matrix cells by tools/baseline/responsive-matrix.mjs.
+ */
+const RING_BOX_CLASS =
+    'relative w-full max-w-[clamp(9rem,32vh,22rem)] aspect-square flex items-center justify-center';
+
 const BADGE_CLASS = 'mt-4 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 flex items-center ' +
     'gap-1.5 backdrop-blur-xs';
 const BADGE_TEXT_CLASS = 'text-[10px] font-bold text-primary uppercase tracking-wider';
@@ -60,7 +76,7 @@ export default function TimerDial(props: TimerDialProps): ReactElement {
         <div className="flex-1 flex flex-col items-center justify-center relative min-h-[250px] shrink-0">
             <h2 className={HEADLINE_CLASS[props.exceeded ? 'exceeded' : 'normal']}>{props.headline}</h2>
 
-            <div className="relative w-full max-w-[300px] aspect-square flex items-center justify-center">
+            <div className={RING_BOX_CLASS}>
                 <svg className="absolute w-full h-full -rotate-90" viewBox="0 0 100 100" aria-hidden="true">
                     <circle
                         className="text-slate-200 dark:text-white/5"

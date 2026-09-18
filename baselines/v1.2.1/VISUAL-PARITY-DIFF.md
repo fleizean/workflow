@@ -11,7 +11,7 @@ geometry properties are reported rather than gated: `tools/baseline/diff-compute
 |---|---|
 | Design-property differences, settled with a reason | 29 |
 | Design-property differences, **unexplained** | 0 |
-| Geometry-property differences (reported, not a gate) | 378 |
+| Geometry-property differences (reported, not a gate) | 399 |
 
 Every surviving difference carries a reason. Nothing is unaccounted for.
 
@@ -53,9 +53,9 @@ Every surviving difference carries a reason. Nothing is unaccounted for.
 
 | Page | Differing values |
 |---|---|
-| `index` | 77 |
-| `companies` | 62 |
-| `work-history` | 153 |
+| `index` | 99 |
+| `companies` | 60 |
+| `work-history` | 154 |
 | `settings` | 86 |
 
 The DOM differs by construction - v1.2.1 carried every modal in its markup and v2 mounts one when it

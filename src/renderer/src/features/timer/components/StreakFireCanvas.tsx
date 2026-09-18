@@ -102,7 +102,18 @@ function drawBrushstroke(
     context.restore();
 }
 
-const CANVAS_CLASS = 'absolute inset-0 pointer-events-none rounded-2xl';
+/*
+ * h-full w-full is load-bearing, not tidiness. A canvas is a REPLACED element with an intrinsic size - the
+ * width and height content attributes, which default to 300x150 - so `inset-0` alone never stretched it: for an
+ * absolutely positioned replaced element, `width: auto` resolves to the intrinsic width and the `right` offset is
+ * then simply ignored. The flame has therefore always been drawn 300x150 inside a card about a third that wide,
+ * with `overflow-hidden` on the card cropping it to its top-left corner, and resize() measured that 300x150 and
+ * wrote it straight back - so the bitmap tracked the ATTRIBUTE rather than the card, at every window size and
+ * every display scale. Two CSS lengths override the intrinsic size and the box finally follows the card.
+ * Measured by tools/baseline/responsive-matrix.mjs, which found it as a 300px-wide element hanging 174px past
+ * the right edge of a 380px window.
+ */
+const CANVAS_CLASS = 'absolute inset-0 h-full w-full pointer-events-none rounded-2xl';
 
 export default function StreakFireCanvas({ intensity }: { readonly intensity: FireIntensity }): ReactElement {
     const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -169,9 +180,29 @@ export default function StreakFireCanvas({ intensity }: { readonly intensity: Fi
         const observer = new ResizeObserver(resize);
         observer.observe(canvas);
 
+        /*
+         * A ResizeObserver fires on a CSS-size change and on nothing else, so dragging the window onto a monitor at
+         * a different Windows display scale changes devicePixelRatio while the card stays exactly as many CSS
+         * pixels wide - and the bitmap would keep the old ratio, which is the soft flame this component exists to
+         * fix. A resolution media query is the one thing that reports that transition; it resolves against the
+         * current ratio, so it is re-armed after every change.
+         */
+        let scaleQuery: MediaQueryList | undefined;
+        const watchScale = (): void => {
+            scaleQuery?.removeEventListener('change', onScaleChange);
+            scaleQuery = window.matchMedia('(resolution: ' + String(window.devicePixelRatio) + 'dppx)');
+            scaleQuery.addEventListener('change', onScaleChange);
+        };
+        function onScaleChange(): void {
+            resize();
+            watchScale();
+        }
+        watchScale();
+
         return () => {
             cancelAnimationFrame(frame);
             observer.disconnect();
+            scaleQuery?.removeEventListener('change', onScaleChange);
         };
     }, [intensity]);
 

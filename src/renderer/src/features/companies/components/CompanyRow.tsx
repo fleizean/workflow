@@ -19,7 +19,14 @@ const ROW_CLASS = 'group flex items-center gap-4 rounded-xl bg-white dark:bg-car
     'transition-all hover:shadow-md border border-transparent dark:border-slate-800/50';
 const ICON_CLASS = 'flex shrink-0 items-center justify-center rounded-lg bg-primary/10 dark:bg-primary/20 h-14 w-14';
 const NAME_CLASS = 'truncate text-base font-semibold text-slate-900 dark:text-white';
-const META_CLASS = 'flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400';
+/*
+ * flex-wrap, which v1.2.1 did not have. The column this line sits in is `overflow-hidden` (so the long name above
+ * it can truncate), and at the 380px minimum the meta line measures 188px inside a 146px box - so "Note required",
+ * the bullet before it and the tail of the created-on date were cut off with no ellipsis and no way to reach them.
+ * Wrapping costs one extra line at the narrowest width and changes nothing above it, where the line already fits.
+ * Found by tools/baseline/responsive-matrix.mjs at 380x600.
+ */
+const META_CLASS = 'flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400';
 const EDIT_CLASS = 'flex items-center justify-center w-9 h-9 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 ' +
     'hover:bg-blue-500/20 dark:hover:bg-blue-400/20 text-blue-600 dark:text-blue-400 transition-colors';
 const DELETE_CLASS = 'flex items-center justify-center w-9 h-9 rounded-lg bg-red-500/10 dark:bg-red-400/10 ' +

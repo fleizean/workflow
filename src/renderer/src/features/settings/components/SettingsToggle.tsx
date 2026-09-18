@@ -23,10 +23,21 @@ const CIRCLE_CLASS: Record<ToggleTint, string> = {
         'text-red-600 dark:text-red-400'
 };
 
+/*
+ * `relative` is what keeps the hidden checkbox in the row it belongs to.
+ *
+ * Tailwind's `sr-only` is `position: absolute` with no offsets, so the input below is laid out at its static
+ * position but takes its CONTAINING BLOCK from the nearest positioned ancestor. With none on the row, that was
+ * #app-shell - outside AppShell's scrolling <main> - so the real focusable control of every toggle sat in a
+ * layer that does not scroll with the list, escaped main's clipping, and stretched the shell's own scrollable
+ * overflow 33px past a 600px window. A keyboard user tabbing down Settings was focusing a control the browser
+ * could not scroll into view, because the box it would have scrolled was not the box the row was in.
+ * Found by tools/baseline/responsive-matrix.mjs as a clipped-content report against #app-shell itself.
+ */
 const ROW_CLASS: Record<'card' | 'row', string> = {
-    card: 'flex items-center gap-4 justify-between cursor-pointer bg-white dark:bg-surface-dark rounded-2xl p-4 ' +
-        'shadow-xs border border-black/5 dark:border-white/5 transition-colors',
-    row: 'flex items-center gap-4 justify-between cursor-pointer px-4 py-4 hover:bg-slate-50 ' +
+    card: 'relative flex items-center gap-4 justify-between cursor-pointer bg-white dark:bg-surface-dark ' +
+        'rounded-2xl p-4 shadow-xs border border-black/5 dark:border-white/5 transition-colors',
+    row: 'relative flex items-center gap-4 justify-between cursor-pointer px-4 py-4 hover:bg-slate-50 ' +
         'dark:hover:bg-white/5 transition-colors'
 };
 

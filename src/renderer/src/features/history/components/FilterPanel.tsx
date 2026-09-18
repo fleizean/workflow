@@ -39,10 +39,13 @@ const CLEAR_CLASS = 'py-4 bg-linear-to-br/srgb from-red-500 to-red-600 hover:fro
 const CANCEL_CLASS = 'w-full py-4 bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white font-semibold ' +
     'rounded-2xl active:scale-95 transition-all duration-200 border border-white/5';
 
+/* `relative` for the same reason SettingsToggle carries it: `sr-only` is absolute, and without a positioned
+ * parent the radio that actually takes focus is positioned against the fixed overlay instead of against this
+ * label - outside the panel's own scroll box, which is the one thing that could scroll it into view. */
 const GOAL_LABEL_CLASS: Record<'on' | 'off', string> = {
-    on: 'flex items-center justify-center gap-2 p-3 rounded-xl bg-primary/20 border-primary/50 border ' +
+    on: 'relative flex items-center justify-center gap-2 p-3 rounded-xl bg-primary/20 border-primary/50 border ' +
         'cursor-pointer transition-all',
-    off: 'flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border-white/5 border ' +
+    off: 'relative flex items-center justify-center gap-2 p-3 rounded-xl bg-white/5 border-white/5 border ' +
         'cursor-pointer transition-all'
 };
 const GOAL_TEXT_CLASS: Record<'on' | 'off', string> = {
