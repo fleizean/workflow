@@ -152,5 +152,12 @@ describe('DATA CR-02: the documented way back to v1.2.1 is safe when followed ex
             bullet.indexOf(LEGACY + '-shm') < bullet.indexOf('Rename'),
             'the rename is described before the sidecars are dealt with, which is the order that loses the data'
         ).toBe(true);
+
+        // The steps delete files by name. Naming them without naming the folder is how someone
+        // deletes the copy in backups/ instead, so both platforms belong inside the bullet itself
+        // and not only in the table thirty lines above it.
+        for (const folder of ['%APPDATA%\\workflow-timer', '~/Library/Application Support/workflow-timer']) {
+            expect(bullet, 'the instruction never says where to do this on ' + folder).toContain(folder);
+        }
     });
 });

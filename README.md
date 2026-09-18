@@ -89,11 +89,19 @@ Two things worth knowing:
 - **Going back to v1.2.1 after v2 has started will show an empty app.** v1.2.1 only knows the name
   `krono.db`, so it will not find `workflow.db` and will create a new, empty database next to it.
   Nothing of yours has been deleted. To go back, **with Workflow closed**, in this order:
-  1. Delete `krono.db`, `krono.db-wal` and `krono.db-shm` — all three, and the two sidecars even
+  1. Open your user data folder. Everything below happens in there and nowhere else — the same
+     file names exist in the `backups/` folder beside it, and working in the wrong one is how you
+     lose the copy that would have saved you.
+     - **Windows:** paste `%APPDATA%\workflow-timer` into the address bar of a File Explorer
+       window, or into <kbd>Win</kbd>+<kbd>R</kbd>.
+     - **macOS:** in Finder, **Go → Go to Folder** (<kbd>⇧</kbd><kbd>⌘</kbd><kbd>G</kbd>) and
+       enter `~/Library/Application Support/workflow-timer`. That folder is hidden by default, so
+       browsing to it will not work.
+  2. Delete `krono.db`, `krono.db-wal` and `krono.db-shm` — all three, and the two sidecars even
      if they look empty. They belong to the blank database v1.2.1 just made. A `-wal` is not tied
      to the file it was written for, so one left behind here is applied to your real database the
      moment it takes that name, and empties it without any error.
-  2. Rename `workflow.db` to `krono.db`. If `workflow.db-wal` and `workflow.db-shm` are there,
+  3. Rename `workflow.db` to `krono.db`. If `workflow.db-wal` and `workflow.db-shm` are there,
      rename those to `krono.db-wal` and `krono.db-shm` too — they hold sessions that are not yet
      in the main file.
 
