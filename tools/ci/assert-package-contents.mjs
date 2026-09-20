@@ -267,7 +267,7 @@ export class PackageNotFoundError extends Error {
     constructor(appDir, searched) {
         super('no packaged application under ' + appDir + ' - looked for ' + ASAR_NAME + ' in: ' +
             searched.join(', ') + '. Point this script at the directory electron-builder wrote: ' +
-            'dist/win-unpacked, dist/win-arm64-unpacked, dist/mac or dist/mac-arm64.');
+            'dist/win-unpacked, dist/win-arm64-unpacked, dist/mac, dist/mac-arm64 or dist/linux-unpacked.');
         this.name = 'PackageNotFoundError';
         this.appDir = appDir;
         this.searched = Object.freeze([...searched]);

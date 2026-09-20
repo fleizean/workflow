@@ -85,8 +85,8 @@ A change has to pass all of these. They are what CI runs, and you can run every 
 | Audit | `npm audit` | Zero vulnerabilities. |
 
 CI additionally runs `npm test` in three timezones (UTC, America/New_York, Europe/Istanbul), builds
-all four installers, and on the Windows leg runs `parity:check`, `matrix:check`, `offline:check`,
-`upgrade:check` and `instance:check`.
+every installer (Windows, macOS and Linux), and launches the packaged app with `smoke:packaged` on the legs
+the runner can execute.
 
 Some of the suite is *structural* — tests that read the source and fail on a misplaced import, an
 unlinted file, a stale guard or a duplicated asset. If one of those fails, it is telling you about a

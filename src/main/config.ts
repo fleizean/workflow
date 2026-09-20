@@ -3,8 +3,6 @@
 
 export const SMOKE_FLAG = '--smoke';
 export const SMOKE_DB_ENV = 'WORKFLOW_SMOKE_DB';
-// D-37: a v1.2.1 timerState the smoke writes into its own temp profile's localStorage, so the next launch imports it.
-export const SMOKE_SEED_TIMER_STATE_ENV = 'WORKFLOW_SMOKE_SEED_TIMER_STATE';
 // Set by `electron-vite dev` to the renderer dev server's address.
 export const RENDERER_URL_ENV = 'ELECTRON_RENDERER_URL';
 /*
@@ -15,24 +13,6 @@ export const RENDERER_MARKER_TEXT = 'Daily Target';
 // SPA-01: the second route the smoke visits, and the heading it must find there. Reaching it changes no document.
 export const RENDERER_SECOND_ROUTE_HASH = '#/settings';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
-/*
- * Criterion 1 / S2: the brief's XSS payload verbatim. v1.2.1 built the row with innerHTML and hung an onclick= off
- * the name, escaping the apostrophe and nothing else, so this exact string ran.
- */
-export const RENDERER_COMPANIES_ROUTE_HASH = '#/companies';
-export const SMOKE_XSS_COMPANY_NAME = '<img src=x onerror=alert(1)>';
-/*
- * Criterion 4: v1.2.1 reached the delete-all-data button with document.querySelector('.mt-8.mb-8 button')
- * (legacy/pages/settings.html:659), so a spacing tweak detached it. The smoke probes for this identifier, and for
- * that selector finding nothing.
- */
-export const RENDERER_DESTRUCTIVE_TESTID = 'reset-all-data';
-export const RENDERER_LEGACY_DESTRUCTIVE_SELECTOR = '.mt-8.mb-8 button';
-// Written before the window loads, not after: the form seeds its fields once, from what the database held when it opened.
-export const SMOKE_SETTINGS_TARGET_SECONDS = 27_000;
-export const SMOKE_SETTINGS_TARGET_TEXT = '07:30';
-/** The four numbers the pomodoro section offers once it is enabled (features/settings/settings-view.ts). */
-export const SMOKE_SETTINGS_NUMBER_FIELDS = 4;
 export const SMOKE_RENDER_TIMEOUT_MS = 20_000;
 export const SMOKE_POLL_INTERVAL_MS = 100;
 // If stdout never reports the write as flushed, exit anyway rather than hang.
@@ -43,26 +23,9 @@ export const SMOKE_EXIT_FALLBACK_MS = 3_000;
  * DEFAULT_TIMEOUT_MS) so a stuck run names its own reason; tests/smoke-harness.test.ts holds the two in that order.
  */
 export const SMOKE_WATCHDOG_MS = 60_000;
-// WR-01 smoke target: the .invalid TLD never resolves, so even a failed guard loads nothing remote.
-export const SMOKE_ESCAPE_URL = 'https://example.invalid/';
-export const SMOKE_NAVIGATION_TIMEOUT_MS = 5_000;
-// Long enough for at least one main-process tick to cross the bus, the preload and the page (IPC-06 smoke check).
-export const SMOKE_TICK_WAIT_MS = 1_500;
 
-/*
- * SPA-08/SPA-09: the icon must measure about this wide as a GLYPH. The same name rendered as literal text is several
- * times wider - the failure self-hosting only the woff2 produces. The max leaves room for hinting.
- */
-export const SMOKE_ICON_NAME = 'local_fire_department';
-export const SMOKE_ICON_FONT_SIZE_PX = 24;
-export const SMOKE_ICON_MAX_WIDTH_PX = 32;
-export const SMOKE_ICON_TEXT_MIN_WIDTH_PX = 100;
-/** The two families that must come from inside the bundle, spelled as their @font-face declares them (S4). */
-export const SMOKE_BUNDLED_FONTS = Object.freeze(['Material Symbols Outlined', 'Inter Variable']);
 /** The sound main asks the renderer to play in the smoke; it must resolve to a file inside the app (SPA-10). */
 export const SMOKE_SOUND_ID = 'goalReached';
-// flushStorageData is asynchronous; app.exit must not race it (D-37 seed mode).
-export const SMOKE_STORAGE_FLUSH_MS = 1_000;
 
 export const DEVELOPMENT_USER_DATA_SUFFIX = '-dev';
 export const USER_DATA_DIR_SWITCH = 'user-data-dir';
@@ -149,7 +112,6 @@ export const UPDATE_CHECK_DISABLED_ENV = 'WORKFLOW_NO_UPDATE_CHECK';
 export interface MainConfig {
     readonly smoke: boolean;
     readonly smokeDbPath: string | undefined;
-    readonly smokeSeedTimerState: string | undefined;
     readonly rendererDevUrl: string | undefined;
     /** REPO-06: false when the user has set UPDATE_CHECK_DISABLED_ENV, and nothing is ever sent. */
     readonly updateCheck: boolean;
@@ -162,7 +124,6 @@ export function parseMainConfig(env: Readonly<Record<string, string | undefined>
     return Object.freeze({
         smoke: argv.includes(SMOKE_FLAG),
         smokeDbPath: env[SMOKE_DB_ENV],
-        smokeSeedTimerState: env[SMOKE_SEED_TIMER_STATE_ENV],
         rendererDevUrl: typeof devUrl === 'string' && devUrl !== '' ? devUrl : undefined,
         updateCheck: optedOut === undefined || optedOut === ''
     });

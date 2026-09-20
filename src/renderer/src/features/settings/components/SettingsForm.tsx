@@ -15,6 +15,7 @@ import type { DraftReview, SettingsDraft } from '../settings-view';
 import DailyTargetForm from './DailyTargetForm';
 import NumberSettingCard from './NumberSettingCard';
 import SettingsToggle from './SettingsToggle';
+import SoundPicker from './SoundPicker';
 import type { Settings } from '@shared/types';
 
 const SECTION_CLASS = 'mt-6 mb-2';
@@ -124,6 +125,20 @@ export default function SettingsForm(props: SettingsFormProps): ReactElement {
                         caption="Sound and a notification when the daily target is met"
                         checked={draft.goalNotification}
                         onChange={(next) => { setDraft({ ...draft, goalNotification: next }); }}
+                    />
+                    <SettingsToggle
+                        variant="row"
+                        icon={draft.soundEnabled ? 'volume_up' : 'volume_off'}
+                        tint="orange"
+                        title="Notification Sound"
+                        caption="Turn off to keep notifications but lose the sound"
+                        checked={draft.soundEnabled}
+                        onChange={(next) => { setDraft({ ...draft, soundEnabled: next }); }}
+                    />
+                    <SoundPicker
+                        value={draft.notificationSound}
+                        disabled={!draft.soundEnabled}
+                        onChange={(next) => { setDraft({ ...draft, notificationSound: next }); }}
                     />
                 </div>
             </div>

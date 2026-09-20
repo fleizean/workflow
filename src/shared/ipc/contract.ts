@@ -3,7 +3,7 @@ import { z } from 'zod';
 import {
     CompanySchema, DayProgressSchema, IdSchema, LocalDateSchema, PomodoroCountsSchema,
     PomodoroSnapshotSchema, SessionDurationSecondsSchema, SessionNameSchema, SessionNoteSchema, SettingsSchema,
-    SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema, WeekTotalsSchema, WorkSessionSchema
+    SoundChoiceSchema, SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema, WeekTotalsSchema, WorkSessionSchema
 } from '@shared/schemas';
 import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '@shared/ipc/channels';
 import type { DeclaredIpcChannel, DeclaredIpcEventChannel } from '@shared/ipc/channels';
@@ -198,7 +198,7 @@ export const ipcWrites = {
 // Main-to-renderer events; each entry arrives with the phase that designs the event (D-20).
 export const ipcEvents = {
     // The main process decides when a sound is due; only the renderer can play one.
-    'app:playSound': z.strictObject({ sound: SoundIdSchema }),
+    'app:playSound': z.strictObject({ sound: SoundIdSchema, choice: SoundChoiceSchema }),
     // One message per second carrying a whole snapshot, so the renderer stores what it is told and computes nothing.
     'timer:tick': TimerSnapshotSchema,
     // The same for the cycle: every state change, including each tick, arrives as a whole snapshot.

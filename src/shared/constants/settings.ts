@@ -1,9 +1,32 @@
 // v1.2.1's settings seeds as typed defaults; zod-free, so the renderer and fresh-install seeding can import it.
 import type { Settings } from '@shared/types';
 
+/*
+ * The notification sounds the app ships, and the only ones a user can pick between. Bundled files, never a path or
+ * a URL the user supplies: the Settings screen offers this list and main refuses anything outside it. Each one is
+ * under a second long, and level-matched to each other (src/assets/sounds/, see LICENSE.txt there). 'classic' is the default: a soft, short confirmation tone chosen to be easy to live with all day.
+ */
+export const SOUND_CHOICES = Object.freeze([
+    { id: 'classic', label: 'Classic' },
+    { id: 'chime', label: 'Chime' },
+    { id: 'glass', label: 'Glass' },
+    { id: 'confirm', label: 'Confirm' },
+    { id: 'question', label: 'Question' },
+    { id: 'two-tone', label: 'Two Tone' },
+    { id: 'three-tone', label: 'Three Tone' },
+    { id: 'rise', label: 'Rise' },
+    { id: 'pep', label: 'Pep' }
+] as const);
+
+export const SOUND_CHOICE_IDS = SOUND_CHOICES.map((choice) => choice.id) as unknown as readonly [
+    (typeof SOUND_CHOICES)[number]['id'], ...(typeof SOUND_CHOICES)[number]['id'][]
+];
+
 export const DEFAULT_SETTINGS: Readonly<Settings> = Object.freeze({
     dailyTargetSeconds: 28800,
     goalNotification: true,
+    soundEnabled: true,
+    notificationSound: 'classic',
     excludeWeekendsFromStreak: false,
     pomodoroEnabled: false,
     pomodoroWorkSeconds: 1500,

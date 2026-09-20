@@ -54,6 +54,32 @@ function attempt(h: Harness, patch: Partial<Settings>): SettingsValidationError 
     }
 }
 
+describe('the notification sound is one of the bundled ones, and the switch is a boolean', () => {
+    it('accepts every bundled sound and the on/off switch', () => {
+        const { service, patches } = harness();
+        service.update({ notificationSound: 'pep', soundEnabled: false });
+        expect(patches).toEqual([{ notificationSound: 'pep', soundEnabled: false }]);
+    });
+
+    it('refuses a sound the app does not ship, and writes nothing', () => {
+        const { service, patches } = harness();
+        expect(() => service.update({ notificationSound: '/etc/passwd' as never })).toThrow(SettingsValidationError);
+        expect(() => service.update({ notificationSound: 'https://example.com/a.mp3' as never }))
+            .toThrow(SettingsValidationError);
+        expect(patches).toEqual([]);
+    });
+
+    it('refuses a switch that is not a boolean', () => {
+        const { service } = harness();
+        expect(() => service.update({ soundEnabled: 'no' as never })).toThrow(SettingsValidationError);
+    });
+
+    it('defaults to the classic sound, switched on', () => {
+        expect(DEFAULT_SETTINGS.notificationSound).toBe('classic');
+        expect(DEFAULT_SETTINGS.soundEnabled).toBe(true);
+    });
+});
+
 describe('CORE-03: the service covers the ten-key Settings shape and nothing else', () => {
     it('knows exactly the keys the wire schema declares', () => {
         expect([...SETTING_KEYS].sort()).toEqual(Object.keys(SettingsSchema.shape).sort());

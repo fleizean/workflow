@@ -2,7 +2,7 @@
 import type { z } from 'zod';
 import type {
     CompanySchema, DayProgressSchema, PomodoroCountsSchema, PomodoroIntervalSchema, PomodoroSessionSchema,
-    PomodoroSnapshotSchema, PomodoroStatusSchema, SettingsSchema, SoundIdSchema, StreakSchema, TimerModeSchema,
+    PomodoroSnapshotSchema, PomodoroStatusSchema, SettingsSchema, SoundChoiceSchema, SoundIdSchema, StreakSchema, TimerModeSchema,
     TimerSnapshotSchema, TimerStatusSchema, WeekTotalsSchema, WorkSessionSchema
 } from '@shared/schemas';
 import type { LocalDate } from '@shared/utils/date';
@@ -12,6 +12,7 @@ export type WorkSession = z.infer<typeof WorkSessionSchema>;
 export type PomodoroSession = z.infer<typeof PomodoroSessionSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type SoundId = z.infer<typeof SoundIdSchema>;
+export type SoundChoice = z.infer<typeof SoundChoiceSchema>;
 
 // The authoritative timer's shape. It lives in main (X1); this is the value the renderer mirrors.
 export type TimerStatus = z.infer<typeof TimerStatusSchema>;

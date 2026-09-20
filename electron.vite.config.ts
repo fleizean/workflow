@@ -34,7 +34,7 @@ export default defineConfig({
             alias: {
                 '@renderer': resolve(__dirname, 'src/renderer/src'),
                 // The runtime assets the renderer and the tray share one copy of: src/assets/icon.png and
-                // src/assets/notification.mp3. Aliased rather than reached by a five-deep relative path.
+                // src/assets/sounds/ (the notification sounds). Aliased rather than reached by a five-deep relative path.
                 '@assets': resolve(__dirname, 'src/assets'),
                 '@shared': resolve(__dirname, 'src/shared')
             }

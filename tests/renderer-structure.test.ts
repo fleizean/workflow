@@ -322,19 +322,6 @@ describe('criterion 1 / SPA-15: the v1.2.1 renderer moved, and the dead fragment
         ).toEqual([]);
     });
 
-    /*
-     * The deletion had to leave the CUSTODY-09 inventory untouched, and it did: the fragments held no
-     * addEventListener and no window.api call, so 106/21/67 are unchanged. tests/inventory.test.ts recomputes all
-     * three from legacy/ and compares them element-wise, which is the real guard; this is the pointer to it.
-     */
-    it('kept the behaviour inventory measurable, by moving what the inventory counts', () => {
-        for (const artifact of ['baselines/v1.2.1/handlers.tsv', 'baselines/v1.2.1/api-calls.tsv']) {
-            const rows = read(artifact).split('\n').filter((row) => row.trim() !== '');
-            expect(rows.length, artifact + ' is empty, so the inventory cannot be recomputed').toBeGreaterThan(0);
-            const stale = rows.filter((row) => !row.startsWith(LEGACY_PAGES + '/') && !row.startsWith('legacy/renderer/'));
-            expect(stale.slice(0, 3), artifact + ' still cites files at their pre-cutover paths').toEqual([]);
-        }
-    });
 });
 
 /*

@@ -18,7 +18,7 @@ import path from 'node:path';
 import { repoRoot } from './helpers/ts-imports';
 
 /** Extensions whose bytes are the asset. Text duplicates are a different question and not this one. */
-const BINARY_EXTENSIONS = ['.png', '.ico', '.svg', '.woff2', '.mp3', '.jpg', '.jpeg', '.gif', '.webp'];
+const BINARY_EXTENSIONS = ['.png', '.ico', '.svg', '.woff2', '.mp3', '.ogg', '.jpg', '.jpeg', '.gif', '.webp'];
 
 /**
  * The duplicate content that is allowed to stand, keyed by the sorted paths that hold it.

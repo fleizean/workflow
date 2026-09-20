@@ -2,7 +2,7 @@
 // once; the ten-key Settings shape and the v1.2.1 key strings stay where they already live.
 
 import { ServiceError } from './service-errors';
-import { SETTINGS_BOUNDS } from '@shared/constants/settings';
+import { SETTINGS_BOUNDS, SOUND_CHOICE_IDS } from '@shared/constants/settings';
 import type { BooleanSettingKey, NumericSettingKey, SettingBound } from '@shared/constants/settings';
 import type { Settings } from '@shared/types';
 
@@ -36,7 +36,7 @@ type NumericKey = NumericSettingKey;
 type BooleanKey = BooleanSettingKey;
 
 export const BOOLEAN_SETTING_KEYS: readonly BooleanKey[] = Object.freeze([
-    'goalNotification', 'excludeWeekendsFromStreak', 'pomodoroEnabled', 'pomodoroAutoStartBreaks',
+    'goalNotification', 'soundEnabled', 'excludeWeekendsFromStreak', 'pomodoroEnabled', 'pomodoroAutoStartBreaks',
     'pomodoroAutoStartWork'
 ]);
 
@@ -44,7 +44,7 @@ const NUMERIC_SETTING_KEYS = Object.keys(SETTINGS_BOUNDS) as NumericKey[];
 
 /** Every key the domain has, so an unknown one is refused rather than written to a row nobody reads. */
 export const SETTING_KEYS: readonly (keyof Settings)[] =
-    Object.freeze([...NUMERIC_SETTING_KEYS, ...BOOLEAN_SETTING_KEYS]);
+    Object.freeze([...NUMERIC_SETTING_KEYS, ...BOOLEAN_SETTING_KEYS, 'notificationSound']);
 
 /** A refused write, named by the key that caused it. Durations and targets are not user data, so the value is said. */
 export class SettingsValidationError extends ServiceError {
@@ -72,7 +72,7 @@ export function validateSettingsPatch(patch: Partial<Settings>): Partial<Setting
         }
     }
 
-    const checked: Partial<Record<keyof Settings, number | boolean>> = {};
+    const checked: Partial<Record<keyof Settings, number | boolean | string>> = {};
 
     for (const key of BOOLEAN_SETTING_KEYS) {
         const value: unknown = patch[key];
@@ -81,6 +81,16 @@ export function validateSettingsPatch(patch: Partial<Settings>): Partial<Setting
             throw new SettingsValidationError(key, 'settings: ' + key + ' is on or off, got ' + describe(value) + '.');
         }
         checked[key] = value;
+    }
+
+    const sound: unknown = patch.notificationSound;
+    if (sound !== undefined) {
+        // Only what the app ships: a value outside the list is refused, not stored for a build that lacks the file.
+        if (!SOUND_CHOICE_IDS.some((id) => id === sound)) {
+            throw new SettingsValidationError('notificationSound', 'settings: notificationSound must be one of ' +
+                SOUND_CHOICE_IDS.join(', ') + ', got ' + describe(sound) + '.');
+        }
+        checked.notificationSound = sound as Settings['notificationSound'];
     }
 
     for (const key of NUMERIC_SETTING_KEYS) {

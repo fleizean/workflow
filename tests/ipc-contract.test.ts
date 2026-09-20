@@ -37,7 +37,7 @@ const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema',
     'PomodoroCountsSchema', 'PomodoroIntervalSchema', 'PomodoroSessionSchema', 'PomodoroSnapshotSchema',
-    'PomodoroStatusSchema', 'SettingsSchema', 'SoundIdSchema', 'StreakSchema', 'TimerModeSchema',
+    'PomodoroStatusSchema', 'SettingsSchema', 'SoundChoiceSchema', 'SoundIdSchema', 'StreakSchema', 'TimerModeSchema',
     'TimerSnapshotSchema', 'TimerStatusSchema', 'WeekTotalsSchema', 'WorkSessionSchema'
 ];
 
@@ -165,6 +165,9 @@ function v121SettingSeeds(): Map<string, string> {
     return seeds;
 }
 
+// Settings v2 added on its own: v1.2.1 never seeded them, so a database that came from it reads their defaults.
+const V2_ONLY_SETTINGS = ['soundEnabled', 'notificationSound'];
+
 // [domain key, v1.2.1 seed key, default].
 const SETTING_SEEDS: [keyof Settings, string, Settings[keyof Settings]][] = [
     ['dailyTargetSeconds', 'daily_target', 28800],
@@ -244,7 +247,7 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
         for (const [name, schema] of Object.entries(ipcEvents)) {
             expect(name, 'D-16: event names are domain:action in camelCase').toMatch(/^[a-z]+:[a-z][A-Za-z]*$/);
             expect(defOf(schema, name).type, 'an event payload is an object schema').toBe('object');
-            expect(schema.safeParse({ sound: 'goalReached', extra: 1 }).success,
+            expect(schema.safeParse({ sound: 'goalReached', choice: 'classic', extra: 1 }).success,
                 'an event payload must reject an undeclared key').toBe(false);
         }
     });
@@ -448,18 +451,18 @@ describe('D-19: no date, coercion, catch-all, transform or default anywhere in t
 describe('D-20: DEFAULT_SETTINGS mirrors v1.2.1', () => {
     const seeds = v121SettingSeeds();
 
-    it('parses under SettingsSchema, holds exactly its 10 keys, and is frozen', () => {
+    it('parses under SettingsSchema, holds exactly its 12 keys, and is frozen', () => {
         expect(() => SettingsSchema.parse(DEFAULT_SETTINGS)).not.toThrow();
         const schemaKeys = Object.keys(SettingsSchema.shape).sort();
         expect(Object.keys(DEFAULT_SETTINGS).sort()).toEqual(schemaKeys);
-        expect(schemaKeys).toHaveLength(10);
+        expect(schemaKeys).toHaveLength(12);
         expect(Object.isFrozen(DEFAULT_SETTINGS), 'D-20: a caller could rewrite the shared defaults').toBe(true);
     });
 
     it('accounts for every v1.2.1 seed: mapped to a domain key, never read, or retired with the export', () => {
         const mapped = SETTING_SEEDS.map(([, seed]) => seed);
         expect([...seeds.keys()].sort()).toEqual([...mapped, ...UNREAD_SEEDS, ...RETIRED_SEEDS].sort());
-        expect(SETTING_SEEDS.map(([key]) => key).sort()).toEqual(Object.keys(SettingsSchema.shape).sort());
+        expect([...SETTING_SEEDS.map(([key]) => key), ...V2_ONLY_SETTINGS].sort()).toEqual(Object.keys(SettingsSchema.shape).sort());
     });
 
     it.each(SETTING_SEEDS)('%s defaults to the v1.2.1 seed %s', (key, seed, expected) => {

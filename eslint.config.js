@@ -135,9 +135,8 @@ const SQL_BANS = [
     'CallExpression[callee.property.name=\'exec\'][arguments.0.type=\'Literal\']',
     'CallExpression[callee.property.name=\'exec\'][arguments.0.type=\'TemplateLiteral\']'
 ].map((selector) => ({ selector, message: SQL_MESSAGE }));
-// The two bootstrap files that operate the database file itself: D-32's wal_checkpoint before the close, and
-// BUILD-06's packaged proof, which writes and reads one row in a brand-new injected database.
-const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts', 'src/main/smoke.ts'];
+// The bootstrap file that operates the database file itself: D-32's wal_checkpoint before the close.
+const SQL_BOOTSTRAP_EXEMPT = ['src/main/database-startup.ts'];
 
 /*
  * SPA-11 (trap C3): a class name that exists only after a concatenation is a class name the build never saw.
@@ -442,12 +441,10 @@ const TYPE_IMPORT_RULES = {
 
 module.exports = [
     // .claude/, .gsd/ and .planning/ hold the gitignored GSD runtime, not this repository's source.
-    // tools/baseline/vendor/** holds third-party bytes pinned by SHA-256 in tools/baseline/vendor/index.json.
     {
         ignores: [
             'dist/**', 'build/**', 'node_modules/**', 'out/**',
             'docs/**',
-            'baselines/**', 'tools/baseline/vendor/**',
             '.claude/**', '.gsd/**', '.planning/**'
         ]
     },

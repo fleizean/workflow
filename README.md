@@ -4,11 +4,11 @@
 
 <img src="assets/banner.png" alt="Workflow" />
 
-**Local-first work time tracking for Windows and macOS**
+**Local-first work time tracking for Windows, macOS and Linux**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Electron](https://img.shields.io/badge/Electron-44-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)](https://github.com/fleizean/workflow/releases/latest)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com/fleizean/workflow/releases/latest)
 
 [What it does](#what-it-does) • [Install](#install) • [Your data](#your-data) • [Build from source](#build-from-source)
 
@@ -49,8 +49,19 @@ Download the installer for your platform from the
 | Windows 10/11, ARM64 | `*-arm64-setup.exe` | Built in CI, not runtime-verified |
 | macOS, Intel | `*-x64.dmg` | Built in CI, not runtime-verified |
 | macOS, Apple Silicon | `*-arm64.dmg` | Built in CI, not runtime-verified |
+| Linux (Ubuntu/Debian), x64 | `*-amd64.deb` | Launched from the packaged build on Ubuntu |
+| Linux, x64, any distribution | `*-x86_64.AppImage` | Same build as the `.deb` |
 
 The builds are unsigned and unnotarised. On Windows, SmartScreen will warn you the first time.
+
+### Linux
+
+```bash
+sudo apt install ./workflow-timer-*-amd64.deb        # Ubuntu / Debian: adds Workflow to the app menu
+chmod +x workflow-timer-*-x86_64.AppImage && ./workflow-timer-*-x86_64.AppImage   # any distribution
+```
+
+Your data lives in `~/.config/workflow-timer/`.
 
 ### macOS: "App is damaged" or "Cannot be opened"
 
@@ -136,7 +147,7 @@ setx WORKFLOW_NO_UPDATE_CHECK 1      # Windows, applies to new sessions
 ```
 
 ```bash
-export WORKFLOW_NO_UPDATE_CHECK=1    # macOS
+export WORKFLOW_NO_UPDATE_CHECK=1    # macOS and Linux
 ```
 
 With it set, no network client is created and no request is made.
@@ -169,12 +180,8 @@ folder, so development never touches your real database.
 | `npm run build:unpack` | Build and package into `dist/` without making an installer |
 | `npm run build:win` / `build:win:arm64` | Windows installers |
 | `npm run build:mac` / `build:mac:arm64` | macOS disk images |
-| `npm run smoke:packaged` | Drive the packaged binary and check what it really does |
-| `npm run parity:check` | Compare the v2 screens with the v1.2.1 baselines |
-| `npm run matrix:check` | Lay the app out at five sizes and three display scales |
-| `npm run offline:check` | Render every route with the network off |
-| `npm run upgrade:check` | Migrate a populated v1.2.1 database and read it back through the app |
-| `npm run instance:check` | Launch the packaged binary twice against one profile |
+| `npm run build:linux` / `build:linux:arm64` | Linux AppImage and .deb |
+| `npm run smoke:packaged` | Launch the packaged app: fresh install, v1.2.1 upgrade and a database from a newer version |
 
 Installers land in `dist/`.
 
@@ -192,8 +199,7 @@ workflow/
 │   ├── shared/       types, zod schemas and the IPC contract both processes import
 │   └── assets/       icons and the notification sound, bundled into the app
 ├── tests/            vitest: services, database, and the structural gates
-├── tools/            baseline capture, the packaged smoke, CI assertions
-├── baselines/        v1.2.1 screenshots and computed styles, and the v2 records
+├── tools/            the packaged smoke and CI assertions
 ├── docs/             the GitHub Pages site
 └── electron-builder.yml
 ```

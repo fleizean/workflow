@@ -25,7 +25,7 @@ import { createStatsService } from './services/stats.service';
 import type { StatsService } from './services/stats.service';
 import { createTimerService } from './services/timer.service';
 import type { CountedDay, TimerService, TimerStateStore } from './services/timer.service';
-import type { PomodoroSnapshot, TimerSnapshot, WorkSession } from '@shared/types';
+import type { PomodoroSnapshot, SoundId, TimerSnapshot, WorkSession } from '@shared/types';
 import type {
     CompaniesRepository, PomodoroRepository, RepositoryOptions, SessionsRepository, SettingsRepository, SkippedRowReport
 } from '../lib/db';
@@ -232,6 +232,19 @@ export function createContainer(input: ContainerInput): AppContainer {
     }
 
     /*
+     * The one door every sound goes through, so the Sound switch is honoured in one place: off means nothing is
+     * sent at all, and on carries the user's chosen file. Read at the moment the sound is due rather than cached,
+     * so a change saved a second ago applies to the very next one. Notifications are a separate switch and are not
+     * affected - a silent notification is still a notification.
+     */
+    function playSound(sound: SoundId): void {
+        const { soundEnabled, notificationSound } = settings.get();
+        if (soundEnabled) {
+            ports.sound.play(sound, notificationSound);
+        }
+    }
+
+    /*
      * The day's own total: seconds already written to a row plus the part of the running accumulation counted on that
      * same local day (CORE-08, B7). Scoping the second term is CR-01 - stats.today() is day-scoped and the timer's
      * accumulation is not, so adding them whole credited last night's unsaved hours to this morning.
@@ -267,7 +280,7 @@ export function createContainer(input: ContainerInput): AppContainer {
                 // Both, and from main: v1.2.1 raised the notification from a renderer that is not running while the
                 // window is hidden in the tray, which is the half of B1 the user never saw at all.
                 ports.notifier.notify(GOAL_NOTIFICATION);
-                ports.sound.play('goalReached');
+                playSound('goalReached');
             }
         } catch (error) {
             // A day that cannot be measured must never cost the caller its write, or the clock its tick.
@@ -320,7 +333,7 @@ export function createContainer(input: ContainerInput): AppContainer {
         // not reported as an interval that could not be recorded.
         try {
             ports.notifier.notify(notificationForCompletion(completion.interval));
-            ports.sound.play('pomodoroCompleted');
+            playSound('pomodoroCompleted');
         } catch (error) {
             log('pomodoro: the completed interval was recorded but could not be announced - ' + describeError(error));
         }

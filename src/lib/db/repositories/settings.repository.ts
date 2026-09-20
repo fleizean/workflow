@@ -2,7 +2,7 @@
 // Rows outside DOMAIN_KEYS are read by nobody and written by nobody, so what v1.2.1 stored there stays there.
 
 import { sql } from 'drizzle-orm';
-import { DEFAULT_SETTINGS } from '@shared/constants/settings';
+import { DEFAULT_SETTINGS, SOUND_CHOICE_IDS } from '@shared/constants/settings';
 import { settings } from '../schema';
 import type { DbHandle } from '../handle';
 import type { Settings } from '@shared/types';
@@ -15,6 +15,8 @@ type BooleanKey = {
 const DOMAIN_KEYS: Readonly<Record<keyof Settings, string>> = {
     dailyTargetSeconds: 'daily_target',
     goalNotification: 'goal_notification',
+    soundEnabled: 'sound_enabled',
+    notificationSound: 'notification_sound',
     excludeWeekendsFromStreak: 'exclude_weekends_from_streak',
     pomodoroEnabled: 'pomodoro_enabled',
     pomodoroWorkSeconds: 'pomodoro_work_duration',
@@ -26,7 +28,7 @@ const DOMAIN_KEYS: Readonly<Record<keyof Settings, string>> = {
 };
 
 const BOOLEAN_KEYS: readonly BooleanKey[] = [
-    'goalNotification', 'excludeWeekendsFromStreak', 'pomodoroEnabled', 'pomodoroAutoStartBreaks',
+    'goalNotification', 'soundEnabled', 'excludeWeekendsFromStreak', 'pomodoroEnabled', 'pomodoroAutoStartBreaks',
     'pomodoroAutoStartWork'
 ];
 
@@ -43,6 +45,11 @@ function parseBoolean(stored: string | undefined, fallback: boolean): boolean {
     if (stored === 'true') return true;
     if (stored === 'false') return false;
     return fallback;
+}
+
+/** A sound name this build does not ship - a downgrade, or a hand-edited row - reads as the seed, never as silence. */
+function parseSoundChoice(stored: string | undefined, fallback: Settings['notificationSound']): Settings['notificationSound'] {
+    return SOUND_CHOICE_IDS.find((id) => id === stored) ?? fallback;
 }
 
 function parsePositiveInt(stored: string | undefined, fallback: number): number {
@@ -64,9 +71,11 @@ export function createSettingsRepository(handle: DbHandle): SettingsRepository {
         const read = <K extends keyof Settings>(key: K): Settings[K] => {
             const raw = stored.get(DOMAIN_KEYS[key]);
             const fallback = DEFAULT_SETTINGS[key];
-            const value = isBooleanKey(key)
-                ? parseBoolean(raw, fallback as boolean)
-                : parsePositiveInt(raw, fallback as number);
+            const value = key === 'notificationSound'
+                ? parseSoundChoice(raw, fallback as Settings['notificationSound'])
+                : isBooleanKey(key)
+                    ? parseBoolean(raw, fallback as boolean)
+                    : parsePositiveInt(raw, fallback as number);
             return value as Settings[K];
         };
 
