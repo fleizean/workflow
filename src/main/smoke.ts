@@ -10,7 +10,7 @@ import type * as DatabaseLayerModule from '../lib/db';
 import {
     DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT,
     RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_EXIT_FALLBACK_MS,
-    SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_TICK_WAIT_MS, SMOKE_WATCHDOG_MS, mainConfig
+    SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_WATCHDOG_MS, mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -247,8 +247,17 @@ async function checkSound(win: BrowserWindow, container: AppContainer, lines: st
     try {
         await win.webContents.executeJavaScript(WATCH_AUDIO_SCRIPT);
         container.ports.sound.play(SMOKE_SOUND_ID, 'classic');
-        await new Promise((done) => setTimeout(done, SMOKE_TICK_WAIT_MS));
-        const played = asRecord(await win.webContents.executeJavaScript(READ_AUDIO_SCRIPT));
+        /*
+         * Poll rather than wait a fixed time: on a cold first launch the element can still be loading its metadata
+         * (duration 0, no error) when a fixed wait ends, which reads as an undecodable file. Done when it has a
+         * duration or an error, or when the render timeout passes and the last read is judged as it stands.
+         */
+        const deadline = Date.now() + SMOKE_RENDER_TIMEOUT_MS;
+        let played = asRecord(await win.webContents.executeJavaScript(READ_AUDIO_SCRIPT));
+        while (Date.now() < deadline && !(Number(played.duration) > 0) && Number(played.errorCode) === 0) {
+            await new Promise((done) => setTimeout(done, SMOKE_POLL_INTERVAL_MS));
+            played = asRecord(await win.webContents.executeJavaScript(READ_AUDIO_SCRIPT));
+        }
 
         lines.push('SMOKE_SOUND_PLAYS=' + text(played.count));
         lines.push('SMOKE_SOUND_SRC=' + text(played.src));

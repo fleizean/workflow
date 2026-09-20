@@ -23,8 +23,6 @@ export const SMOKE_EXIT_FALLBACK_MS = 3_000;
  * DEFAULT_TIMEOUT_MS) so a stuck run names its own reason; tests/smoke-harness.test.ts holds the two in that order.
  */
 export const SMOKE_WATCHDOG_MS = 60_000;
-// Long enough for the sound event to cross the bus, the preload and the page before the smoke reads what played.
-export const SMOKE_TICK_WAIT_MS = 1_500;
 
 /** The sound main asks the renderer to play in the smoke; it must resolve to a file inside the app (SPA-10). */
 export const SMOKE_SOUND_ID = 'goalReached';
