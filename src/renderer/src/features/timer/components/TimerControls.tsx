@@ -35,7 +35,8 @@ interface TimerControlsProps {
 
 export default function TimerControls(props: TimerControlsProps): ReactElement {
     return (
-        <div className="flex flex-col gap-3">
+        // mt-auto: whatever height the screen has left goes above the controls, so they rest on the bottom nav.
+        <div className="mt-auto flex flex-col gap-3">
             <div className="flex items-center justify-between gap-4">
                 <button
                     type="button"
