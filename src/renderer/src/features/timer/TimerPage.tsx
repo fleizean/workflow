@@ -218,7 +218,7 @@ export default function TimerPage(): ReactElement {
     };
 
     return (
-        <div className="flex flex-col">
+        <div className="flex min-h-full flex-col">
             <HomeHeader
                 date={selectedDate}
                 mode={mode}
@@ -226,7 +226,8 @@ export default function TimerPage(): ReactElement {
                 onToggleMode={() => { setMode.mutate(mode === 'pomodoro' ? 'work' : 'pomodoro'); }}
             />
 
-            <div className="flex flex-1 flex-col gap-4 px-6 pt-4 pb-32">
+            {/* pb-[5.5rem] clears the fixed bottom nav (about 85px), so the controls rest just above it at any window height. */}
+            <div className="flex flex-1 flex-col gap-4 px-6 pt-4 pb-[5.5rem]">
                 <StatCards
                     dailyTargetSeconds={settings.data?.dailyTargetSeconds ?? DEFAULT_SETTINGS.dailyTargetSeconds}
                     loggedSeconds={loggedSeconds}
