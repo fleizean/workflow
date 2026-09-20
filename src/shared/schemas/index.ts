@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
     MAX_SESSION_DURATION_SECONDS, MAX_SESSION_NAME_LENGTH, MAX_SESSION_NOTE_LENGTH
 } from '@shared/constants/sessions';
+import { SOUND_CHOICE_IDS } from '@shared/constants/settings';
 import { isLocalDate } from '@shared/utils/date';
 import type { LocalDate } from '@shared/utils/date';
 
@@ -56,6 +57,8 @@ export const PomodoroSessionSchema = z.strictObject({
 export const SettingsSchema = z.strictObject({
     dailyTargetSeconds: z.int().positive(),
     goalNotification: z.boolean(),
+    soundEnabled: z.boolean(),
+    notificationSound: z.enum(SOUND_CHOICE_IDS),
     excludeWeekendsFromStreak: z.boolean(),
     pomodoroEnabled: z.boolean(),
     pomodoroWorkSeconds: z.int().positive(),
@@ -69,6 +72,9 @@ export const SettingsSchema = z.strictObject({
 // The sounds main asks the renderer to play. Main owns the decision and the clock; the renderer owns the audio
 // element, as v1.2.1's `new Audio(...)` did.
 export const SoundIdSchema = z.enum(['goalReached', 'pomodoroCompleted']);
+
+// Which of the bundled files to play for it: the user's choice, read by main at the moment the sound is due.
+export const SoundChoiceSchema = z.enum(SOUND_CHOICE_IDS);
 
 // The timer's own vocabulary. Status and mode are separate axes, which is what lets a mode change leave what has
 // already been counted alone (CORE-14, CB-1).

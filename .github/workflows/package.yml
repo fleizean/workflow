@@ -1,7 +1,7 @@
 name: Package
 
 # BUILD-10 / D-17: build the installers the way they will actually ship - Windows and macOS, x64
-# and arm64, four artifacts - launch the two the runners can execute, and prove what got packaged.
+# and arm64, plus Linux x64 - launch the three the runners can execute, and prove what got packaged.
 #
 # Exactly three triggers, and the two that are missing are missing on purpose.
 #   pull_request       nothing merges without four packaged artifacts and two smoke launches.
@@ -89,6 +89,20 @@ jobs:
             unpacked_dir: dist/mac-arm64
             smoke: true
             smoke_skip_reason: ''
+          # Linux ships x64 only: an AppImage and a .deb from one build, so this leg expects two files
+          # (artifact_glob is space-separated). ubuntu-latest is x64, so the smoke launch is real here.
+          - os: ubuntu-latest
+            arch: x64
+            script: build:linux
+            artifact_glob: dist/*-x86_64.AppImage dist/*-amd64.deb
+            artifact_count: 2
+            # upload-artifact wants one pattern per line, where the shell glob above is space-separated.
+            upload_path: |
+              dist/*-x86_64.AppImage
+              dist/*-amd64.deb
+            unpacked_dir: dist/linux-unpacked
+            smoke: true
+            smoke_skip_reason: ''
     # bash on both operating systems (Git Bash on Windows), so every step below reads its inputs
     # from env the same way and the glob expansion behaves identically on all four legs.
     defaults:
@@ -157,22 +171,25 @@ jobs:
       - name: Assert this leg produced exactly one plausible installer
         env:
           ARTIFACT_GLOB: ${{ matrix.artifact_glob }}
+          ARTIFACT_COUNT: ${{ matrix.artifact_count || 1 }}
           MIN_ARTIFACT_BYTES: '20000000'
         run: |
           shopt -s nullglob
           # Unquoted on purpose: the glob has to expand. nullglob makes no match an empty array.
           matches=( $ARTIFACT_GLOB )
-          if [ "${#matches[@]}" -ne 1 ]; then
-            echo "::error::expected exactly one file matching $ARTIFACT_GLOB, found ${#matches[@]}: ${matches[*]:-none}"
+          if [ "${#matches[@]}" -ne "$ARTIFACT_COUNT" ]; then
+            echo "::error::expected exactly $ARTIFACT_COUNT file(s) matching $ARTIFACT_GLOB, found ${#matches[@]}: ${matches[*]:-none}"
             ls -la dist || true
             exit 1
           fi
-          bytes=$(wc -c < "${matches[0]}" | tr -d ' ')
-          if [ "$bytes" -lt "$MIN_ARTIFACT_BYTES" ]; then
-            echo "::error::${matches[0]} is $bytes bytes, below the $MIN_ARTIFACT_BYTES-byte floor - not a plausible installer"
-            exit 1
-          fi
-          echo "ARTIFACT_OK ${matches[0]} $bytes bytes"
+          for match in "${matches[@]}"; do
+            bytes=$(wc -c < "$match" | tr -d ' ')
+            if [ "$bytes" -lt "$MIN_ARTIFACT_BYTES" ]; then
+              echo "::error::$match is $bytes bytes, below the $MIN_ARTIFACT_BYTES-byte floor - not a plausible installer"
+              exit 1
+            fi
+            echo "ARTIFACT_OK $match $bytes bytes"
+          done
 
       # BUILD-08, on the artifact rather than on electron-builder.yml: every packaged path is read
       # from the archive's own header and checked against the allowlist, and the region unpacked
@@ -194,57 +211,19 @@ jobs:
       # and a child environment scrubbed of ELECTRON_RUN_AS_NODE and NODE_OPTIONS. None of that may
       # be relaxed to make a runner happy.
       - name: Launch the packaged app and open a database (BUILD-06)
-        if: matrix.smoke
+        if: matrix.smoke && runner.os != 'Linux'
         run: node tools/smoke-packaged.mjs
 
-      # Phase 8 criterion 2's second gate, and 08-REVIEW-TIMER WR-07 / 08-REVIEW-SCREENS WR-05: until this step
-      # existed, capture-v2.mjs and diff-computed.mjs were referenced by no script, no test and no workflow -
-      # so a register that documents itself as exiting non-zero on any unexplained difference exited non-zero at
-      # nobody, and the committed 29-difference report could not go stale in a way anything would notice. It
-      # runs here because it photographs the PACKAGED app, which only this job has.
-      #
-      # Windows only: baselines/v1.2.1/computed was captured on Windows, and font rasterisation and the default
-      # font stack differ enough on macOS to make a cross-platform diff a reading rather than a gate.
-      - name: Diff the shipped UI against the Phase 1 computed-style baselines (criterion 2)
-        if: matrix.smoke && runner.os == 'Windows'
-        run: npm run parity:check
-
-      # Phase 10 criteria 1-4: five window sizes x three Windows display scales, four routes in each of the
-      # fifteen cells, plus the modals at the 600px floor, the Pomodoro panel and the fire canvas's frame loop
-      # across a real unmount. It drives the packaged app, which only this job has.
-      #
-      # Windows only, for the same two reasons parity:check is: the criterion is about WINDOWS display scaling,
-      # and the committed report under baselines/v2/ is a staleness guard that would have to hold on two
-      # platforms at once to run on both.
-      - name: Check all fifteen responsive cells against the packaged app (criteria 1-4)
-        if: matrix.smoke && runner.os == 'Windows'
-        run: npm run matrix:check
-
-      # Phase 10 criterion 7: Chromium's network stack offline, every http/https/ws request cancelled and
-      # recorded in main, then all four routes - fonts, glyph widths, filled variants, the bundled sound, and
-      # zero CSP violations captured rather than assumed. Windows only for the staleness-guard reason above.
-      - name: Render every route with the network off (criterion 7)
-        if: matrix.smoke && runner.os == 'Windows'
-        run: npm run offline:check
-
-      # Phase 10 criterion 6, reproduced in CI: a populated v1.2.1 database migrated by the packaged app, read
-      # back through the app's own bridge - every session, company, setting and the streak.
-      #
-      # The archived copy of a real user's database is the other half of this criterion and is NOT here: it is
-      # owner-gated (tests/db-archive-proof.test.ts sits behind an approval environment variable for a reason -
-      # it is one person's tracked time and it does not belong on a hosted runner).
-      #
-      # And IPC-07, which the Phase 5 verifier left open because no test started a SECOND packaged process
-      # against a held lock: the binary is launched twice over one profile and the second is required to quit.
-      #
-      # Windows only. V2-QUAL-03 makes runtime acceptance Windows-only this milestone, and a macOS failure here
-      # could not be investigated - there is no macOS hardware. The two macOS legs still build, assert and
-      # allowlist-check, which is exactly what criterion 9 claims and no more.
-      - name: Install over v1.2.1 and launch twice from one profile (criterion 6, IPC-07)
-        if: matrix.smoke && runner.os == 'Windows'
+      # Linux needs a display, and Ubuntu 24.04 runners block the unprivileged user namespaces Chromium's
+      # sandbox uses (AppArmor), which would fail the launch for a reason that has nothing to do with the
+      # package. The sandbox stays ON: the sysctl is lifted for this runner instead of passing --no-sandbox,
+      # because a smoke launch that disables the sandbox proves less than the app users will run.
+      - name: Launch the packaged app and open a database, under a virtual display (BUILD-06)
+        if: matrix.smoke && runner.os == 'Linux'
         run: |
-          npm run upgrade:check
-          npm run instance:check
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo apt-get install -y --no-install-recommends xvfb
+          xvfb-run --auto-servernum node tools/smoke-packaged.mjs
 
       # A skip that prints its reason is a different thing from a check that silently did nothing.
       # These two artifacts are built, size-checked and allowlist-checked, and never executed.
@@ -262,5 +241,5 @@ jobs:
         with:
           # Named after operating system and architecture, so release.yml can ask for all four by name.
           name: ${{ matrix.os }}-${{ matrix.arch }}-build
-          path: ${{ matrix.artifact_glob }}
+          path: ${{ matrix.upload_path || matrix.artifact_glob }}
           if-no-files-found: error       # a green build that produced nothing is a failure

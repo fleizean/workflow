@@ -21,7 +21,7 @@ interface Sent {
     payload: unknown;
 }
 
-const SOUND_PAYLOAD = { sound: 'goalReached' } as const;
+const SOUND_PAYLOAD = { sound: 'goalReached', choice: 'classic' } as const;
 
 function target(sent: Sent[], options: { destroyed?: boolean; throws?: boolean } = {}): RendererTarget {
     return {
@@ -104,7 +104,7 @@ describe('the sound port asks the renderer, because only a document can play aud
     it('emits app:playSound with a payload the declared event schema accepts', () => {
         const sent: Sent[] = [];
         const bus = createElectronRendererBus(ignoreLog, () => [target(sent)]);
-        createRendererSound(bus).play('goalReached');
+        createRendererSound(bus).play('goalReached', 'classic');
         expect(sent).toHaveLength(1);
         expect(sent[0]?.channel).toBe('app:playSound');
         expect(ipcEvents['app:playSound'].safeParse(sent[0]?.payload).success).toBe(true);
@@ -202,7 +202,7 @@ describe('createElectronPorts builds the whole port surface once', () => {
     it('routes the sound port through a bus rather than through a window of its own', () => {
         const sent: Sent[] = [];
         const bus = createElectronRendererBus(ignoreLog, () => [target(sent)]);
-        createRendererSound(bus).play('goalReached');
+        createRendererSound(bus).play('goalReached', 'classic');
         expect(sent.map((s) => s.channel)).toEqual(['app:playSound']);
     });
 });

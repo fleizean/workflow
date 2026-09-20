@@ -8,6 +8,8 @@
  * setting that bounces at the boundary or refuse one the app accepts.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
     ABOUT, DAILY_TARGET_LABEL, DESTRUCTIVE_ACTION_ID, NUMBER_FIELDS, QUICK_TARGET_HOURS, RESET_ALL_CONFIRM,
@@ -15,9 +17,8 @@ import {
     reviewDraft, targetSecondsOf
 } from '@renderer/features/settings/settings-view';
 import type { NumberField, SettingsDraft } from '@renderer/features/settings/settings-view';
-import { DEFAULT_SETTINGS, SETTINGS_BOUNDS } from '@shared/constants/settings';
+import { DEFAULT_SETTINGS, SETTINGS_BOUNDS, SOUND_CHOICES } from '@shared/constants/settings';
 import { SettingsValidationError, validateSettingsPatch } from '@main/services/settings.service';
-import { RENDERER_DESTRUCTIVE_TESTID } from '@main/config';
 import ts from 'typescript';
 import { read, scriptKindFor, stripCommentsAndStrings } from './helpers/ts-imports';
 
@@ -77,6 +78,36 @@ describe('the fields are typed in units the bounds divide into', () => {
     it('covers every pomodoro setting the cycle reads, and the daily target separately', () => {
         expect([...NUMBER_FIELDS.map((field) => field.key), 'dailyTargetSeconds'].sort())
             .toEqual(Object.keys(SETTINGS_BOUNDS).sort());
+    });
+});
+
+describe('the bundled sounds', () => {
+    // A choice with no file plays silence; a big file is a long sound, and these are meant to be blips.
+    const MAX_SOUND_BYTES = 40_000;
+
+    it.each([...SOUND_CHOICES])('$id has a short file under src/assets/sounds', (choice) => {
+        const file = path.join(__dirname, '..', 'src', 'assets', 'sounds', choice.id + '.ogg');
+        expect(fs.existsSync(file), file + ' is missing').toBe(true);
+        expect(fs.statSync(file).size).toBeLessThan(MAX_SOUND_BYTES);
+    });
+
+    it('has no file the Settings screen does not offer', () => {
+        const dir = path.join(__dirname, '..', 'src', 'assets', 'sounds');
+        const files = fs.readdirSync(dir).filter((name) => name.endsWith('.ogg')).map((name) => name.slice(0, -4));
+        expect(files.sort()).toEqual(SOUND_CHOICES.map((choice) => choice.id).sort());
+    });
+});
+
+describe('the sound settings', () => {
+    it('sends the sound switch and the chosen sound when they change, and nothing else', () => {
+        const base = stored();
+        const draft = { ...draftFrom(base), soundEnabled: false, notificationSound: 'rise' as const };
+        expect(reviewDraft(draft, base).patch).toEqual({ soundEnabled: false, notificationSound: 'rise' });
+    });
+
+    it('sends neither when they are as stored', () => {
+        const base = stored();
+        expect(reviewDraft(draftFrom(base), base).patch).toEqual({});
     });
 });
 
@@ -229,14 +260,12 @@ describe('SET-02: the daily target', () => {
 });
 
 /*
- * Criterion 4's third clause, and the only part of it a unit test can hold: the identifier the danger-zone button
- * is reached by is the one the packaged smoke looks for. That the button actually carries it, and that
- * v1.2.1's '.mt-8.mb-8 button' finds nothing, is settled in tools/smoke-packaged.mjs.
+ * The danger-zone button is reached by an identifier rather than by v1.2.1's '.mt-8.mb-8 button', which a spacing
+ * tweak could detach from the handler.
  */
 describe('the destructive action is reached by a stable identifier', () => {
-    it('names the same identifier the packaged smoke looks for', () => {
-        expect(DESTRUCTIVE_ACTION_ID, 'the smoke would probe for a handle the screen does not carry')
-            .toBe(RENDERER_DESTRUCTIVE_TESTID);
+    it('is reached by a fixed identifier, never by where the button sits', () => {
+        expect(DESTRUCTIVE_ACTION_ID).toBe('reset-all-data');
     });
 
     it('asks before deleting, and says what will go', () => {

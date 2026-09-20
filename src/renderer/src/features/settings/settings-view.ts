@@ -9,7 +9,7 @@
 
 import { SETTINGS_BOUNDS } from '@shared/constants/settings';
 import type { NumericSettingKey } from '@shared/constants/settings';
-import type { Settings } from '@shared/types';
+import type { Settings, SoundChoice } from '@shared/types';
 
 /** The identifier the danger-zone button is reached by. See the note on DANGER_NOTE below. */
 export const DESTRUCTIVE_ACTION_ID = 'reset-all-data';
@@ -92,6 +92,8 @@ export interface SettingsDraft {
     readonly dailyTargetSeconds: number;
     readonly numbers: Readonly<Record<NumberFieldKey, string>>;
     readonly goalNotification: boolean;
+    readonly soundEnabled: boolean;
+    readonly notificationSound: SoundChoice;
     readonly excludeWeekendsFromStreak: boolean;
     readonly pomodoroAutoStartBreaks: boolean;
     readonly pomodoroAutoStartWork: boolean;
@@ -106,6 +108,8 @@ export function draftFrom(settings: Settings): SettingsDraft {
         dailyTargetSeconds: settings.dailyTargetSeconds,
         numbers,
         goalNotification: settings.goalNotification,
+        soundEnabled: settings.soundEnabled,
+        notificationSound: settings.notificationSound,
         excludeWeekendsFromStreak: settings.excludeWeekendsFromStreak,
         pomodoroAutoStartBreaks: settings.pomodoroAutoStartBreaks,
         pomodoroAutoStartWork: settings.pomodoroAutoStartWork
@@ -131,7 +135,7 @@ const WHOLE_NUMBER = /^\d+$/;
  */
 export function reviewDraft(draft: SettingsDraft, stored: Settings): DraftReview {
     const errors: Partial<Record<NumericSettingKey, string>> = {};
-    const patch: Record<string, number | boolean> = {};
+    const patch: Record<string, number | boolean | string> = {};
     /*
      * A field is compared as TEXT against what the stored value reads as, not as a number: 90 stored seconds show as
      * 2 minutes, and writing 120 back over a value nobody touched is the silent edit the service refuses to make.
@@ -168,7 +172,11 @@ export function reviewDraft(draft: SettingsDraft, stored: Settings): DraftReview
         patch.dailyTargetSeconds = target;
     }
 
-    for (const key of ['goalNotification', 'excludeWeekendsFromStreak', 'pomodoroAutoStartBreaks',
+    if (draft.notificationSound !== stored.notificationSound) {
+        patch.notificationSound = draft.notificationSound;
+    }
+
+    for (const key of ['goalNotification', 'soundEnabled', 'excludeWeekendsFromStreak', 'pomodoroAutoStartBreaks',
         'pomodoroAutoStartWork'] as const) {
         if (draft[key] !== stored[key]) {
             patch[key] = draft[key];

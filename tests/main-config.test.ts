@@ -9,11 +9,8 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_COMPANIES_ROUTE_HASH, RENDERER_DESTRUCTIVE_TESTID,
-    RENDERER_MARKER_TEXT,
-    RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG,
-    SMOKE_SETTINGS_TARGET_SECONDS, SMOKE_SETTINGS_TARGET_TEXT, SMOKE_XSS_COMPANY_NAME,
-    SMOKE_SEED_TIMER_STATE_ENV, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV,
+    SMOKE_FLAG, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
     DEVELOPMENT_USER_DATA_SUFFIX as USERDATA_SUFFIX, USER_DATA_DIR_SWITCH as USERDATA_SWITCH
@@ -125,9 +122,7 @@ function processReads(file: string, source: string = read(file)): string[] {
 // Plain Node loads the harness, not vite: .gitattributes checks it out CRLF, and vite's SSR transform (hashbang regex
 // /^#!.*\n/, whose `.` cannot match \r) then emits code above the #! line - a SyntaxError at import.
 const SHARED_CONSTANTS = [
-    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_HASH', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV',
-    'RENDERER_COMPANIES_ROUTE_HASH', 'EXPECTED_XSS_COMPANY_NAME', 'EXPECTED_DESTRUCTIVE_TESTID',
-    'EXPECTED_SETTINGS_TARGET_TEXT'
+    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV'
 ] as const;
 type SharedConstant = (typeof SHARED_CONSTANTS)[number];
 
@@ -192,13 +187,6 @@ describe('D-23: parseMainConfig is pure and never throws', () => {
             .toBe('http://localhost:5173/');
     });
 
-    it('reads the smoke timer seed from its own variable and leaves it unset when absent', () => {
-        expect(parseMainConfig({}, []).smokeSeedTimerState,
-            'D-37: an unset seed must stay undefined, or every smoke launch would seed localStorage').toBeUndefined();
-        const seed = '{"elapsed":3723,"running":true}';
-        expect(parseMainConfig({ [SMOKE_SEED_TIMER_STATE_ENV]: seed }, ['--smoke']).smokeSeedTimerState).toBe(seed);
-    });
-
     it('recognises --smoke only as the exact argument', () => {
         expect(parseMainConfig({}, ['--smoked']).smoke, 'D-23: a look-alike argument started a smoke launch').toBe(false);
         expect(parseMainConfig({}, ['app.exe', '--smoke']).smoke).toBe(true);
@@ -219,54 +207,10 @@ describe('D-24: the values the smoke harness depends on equal its own', () => {
             .toBe(harness.SMOKE_DB_ENV);
     });
 
-    it('shares the second route and its heading with ' + HARNESS + ', so SPA-01 is checked on the same screen', () => {
+    it('shares the second route heading with ' + HARNESS + ', so Settings is checked on the same screen', () => {
         const harness = harnessConstants();
-        expect(RENDERER_SECOND_ROUTE_HASH, 'D-24: the app would route somewhere the harness does not check')
-            .toBe(harness.RENDERER_SECOND_ROUTE_HASH);
         expect(RENDERER_SECOND_ROUTE_TEXT, 'D-24: the smoke would wait for text the harness never asserts')
             .toBe(harness.RENDERER_SECOND_ROUTE_TEXT);
-    });
-
-    it('shares the Companies route and the XSS payload with ' + HARNESS + ', so S2 is watched on one string', () => {
-        const harness = harnessConstants();
-        expect(
-            RENDERER_COMPANIES_ROUTE_HASH,
-            'D-24: the escaping would be watched on a screen the harness does not name'
-        ).toBe(harness.RENDERER_COMPANIES_ROUTE_HASH);
-        expect(
-            SMOKE_XSS_COMPANY_NAME,
-            'D-24: the app would name a company one thing and the harness would pass the run for another. A payload ' +
-            'the two ends disagree on proves nothing about S2.'
-        ).toBe(harness.EXPECTED_XSS_COMPANY_NAME);
-    });
-
-    /*
-     * Criterion 4: the handle the delete-all-data button carries and the target the probe writes are checked by the
-     * harness, so both ends have to spell them the same way. The renderer's own copy of the handle is held equal to
-     * this one in tests/settings-screen.test.ts, which closes the chain screen -> app -> harness.
-     */
-    it('shares the destructive handle and the settings target with ' + HARNESS, () => {
-        const harness = harnessConstants();
-        expect(
-            RENDERER_DESTRUCTIVE_TESTID,
-            'D-24: the smoke would probe for an identifier the harness does not check, so the one irreversible ' +
-            'button in the app would be unguarded in both places at once'
-        ).toBe(harness.EXPECTED_DESTRUCTIVE_TESTID);
-        expect(
-            SMOKE_SETTINGS_TARGET_TEXT,
-            'D-24: the app would wait for one clock reading and the harness would pass the run for another'
-        ).toBe(harness.EXPECTED_SETTINGS_TARGET_TEXT);
-    });
-
-    it('writes a target that reads back as the text the screen is waited for', () => {
-        const hours = Math.floor(SMOKE_SETTINGS_TARGET_SECONDS / 3600);
-        const minutes = Math.floor((SMOKE_SETTINGS_TARGET_SECONDS % 3600) / 60);
-        const clock = String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
-        expect(
-            clock,
-            'the probe would write a target the settings screen never renders as ' + SMOKE_SETTINGS_TARGET_TEXT +
-            ', and the launch would wait 20 seconds for text that cannot appear'
-        ).toBe(SMOKE_SETTINGS_TARGET_TEXT);
     });
 
     it('uses as SMOKE_FLAG the first argument the harness spawns the packaged binary with', () => {

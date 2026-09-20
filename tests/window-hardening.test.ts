@@ -10,8 +10,7 @@ import { findAll, read, scriptKindFor } from './helpers/ts-imports';
 // executeJavaScript against it, so a regression there hands Node and fs to whatever that origin contains.
 const WINDOW_SOURCES: readonly string[] = [
     'src/main/window.ts',
-    'src/main/legacy-storage.ts',
-    'src/main/smoke.ts'
+    'src/main/legacy-storage.ts'
 ];
 
 const REQUIRED: Readonly<Record<string, boolean>> = {
@@ -64,7 +63,7 @@ const literals = WINDOW_SOURCES.flatMap(windowLiterals);
 
 describe('WR-06/T-02-04: every window this app opens is sandboxed, isolated and Node-free', () => {
     it('finds a BrowserWindow in each source that opens one, so the checks below are not vacuous', () => {
-        expect(literals.length, 'no BrowserWindow literal was found at all').toBeGreaterThanOrEqual(3);
+        expect(literals.length, 'no BrowserWindow literal was found at all').toBeGreaterThanOrEqual(2);
         for (const file of WINDOW_SOURCES) {
             expect(literals.filter((literal) => literal.file === file).length, file + ' constructs no BrowserWindow')
                 .toBeGreaterThan(0);

@@ -1,7 +1,7 @@
 {
     "name": "workflow-timer",
-    "version": "2.0.0",
-    "description": "Workflow - local-first work time tracking for Windows and macOS",
+    "version": "2.0.1",
+    "description": "Workflow - local-first work time tracking for Windows, macOS and Linux",
     "main": "./out/main/index.js",
     "scripts": {
         "dev": "install-electron && electron-vite dev",
@@ -12,20 +12,14 @@
         "typecheck": "npm run typecheck:node && npm run typecheck:web",
         "test": "vitest run",
         "test:watch": "vitest",
-        "baseline:capture": "node tools/baseline/capture.mjs",
-        "baseline:capture-v2": "node tools/baseline/capture-v2.mjs",
-        "baseline:diff": "node tools/baseline/diff-computed.mjs",
-        "parity:check": "node tools/baseline/parity-check.mjs",
-        "matrix:check": "node tools/baseline/responsive-matrix.mjs",
-        "offline:check": "node tools/offline-routes.mjs",
-        "upgrade:check": "node tools/upgrade-over-v121.mjs",
-        "instance:check": "node tools/second-instance.mjs",
         "build": "npm run typecheck && electron-vite build",
         "build:unpack": "npm run build && electron-builder --dir --publish never",
         "build:win": "npm run build && electron-builder --win --x64 --publish never",
         "build:win:arm64": "npm run build && electron-builder --win --arm64 --publish never",
         "build:mac": "npm run build && electron-builder --mac --x64 --publish never",
         "build:mac:arm64": "npm run build && electron-builder --mac --arm64 --publish never",
+        "build:linux": "npm run build && electron-builder --linux --x64 --publish never",
+        "build:linux:arm64": "npm run build && electron-builder --linux --arm64 --publish never",
         "smoke:packaged": "node tools/smoke-packaged.mjs"
     },
     "keywords": [

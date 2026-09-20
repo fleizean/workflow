@@ -74,6 +74,7 @@ const NON_SOURCE: Record<string, string> = {
     '.ico': 'binary asset: icon',
     '.woff2': 'binary asset: font',
     '.mp3': 'binary asset: sound',
+    '.ogg': 'binary asset: sound',
     '': 'no extension: LICENSE and dotfile configuration (.gitignore, .gitattributes, .nvmrc)'
 };
 
@@ -193,10 +194,6 @@ const SQL_EXEMPTIONS: Record<string, { expires: string; why: string }> = {
     'src/main/database-startup.ts': {
         expires: 'permanent',
         why: 'D-32 folds the -wal back into the database with a pragma before the connection closes'
-    },
-    'src/main/smoke.ts': {
-        expires: 'permanent',
-        why: 'BUILD-06 writes and reads one row in a brand-new injected database to prove the packaged driver works'
     }
 };
 const isSqlExempt = (file: string): boolean => isUnder(file, SQL_HOME) || Object.hasOwn(SQL_EXEMPTIONS, file);
@@ -543,7 +540,7 @@ describe('the rules the rewrite must not lose', () => {
      * Per-file coverage alone could pass with the custody rules present but emptied - an option list that bans
      * nothing still resolves at error. So the representative files are checked for what the rules actually ban.
      */
-    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/baseline/archive-real-db.mjs', 'eslint.config.js'];
+    const REPRESENTATIVE = ['src/main/index.ts', 'src/renderer/src/app/App.tsx', 'tools/smoke-packaged.mjs', 'eslint.config.js'];
 
     it.each(REPRESENTATIVE)('CUSTODY-02 and CUSTODY-03 resolve, with their bans intact, for %s', async (file) => {
         const properties = await ruleEntry(file, 'no-restricted-properties');

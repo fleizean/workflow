@@ -105,6 +105,8 @@ interface DrivenPorts {
     readonly ports: AppPorts;
     readonly notifications: NotificationRequest[];
     readonly sounds: SoundId[];
+    /** The file each sound was asked to play with, parallel to `sounds`. */
+    readonly choices: string[];
     readonly events: IpcEventChannel[];
     /** Advances the monotonic and wall clocks together and runs every scheduled repeat once per whole second. */
     tick(seconds: number): void;
@@ -119,6 +121,7 @@ interface DrivenPorts {
 function drivenPorts(wallOriginMs: number = WALL_ORIGIN_MS): DrivenPorts {
     const notifications: NotificationRequest[] = [];
     const sounds: SoundId[] = [];
+    const choices: string[] = [];
     const events: IpcEventChannel[] = [];
     const repeats: (() => void)[] = [];
     let monotonic = 0;
@@ -126,7 +129,7 @@ function drivenPorts(wallOriginMs: number = WALL_ORIGIN_MS): DrivenPorts {
     const ports: AppPorts = {
         clock: { now: () => wallOriginMs + monotonic, monotonicNow: () => monotonic },
         notifier: { notify: (request) => notifications.push(request) },
-        sound: { play: (sound) => sounds.push(sound) },
+        sound: { play: (sound, choice) => { sounds.push(sound); choices.push(choice); } },
         bus: { emit: (channel) => events.push(channel) },
         scheduler: {
             every: (_intervalMs, run) => {
@@ -141,6 +144,7 @@ function drivenPorts(wallOriginMs: number = WALL_ORIGIN_MS): DrivenPorts {
         ports,
         notifications,
         sounds,
+        choices,
         events,
         tick(seconds) {
             this.tickEvery(1000, seconds);
@@ -672,6 +676,30 @@ describe('the services the container composes', () => {
         driver.tick(120);
         expect(driver.notifications, 'B1: the notification fired more than once in a day').toHaveLength(1);
         expect(driver.sounds).toHaveLength(1);
+    });
+
+    it('plays the sound the user chose', async () => {
+        const { container, driver } = await driven(makeCleanFixture());
+        const alreadyToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({
+            dailyTargetSeconds: alreadyToday + 60, goalNotification: true, notificationSound: 'glass'
+        });
+        container.services.timer.start();
+        driver.tick(60);
+        expect(driver.sounds).toEqual(['goalReached']);
+        expect(driver.choices, 'the chosen file did not reach the renderer').toEqual(['glass']);
+    });
+
+    it('plays no sound with the switch off, and still raises the notification', async () => {
+        const { container, driver } = await driven(makeCleanFixture());
+        const alreadyToday = container.services.stats.today().totalSeconds;
+        container.services.settings.update({
+            dailyTargetSeconds: alreadyToday + 60, goalNotification: true, soundEnabled: false
+        });
+        container.services.timer.start();
+        driver.tick(60);
+        expect(driver.notifications, 'switching the sound off swallowed the notification').toEqual([GOAL_NOTIFICATION]);
+        expect(driver.sounds, 'a sound played with the switch off').toEqual([]);
     });
 
     /*

@@ -76,3 +76,17 @@ mac:
 
 dmg:
   artifactName: '${name}-${version}-${arch}.${ext}'
+
+linux:
+  # AppImage runs anywhere with no install step; deb is the native Ubuntu/Debian package with a menu
+  # entry and `apt install ./file.deb` support. Both come from one build of the unpacked app.
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: Utility
+  # A .deb refuses to build without a maintainer carrying an email, and package.json's author has none.
+  # This is deb control metadata only - it does not touch the manifest inside the app (see the header).
+  maintainer: Workflow Team <fleizean@users.noreply.github.com>
+  # Unsigned, like the other platforms; nothing here needs a signing identity.
+  artifactName: '${name}-${version}-${arch}.${ext}'

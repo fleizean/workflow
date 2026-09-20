@@ -83,17 +83,24 @@ jobs:
           name: macos-latest-arm64-build
           path: dist/
 
+      # Linux ships as an AppImage and a .deb from one x64 leg, which package.yml uploads as one artifact.
+      - name: Download Linux x64 packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ubuntu-latest-x64-build
+          path: dist/
+
       # BUILD-10, enforced at the moment it matters most. fail_on_unmatched_files below catches an
       # empty glob, but it cannot tell that three of four architectures showed up - dist/* matches
       # happily either way. So count what arrived: exactly one non-empty file per expected
       # installer, and nothing else in dist/, because every file in dist/ is attached to the release.
       # The suffixes follow the artifactName templates in electron-builder.yml.
-      - name: Refuse to publish unless all four installers arrived
+      - name: Refuse to publish unless every installer arrived
         shell: bash
         run: |
           shopt -s nullglob
           failed=0
-          for suffix in x64-setup.exe arm64-setup.exe x64.dmg arm64.dmg; do
+          for suffix in x64-setup.exe arm64-setup.exe x64.dmg arm64.dmg x86_64.AppImage amd64.deb; do
             matches=( dist/*-"$suffix" )
             if [ "${#matches[@]}" -ne 1 ]; then
               echo "::error::expected exactly one installer ending in -$suffix, found ${#matches[@]}: ${matches[*]:-none}"
@@ -106,8 +113,8 @@ jobs:
             fi
           done
           everything=( dist/* )
-          if [ "${#everything[@]}" -ne 4 ]; then
-            echo "::error::dist/ holds ${#everything[@]} entries, expected exactly the four installers - every file in dist/ is attached to the release"
+          if [ "${#everything[@]}" -ne 6 ]; then
+            echo "::error::dist/ holds ${#everything[@]} entries, expected exactly the six installers - every file in dist/ is attached to the release"
             ls -la dist/ || true
             failed=1
           fi
@@ -115,7 +122,7 @@ jobs:
             echo "::error::Refusing to create the release: it would ship without every platform and architecture (BUILD-10)."
             exit 1
           fi
-          echo "FOUR_ARTIFACTS_OK"
+          echo "ALL_ARTIFACTS_OK"
 
       # A draft release does not create its tag until a person publishes it - and a tag pushed by a
       # person starts this workflow again, which would rebuild for twenty minutes and then set the

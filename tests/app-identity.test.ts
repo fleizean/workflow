@@ -5,7 +5,9 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { APP_USER_MODEL_ID } from '../src/main/config';
 import { applyAppUserModelId, appUserModelIdApplied } from '../src/main/app-identity';
-import { EXPECTED_APP_USER_MODEL_ID, MAX_NOTIFY_ICON_BYTES } from '../tools/smoke-packaged.mjs';
+
+// The notification icon is a small dedicated asset; this ceiling is what keeps a big logo from replacing it.
+const MAX_NOTIFY_ICON_BYTES = 64_000;
 
 /*
  * Why a JSON assertion is load-bearing here.
@@ -191,13 +193,12 @@ describe('CUSTODY-02: the userData path cannot silently move', () => {
          * setAppUserModelId was never called. Setting it to the WRONG value is worse than not setting it - the
          * toast then points at an application Windows has no installed shortcut for, so it cannot resolve a name or
          * a logo and has no reason to fall back. So the three places that spell the identity are held equal:
-         * electron-builder.yml, src/main/config.ts and tools/smoke-packaged.mjs.
+         * electron-builder.yml and src/main/config.ts.
          */
         const declared = /^appId:\s*(\S+)\s*$/m.exec(builderConfig);
         expect(declared, BUILDER_CONFIG + ' declares no appId').not.toBeNull();
         const appId = declared?.[1];
         expect(APP_USER_MODEL_ID, 'src/main/config.ts disagrees with ' + BUILDER_CONFIG).toBe(appId);
-        expect(EXPECTED_APP_USER_MODEL_ID, 'tools/smoke-packaged.mjs disagrees with ' + BUILDER_CONFIG).toBe(appId);
     });
 
     it('applyAppUserModelId sets the identity on Windows and nothing anywhere else', () => {

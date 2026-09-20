@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SOUND_CHOICES } from '../src/shared/constants/settings';
 
 /*
  * Why this file reads the BUILD OUTPUT and not the source (BUILD-07, T-02-12, T-02-13).
@@ -279,9 +280,10 @@ describe('BUILD-07: the BUILT renderer carries its Content-Security-Policy and l
     });
 
     it('SPA-10: the notification sound is emitted into the bundle and referenced from it', () => {
-        const sounds = emittedWith('.mp3');
-        expect(sounds.length, 'no .mp3 under ' + BUILT_DIR + ' - the notification sound is not in the bundle')
-            .toBeGreaterThan(0);
+        const sounds = emittedWith('.ogg');
+        // Every sound the Settings screen offers has to be a file in the bundle, or picking it plays silence.
+        expect(sounds.length, 'a sound the Settings screen offers is not in the bundle under ' + BUILT_DIR)
+            .toBeGreaterThanOrEqual(SOUND_CHOICES.length);
         const names = sounds.map((file) => path.posix.basename(file));
         const referenced = emittedWith('.js').some((file) => {
             const code = read(file);
