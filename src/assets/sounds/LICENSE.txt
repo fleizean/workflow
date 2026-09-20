@@ -1,24 +1,11 @@
-All sounds here are from Kenney's CC0 packs 'Interface Sounds' and 'Digital Audio' (kenney.nl), re-encoded and level-matched. CC0: no attribution required.
+Notification sounds
+===================
 
-	
+All sounds in this folder come from Kenney's CC0 packs "Interface Sounds" and
+"Digital Audio" (https://kenney.nl), re-encoded to Ogg Vorbis and level-matched.
 
-	Interface Sounds (1.0)
+License: Creative Commons Zero (CC0 1.0)
+https://creativecommons.org/publicdomain/zero/1.0/
 
-	Created/distributed by Kenney (www.kenney.nl)
-	Creation date: 11-02-2020
-
-			------------------------------
-
-	License: (Creative Commons Zero, CC0)
-	http://creativecommons.org/publicdomain/zero/1.0/
-
-	This content is free to use in personal, educational and commercial projects.
-	Support us by crediting Kenney or www.kenney.nl (this is not mandatory)
-
-			------------------------------
-
-	Donate:   http://support.kenney.nl
-	Patreon:  http://patreon.com/kenney/
-
-	Follow on Twitter for updates:
-	http://twitter.com/KenneyNL
+The content is free to use in personal, educational and commercial projects.
+Crediting Kenney (www.kenney.nl) is appreciated but not required.
