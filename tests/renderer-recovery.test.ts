@@ -16,7 +16,7 @@
  * refetchInterval, so nothing else ever asks main what the clock says.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MutationObserver, QueryObserver } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
 import { createDispatch } from '@main/ipc/dispatch';
@@ -35,6 +35,11 @@ import { API_BRIDGE_KEY } from '@shared/constants/bridge';
 import { ipcWrites } from '@shared/ipc/contract';
 import type { DataDomain, IpcChannel, IpcHandlers, IpcResult, TimerSnapshot } from '@shared/types';
 import { read } from './helpers/ts-imports';
+
+// CORE-03: the service under here must load with electron refusing to load, and so must this suite.
+vi.mock('electron', () => {
+    throw new Error('electron was imported by a module that must load without it');
+});
 
 const TICK_MS = 1000;
 const EIGHT_HOURS_MS = 8 * 3_600_000;
