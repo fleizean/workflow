@@ -9,8 +9,8 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-    anchorPanel, decidePanelBlur, decidePanelClick, displayNearestPoint, fallbackTrayBounds, isPanelVisible,
-    trayEdgeOf
+    anchorPanel, decidePanelBlur, decidePanelClick, displayNearestPoint, fallbackTrayBounds, isInsideWorkArea,
+    isPanelVisible, trayEdgeOf
 } from '../src/main/panel-anchor';
 import { PANEL_GAP, PANEL_REOPEN_GUARD_MS, PANEL_WINDOW } from '../src/main/config';
 import type { DisplayArea, WindowBounds } from '../src/main/window-bounds';
@@ -28,10 +28,8 @@ const SHORT = display({ x: 0, y: 0, width: 1024, height: 360 });
 /** The 16x16 notification-area icon, parked on the taskbar below the work area. */
 const bottomTrayIcon = (centreX: number): WindowBounds => ({ x: centreX - 8, y: 1048, width: 16, height: 16 });
 
-const inside = (bounds: WindowBounds, workArea: WindowBounds): boolean =>
-    bounds.x >= workArea.x && bounds.y >= workArea.y &&
-    bounds.x + bounds.width <= workArea.x + workArea.width &&
-    bounds.y + bounds.height <= workArea.y + workArea.height;
+/** The module's own predicate, so the smoke and this suite make exactly the same claim. */
+const inside = isInsideWorkArea;
 
 const anchor = (tray: WindowBounds | null, displays: readonly DisplayArea[], platform = 'win32') =>
     anchorPanel({ tray, size: SIZE, displays, gap: PANEL_GAP, platform });

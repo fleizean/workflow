@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import ts from 'typescript';
 import { SHELL_BRIDGE_KEY } from '@shared/constants/bridge';
 import {
-    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV,
-    SMOKE_FLAG, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
+    DEVELOPMENT_USER_DATA_SUFFIX, MAIN_WINDOW, PANEL_MARKER_TEXT, PANEL_WINDOW, RENDERER_MARKER_TEXT,
+    RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_FLAG, USER_DATA_DIR_SWITCH, mainConfig, parseMainConfig
 } from '../src/main/config';
 import {
     DEVELOPMENT_USER_DATA_SUFFIX as USERDATA_SUFFIX, USER_DATA_DIR_SWITCH as USERDATA_SWITCH
@@ -122,7 +122,7 @@ function processReads(file: string, source: string = read(file)): string[] {
 // Plain Node loads the harness, not vite: .gitattributes checks it out CRLF, and vite's SSR transform (hashbang regex
 // /^#!.*\n/, whose `.` cannot match \r) then emits code above the #! line - a SyntaxError at import.
 const SHARED_CONSTANTS = [
-    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_TEXT', 'SMOKE_DB_ENV'
+    'RENDERER_MARKER_TEXT', 'RENDERER_SECOND_ROUTE_TEXT', 'PANEL_MARKER_TEXT', 'SMOKE_DB_ENV'
 ] as const;
 type SharedConstant = (typeof SHARED_CONSTANTS)[number];
 
@@ -192,9 +192,10 @@ describe('D-23: parseMainConfig is pure and never throws', () => {
         expect(parseMainConfig({}, ['app.exe', '--smoke']).smoke).toBe(true);
     });
 
-    it('exports the module-level config and the window geometry frozen', () => {
+    it('exports the module-level config and both window geometries frozen', () => {
         expect(Object.isFrozen(mainConfig)).toBe(true);
         expect(Object.isFrozen(MAIN_WINDOW)).toBe(true);
+        expect(Object.isFrozen(PANEL_WINDOW)).toBe(true);
     });
 });
 
@@ -211,6 +212,12 @@ describe('D-24: the values the smoke harness depends on equal its own', () => {
         const harness = harnessConstants();
         expect(RENDERER_SECOND_ROUTE_TEXT, 'D-24: the smoke would wait for text the harness never asserts')
             .toBe(harness.RENDERER_SECOND_ROUTE_TEXT);
+    });
+
+    it('shares the panel marker with ' + HARNESS + ', so the panel is checked on the same surface', () => {
+        const harness = harnessConstants();
+        expect(PANEL_MARKER_TEXT, 'D-24: the packaged smoke would wait for panel text the harness never asserts')
+            .toBe(harness.PANEL_MARKER_TEXT);
     });
 
     it('uses as SMOKE_FLAG the first argument the harness spawns the packaged binary with', () => {

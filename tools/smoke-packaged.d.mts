@@ -6,6 +6,7 @@ export declare const SMOKE_DB_ENV: string;
 export declare const SMOKE_DB_NAME: string;
 export declare const RENDERER_MARKER_TEXT: string;
 export declare const RENDERER_SECOND_ROUTE_TEXT: string;
+export declare const PANEL_MARKER_TEXT: string;
 export declare const DEFAULT_TIMEOUT_MS: number;
 export declare const DATABASE_FILE: string;
 export declare const BACKUP_DIR: string;
@@ -45,6 +46,7 @@ export declare function unpackedBinaryPath(distDir: string, platform: string, ar
 export declare function parseSmokeReport(stdout: string): SmokeReport;
 export declare function evaluateLaunch(observed: { exit: LaunchExit; report: SmokeReport; fixtureDir: string }): SmokeCheck[];
 export declare function evaluateWindow(observed: { report: SmokeReport }): SmokeCheck[];
+export declare function evaluatePanel(observed: { report: SmokeReport }): SmokeCheck[];
 export declare function evaluateFreshCase(observed: { report: SmokeReport }): SmokeCheck[];
 export declare function evaluateLegacyCase(observed: {
     report: SmokeReport;

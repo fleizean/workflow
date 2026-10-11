@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { EXIT_CODES, SMOKE_WATCHDOG_MS } from '../src/main/config';
 import {
     BACKUP_DIR as HARNESS_BACKUP_DIR, DATABASE_FILE as HARNESS_DATABASE_FILE, DEFAULT_TIMEOUT_MS, EXPECTED_LATEST,
-    REFUSED_NEWER_EXIT_CODE, evaluateFreshCase, evaluateLaunch, evaluateLegacyCase, evaluateRefusalCase,
-    evaluateWalFlushed, parseSmokeReport, unpackedBinaryPath
+    PANEL_MARKER_TEXT, REFUSED_NEWER_EXIT_CODE, evaluateFreshCase, evaluateLaunch, evaluateLegacyCase,
+    evaluatePanel, evaluateRefusalCase, evaluateWalFlushed, parseSmokeReport, unpackedBinaryPath
 } from '../tools/smoke-packaged.mjs';
 import { LATEST } from '../src/lib/db/migrations/registry';
 import { BACKUP_DIR, DATABASE_FILE } from '../src/main/database-startup';
@@ -20,7 +20,27 @@ const exitWith = (code: number): { code: number | null; signal: string | null; t
 const failed = (checks: readonly SmokeCheck[]): string[] =>
     checks.filter((check) => !check.pass).map((check) => check.label);
 
-/** A window that came up, drew both screens, and played a decoded sound from inside the bundle. */
+/*
+ * PANEL-01..05: a panel that opened where it should, drew both bars, and went away again. The app side anchors it
+ * to a synthetic bottom-taskbar icon derived from the real primary display, which is the half no unit test has.
+ */
+const HEALTHY_PANEL = {
+    SMOKE_PANEL_CREATED: 'true',
+    SMOKE_PANEL_BOUNDS: '1540,644,320,388',
+    SMOKE_PANEL_ON_DISPLAY: 'true',
+    SMOKE_PANEL_IN_WORK_AREA: 'true',
+    SMOKE_PANEL_CLEAR_OF_TRAY: 'true',
+    SMOKE_PANEL_IS_MAIN_WINDOW: 'false',
+    SMOKE_PANEL_TRAY: 'false',
+    SMOKE_PANEL_RENDERED: 'true',
+    SMOKE_PANEL_FIGURES: '2',
+    SMOKE_PANEL_PERCENTS: '2',
+    SMOKE_PANEL_FOOTER: 'true',
+    SMOKE_PANEL_EXCLUDES: '',
+    SMOKE_PANEL_CLOSED: 'true'
+};
+
+/** A window that came up, drew both screens, played a decoded sound from inside the bundle, and opened a panel. */
 const HEALTHY_WINDOW = {
     SMOKE_WINDOW_CREATED: 'true',
     SMOKE_HOME_RENDERED: 'true',
@@ -29,7 +49,8 @@ const HEALTHY_WINDOW = {
     SMOKE_SOUND_PLAYS: '1',
     SMOKE_SOUND_SRC: 'file:///app.asar/out/renderer/assets/classic-abc.ogg',
     SMOKE_SOUND_ERROR: '0',
-    SMOKE_SOUND_DURATION: '0.32'
+    SMOKE_SOUND_DURATION: '0.32',
+    ...HEALTHY_PANEL
 };
 
 describe('a newer database is refused in the packaged app without a window or a write', () => {
@@ -129,6 +150,56 @@ describe('an upgrade from v1.2.1', () => {
     it('fails a session left without a company', () => {
         expect(failed(evaluateLegacyCase({ ...legacy, after: { ...after, nullCompanySessions: 1 } })))
             .toEqual(['no work session is left without a company']);
+    });
+});
+
+/*
+ * Every claim PANEL-01..05 makes about the packaged app, driven through the failure it exists to catch. The
+ * off-screen case is the one that matters most: Phase 10 built off-screen recovery for the main window, and a panel
+ * that opened under the taskbar or past the edge of a display would be a new way to lose a surface.
+ */
+describe('the tray panel in the packaged app', () => {
+    const panel = { report: reportOf(HEALTHY_PANEL) };
+
+    it('passes a panel that opened where it should and went away again', () => {
+        expect(failed(evaluatePanel(panel))).toEqual([]);
+    });
+
+    it.each([
+        ['no panel was created', { SMOKE_PANEL_CREATED: 'false' }, 'a panel window was created and anchored'],
+        ['it landed on no display', { SMOKE_PANEL_ON_DISPLAY: 'false' },
+            'the panel opened on a display, wholly inside its work area'],
+        ['an edge of it was outside the work area', { SMOKE_PANEL_IN_WORK_AREA: 'false' },
+            'the panel opened on a display, wholly inside its work area'],
+        ['the taskbar covered part of it', { SMOKE_PANEL_CLEAR_OF_TRAY: 'false' },
+            'the panel cleared the taskbar icon it is anchored to'],
+        ['it joined the main window list', { SMOKE_PANEL_IS_MAIN_WINDOW: 'true' },
+            'the panel is not a main window and added no tray icon'],
+        ['it put a second icon in the notification area', { SMOKE_PANEL_TRAY: 'true' },
+            'the panel is not a main window and added no tray icon'],
+        ['the route never rendered', { SMOKE_PANEL_RENDERED: 'false' },
+            'the panel route rendered "' + PANEL_MARKER_TEXT + '" from inside the package'],
+        ['one bar drew no figures', { SMOKE_PANEL_FIGURES: '1' },
+            'both bars drew their figures and their percentages'],
+        ['the percentages were missing', { SMOKE_PANEL_PERCENTS: '0' },
+            'both bars drew their figures and their percentages'],
+        ['there was no way into the app', { SMOKE_PANEL_FOOTER: 'false' }, 'the panel offers the way into the app'],
+        ['the app leaked into the panel', { SMOKE_PANEL_EXCLUDES: 'Reset Timer|Daily Target' },
+            'the panel holds no Stop, no stat cards and no screens'],
+        ['it was still open after being closed', { SMOKE_PANEL_CLOSED: 'false' },
+            'the panel is gone when it is closed']
+    ])('fails when %s', (_what, change, label) => {
+        expect(failed(evaluatePanel({ report: reportOf({ ...HEALTHY_PANEL, ...change }) }))).toEqual([label]);
+    });
+
+    it('is judged on every one of the three launches, not only the fresh one', () => {
+        const labels = evaluatePanel(panel).map((check) => check.label);
+        for (const checks of [evaluateFreshCase({ report: reportOf({
+            SMOKE_DB_CLASS: 'fresh', SMOKE_DB_VERSION: String(EXPECTED_LATEST), ...HEALTHY_WINDOW
+        }) })]) {
+            expect(checks.map((check) => check.label), 'the fresh launch no longer judges the panel')
+                .toEqual(expect.arrayContaining(labels));
+        }
     });
 });
 

@@ -27,6 +27,8 @@ export const DEFAULT_TIMEOUT_MS = 90_000;
 /** src/main/config.ts's RENDERER_MARKER_TEXT, and the second route's. */
 export const RENDERER_MARKER_TEXT = 'Daily Target';
 export const RENDERER_SECOND_ROUTE_TEXT = 'Settings';
+/** src/main/config.ts's PANEL_MARKER_TEXT: text only the tray panel renders (PANEL-05). */
+export const PANEL_MARKER_TEXT = 'This week';
 
 /** src/main/database-startup.ts's DATABASE_FILE and BACKUP_DIR, and the migration registry's LATEST. */
 export const DATABASE_FILE = 'krono.db';
@@ -156,6 +158,69 @@ export function evaluateWindow({ report }) {
             label: 'the sound decoded, so the bytes are really there',
             pass: f.SMOKE_SOUND_ERROR === '0' && Number(f.SMOKE_SOUND_DURATION) > 0,
             detail: 'mediaError=' + JSON.stringify(f.SMOKE_SOUND_ERROR) + ' duration=' + JSON.stringify(f.SMOKE_SOUND_DURATION)
+        },
+        ...evaluatePanel({ report })
+    ];
+}
+
+/*
+ * PANEL-01..05: the tray panel, driven as a real window against the real displays of the machine that built it.
+ * The app side anchors it to a synthetic bottom-taskbar icon derived from the primary display's work area, loads
+ * the real bundle at the panel route, and reports what it got.
+ */
+export function evaluatePanel({ report }) {
+    const f = report.fields;
+    return [
+        {
+            label: 'a panel window was created and anchored',
+            pass: f.SMOKE_PANEL_CREATED === 'true',
+            detail: 'bounds=' + JSON.stringify(f.SMOKE_PANEL_BOUNDS)
+        },
+        {
+            label: 'the panel opened on a display, wholly inside its work area',
+            pass: f.SMOKE_PANEL_ON_DISPLAY === 'true' && f.SMOKE_PANEL_IN_WORK_AREA === 'true',
+            detail: 'onDisplay=' + JSON.stringify(f.SMOKE_PANEL_ON_DISPLAY) +
+                ' inWorkArea=' + JSON.stringify(f.SMOKE_PANEL_IN_WORK_AREA) +
+                ' bounds=' + JSON.stringify(f.SMOKE_PANEL_BOUNDS)
+        },
+        {
+            label: 'the panel cleared the taskbar icon it is anchored to',
+            pass: f.SMOKE_PANEL_CLEAR_OF_TRAY === 'true',
+            detail: 'reported ' + JSON.stringify(f.SMOKE_PANEL_CLEAR_OF_TRAY)
+        },
+        {
+            label: 'the panel is not a main window and added no tray icon',
+            pass: f.SMOKE_PANEL_IS_MAIN_WINDOW === 'false' && f.SMOKE_PANEL_TRAY === 'false',
+            detail: 'mainWindow=' + JSON.stringify(f.SMOKE_PANEL_IS_MAIN_WINDOW) +
+                ' tray=' + JSON.stringify(f.SMOKE_PANEL_TRAY)
+        },
+        {
+            label: 'the panel route rendered "' + PANEL_MARKER_TEXT + '" from inside the package',
+            pass: f.SMOKE_PANEL_RENDERED === 'true',
+            detail: 'reported ' + JSON.stringify(f.SMOKE_PANEL_RENDERED)
+        },
+        {
+            // Two bars, each with a done/target reading and a percentage: the whole data path ran in app.asar.
+            label: 'both bars drew their figures and their percentages',
+            pass: Number(f.SMOKE_PANEL_FIGURES) >= 2 && Number(f.SMOKE_PANEL_PERCENTS) >= 2,
+            detail: 'figures=' + JSON.stringify(f.SMOKE_PANEL_FIGURES) +
+                ' percents=' + JSON.stringify(f.SMOKE_PANEL_PERCENTS)
+        },
+        {
+            label: 'the panel offers the way into the app',
+            pass: f.SMOKE_PANEL_FOOTER === 'true',
+            detail: 'reported ' + JSON.stringify(f.SMOKE_PANEL_FOOTER)
+        },
+        {
+            // PANEL-02: no Stop, and none of the app inside the panel.
+            label: 'the panel holds no Stop, no stat cards and no screens',
+            pass: f.SMOKE_PANEL_EXCLUDES === '',
+            detail: 'found ' + JSON.stringify(f.SMOKE_PANEL_EXCLUDES)
+        },
+        {
+            label: 'the panel is gone when it is closed',
+            pass: f.SMOKE_PANEL_CLOSED === 'true',
+            detail: 'reported ' + JSON.stringify(f.SMOKE_PANEL_CLOSED)
         }
     ];
 }

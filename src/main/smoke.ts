@@ -3,14 +3,15 @@
 // refused) the way startup decides, the window renders Home and Settings, main can ask the renderer for a sound, and
 // the packaged app can build its services over the database it opened.
 
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import fs from 'node:fs';
 import type * as DatabaseLayerModule from '../lib/db';
 import {
-    DATABASE_RENAME_RELEASED, EXIT_CODES, PRODUCTION_DATA_DOOR_OPEN, RENDERER_MARKER_TEXT,
-    RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV, SMOKE_EXIT_FALLBACK_MS,
-    SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_WATCHDOG_MS, mainConfig
+    DATABASE_RENAME_RELEASED, EXIT_CODES, PANEL_GAP, PANEL_MARKER_TEXT, PRODUCTION_DATA_DOOR_OPEN,
+    RENDERER_MARKER_TEXT, RENDERER_SECOND_ROUTE_HASH, RENDERER_SECOND_ROUTE_TEXT, SMOKE_DB_ENV,
+    SMOKE_EXIT_FALLBACK_MS, SMOKE_POLL_INTERVAL_MS, SMOKE_RENDER_TIMEOUT_MS, SMOKE_SOUND_ID, SMOKE_WATCHDOG_MS,
+    mainConfig
 } from './config';
 import { clearActiveContainer, createContainer, setActiveContainer } from './container';
 import type { AppContainer } from './container';
@@ -20,8 +21,11 @@ import type { StartedDatabase } from './database-startup';
 import { describeError } from './errors';
 import { createHideNoticeStore } from './lifecycle';
 import { readLegacyStorage } from './legacy-storage';
+import { closePanel, isPanelOpen, loadPanel, openPanel } from './panel';
+import { isInsideWorkArea, isPanelVisible } from './panel-anchor';
+import { hasAppTray } from './tray';
 import { isSameOrInside } from './userdata-path';
-import { createMainWindow, loadRenderer, registerHideNoticeStore, shellControls } from './window';
+import { createMainWindow, loadRenderer, mainWindows, registerHideNoticeStore, shellControls } from './window';
 
 export type SmokeDatabase = typeof DatabaseLayerModule;
 
@@ -149,7 +153,12 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         if (soundFailure !== null) {
             return fail(soundFailure);
         }
+        const panelFailure = await checkPanel(lines);
+        if (panelFailure !== null) {
+            return fail(panelFailure);
+        }
     } finally {
+        closePanel();
         removeIpcHandlers();
         clearActiveContainer();
         // Before the window goes, so the -wal is folded back in even if a check threw.
@@ -308,4 +317,72 @@ export function finishSmoke(outcome: SmokeOutcome): void {
         clearTimeout(fallback);
         app.exit(code);
     });
+}
+
+/*
+ * PANEL-01..05, in the packaged app: a real BrowserWindow, anchored to a synthetic tray rectangle derived from the
+ * real primary display, loading the real bundle at the panel route.
+ *
+ * The rectangle is synthetic because a --smoke launch creates no tray, and an icon the OS has not drawn has no
+ * bounds. It is placed where a bottom-taskbar icon is - just below the work area, near its right edge - so the
+ * anchor has a real work area and a real display list to answer against, which is the half no unit test can supply.
+ *
+ * The window is never shown: a smoke launch must not put anything on a developer's screen, and the panel closes
+ * itself on blur, which an unfocusable hidden window would never raise.
+ */
+async function checkPanel(lines: string[]): Promise<string | null> {
+    const mainWindowsBefore = mainWindows().length;
+    const { workArea } = screen.getPrimaryDisplay();
+    const tray = {
+        x: workArea.x + workArea.width - 60,
+        y: workArea.y + workArea.height + 4,
+        width: 16,
+        height: 16
+    };
+
+    try {
+        const panel = openPanel({ tray, show: false, log: (line) => lines.push('SMOKE_PANEL_LOG=' + line) });
+        lines.push('SMOKE_PANEL_CREATED=' + String(panel !== undefined));
+        if (panel === undefined) {
+            return 'the panel could not be opened in the packaged app';
+        }
+
+        const bounds = panel.getBounds();
+        const displays = screen.getAllDisplays().map((display) => ({ workArea: display.workArea }));
+        lines.push('SMOKE_PANEL_BOUNDS=' + [bounds.x, bounds.y, bounds.width, bounds.height].join(','));
+        lines.push('SMOKE_PANEL_ON_DISPLAY=' + String(isPanelVisible(bounds, displays)));
+        lines.push('SMOKE_PANEL_IN_WORK_AREA=' + String(isInsideWorkArea(bounds, workArea)));
+        // Clear of the icon it is anchored to, by at least the gap: the taskbar must not cover any of it.
+        lines.push('SMOKE_PANEL_CLEAR_OF_TRAY=' + String(bounds.y + bounds.height <= tray.y - PANEL_GAP));
+        lines.push('SMOKE_PANEL_IS_MAIN_WINDOW=' + String(mainWindows().length !== mainWindowsBefore));
+        // Criterion 8 / PANEL-01: opening the panel must not put a second icon in the notification area.
+        lines.push('SMOKE_PANEL_TRAY=' + String(hasAppTray()));
+
+        await loadPanel(panel);
+        const rendered = await waitForRendererText(panel, PANEL_MARKER_TEXT);
+        lines.push('SMOKE_PANEL_RENDERED=' + String(rendered.includes(PANEL_MARKER_TEXT)));
+        if (!rendered.includes(PANEL_MARKER_TEXT)) {
+            return 'the panel route never rendered "' + PANEL_MARKER_TEXT + '"';
+        }
+        /*
+         * What the figures prove: two bars each drew a `done / target` reading and a percentage, which means the
+         * whole path ran inside app.asar - preload bridge, IPC, services, SQLite, panel-view. The VALUES are unit
+         * claims (tests/panel-view.test.ts); that they exist at all is this one.
+         */
+        // A report line rather than a check: it is what makes any of the verdicts below diagnosable.
+        lines.push('SMOKE_PANEL_TEXT=' + rendered.split(/\s+/).join(' ').trim());
+        lines.push('SMOKE_PANEL_FIGURES=' + String(rendered.split(' / ').length - 1));
+        lines.push('SMOKE_PANEL_PERCENTS=' + String(rendered.split('%').length - 1));
+        lines.push('SMOKE_PANEL_FOOTER=' + String(rendered.includes('Open Workflow')));
+        // PANEL-02: Stop is not on the panel, and the panel is not the app.
+        lines.push('SMOKE_PANEL_EXCLUDES=' + [
+            'Reset Timer', 'Daily Target', 'Companies', 'Work History'
+        ].filter((text) => rendered.includes(text)).join('|'));
+
+        closePanel();
+        lines.push('SMOKE_PANEL_CLOSED=' + String(!isPanelOpen()));
+    } catch (error) {
+        return 'panel: ' + describeError(error);
+    }
+    return null;
 }

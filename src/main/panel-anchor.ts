@@ -139,6 +139,15 @@ export function anchorPanel(input: AnchorInput): AnchoredPanel | undefined {
 export const isPanelVisible = (bounds: WindowBounds, displays: readonly DisplayArea[]): boolean =>
     isOnAnyDisplay(bounds, displays);
 
+/**
+ * The stronger claim, which is the one the panel actually makes: wholly inside the work area, so no edge of it is
+ * under the taskbar or off the display. isPanelVisible only says enough of it can be seen to be grabbed.
+ */
+export const isInsideWorkArea = (bounds: WindowBounds, workArea: WindowBounds): boolean =>
+    bounds.x >= workArea.x && bounds.y >= workArea.y &&
+    bounds.x + bounds.width <= workArea.x + workArea.width &&
+    bounds.y + bounds.height <= workArea.y + workArea.height;
+
 /** Whether the clicked-on panel is already there, closing, or about to open. */
 export type PanelClick = 'open' | 'close' | 'ignore';
 
