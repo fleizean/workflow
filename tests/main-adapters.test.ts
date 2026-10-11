@@ -23,10 +23,23 @@ interface Sent {
 
 const SOUND_PAYLOAD = { sound: 'goalReached', choice: 'classic' } as const;
 
-function target(sent: Sent[], options: { destroyed?: boolean; throws?: boolean } = {}): RendererTarget {
+/** The stream the renderer's whole display depends on, and the one the macOS freeze lost. */
+const TICK_PAYLOAD = {
+    status: 'running', mode: 'work', elapsedSeconds: 10, restoredFromPreviousLaunch: false, persistFailing: false
+} as const;
+
+interface TargetState {
+    destroyed?: boolean;
+    throws?: boolean;
+    /** A dead render process: measured in Electron 44.2.0 to leave isDestroyed() false and send() silent. */
+    crashed?: boolean;
+}
+
+function target(sent: Sent[], options: TargetState = {}): RendererTarget {
     return {
         webContents: {
             isDestroyed: () => options.destroyed === true,
+            isCrashed: () => options.crashed === true,
             send(channel, payload) {
                 if (options.throws === true) throw new Error('render frame was disposed');
                 sent.push({ channel, payload });
@@ -77,6 +90,49 @@ describe('the renderer bus delivers to every live window and drops the rest', ()
         const bus = createElectronRendererBus(ignoreLog, () => [target(sent, { destroyed: true })]);
         bus.emit('app:playSound', SOUND_PAYLOAD);
         expect(sent).toEqual([]);
+    });
+
+    /*
+     * The macOS lid-close freeze, at the one place it was invisible. A dead render process leaves the window and its
+     * webContents undestroyed and send() silent, so the only liveness check this adapter had could not see it: the
+     * tick stream went into a void with no log, no error and no toast, and data:changed went with it.
+     */
+    it('skips a crashed target whose window is not destroyed, and says so', () => {
+        const sent: Sent[] = [];
+        const lines: string[] = [];
+        const bus = createElectronRendererBus((line) => lines.push(line), () => [target(sent, { crashed: true })]);
+        bus.emit('timer:tick', TICK_PAYLOAD);
+        expect(sent, 'a dead renderer was written into').toEqual([]);
+        expect(lines, 'a dead renderer was skipped in silence, which is the defect itself').toHaveLength(1);
+        expect(lines[0]).toContain('timer:tick');
+        expect(lines[0]).toContain('the render process is gone');
+    });
+
+    it('still reaches the live window beside a crashed one', () => {
+        const sent: Sent[] = [];
+        const bus = createElectronRendererBus(ignoreLog, () => [target(sent, { crashed: true }), target(sent)]);
+        bus.emit('timer:tick', TICK_PAYLOAD);
+        expect(sent).toHaveLength(1);
+    });
+
+    it('says it once rather than once a second, and says it again if the renderer is lost twice', () => {
+        const sent: Sent[] = [];
+        const lines: string[] = [];
+        const state: TargetState = { crashed: true };
+        // One target, resolved again on every emit, exactly as the adapter resolves the live windows.
+        const one = target(sent, state);
+        const bus = createElectronRendererBus((line) => lines.push(line), () => [one]);
+
+        for (let i = 0; i < 30; i += 1) bus.emit('timer:tick', TICK_PAYLOAD);
+        expect(lines, 'a 1 Hz tick into a dead renderer would fill the log with one line').toHaveLength(1);
+
+        // reload() was measured to recover it completely - new pid, page executing - and then it is lost again.
+        state.crashed = false;
+        bus.emit('timer:tick', TICK_PAYLOAD);
+        expect(sent).toHaveLength(1);
+        state.crashed = true;
+        bus.emit('timer:tick', TICK_PAYLOAD);
+        expect(lines, 'a second loss was suppressed by the first one').toHaveLength(2);
     });
 
     it('drops the event when no window is on screen', () => {

@@ -9,6 +9,14 @@ import { mainWindows } from '../window';
 export interface RendererTarget {
     readonly webContents: {
         isDestroyed(): boolean;
+        /*
+         * Measured in real Electron 44.2.0: after the render process dies this is TRUE while isDestroyed() stays
+         * FALSE and send() does NOT throw. isDestroyed() alone therefore cannot see a dead renderer, and the next
+         * reader will not believe that without being told. It is the whole of the macOS lid-close freeze: timer:tick
+         * and data:changed both ride this one send, so one dead renderer closes the display AND every recovery path,
+         * in total silence.
+         */
+        isCrashed(): boolean;
         send(channel: string, payload: unknown): void;
     };
 }
@@ -28,6 +36,9 @@ export function createElectronRendererBus(
     log: (line: string) => void,
     targets: () => readonly RendererTarget[] = rendererWindows
 ): RendererBusPort {
+    // Said once per target, not once per tick: the stream is 1 Hz and a dead renderer stays dead until it reloads.
+    const reported = new WeakSet<object>();
+
     return {
         emit(channel, payload) {
             for (const target of targets()) {
@@ -35,6 +46,15 @@ export function createElectronRendererBus(
                 if (webContents.isDestroyed()) {
                     continue;
                 }
+                if (webContents.isCrashed()) {
+                    if (!reported.has(webContents)) {
+                        reported.add(webContents);
+                        log('renderer bus: ' + channel + ' is being dropped - the render process is gone while its ' +
+                            'window is not destroyed, so send() would report nothing');
+                    }
+                    continue;
+                }
+                reported.delete(webContents);
                 try {
                     webContents.send(channel, payload);
                 } catch (error) {
