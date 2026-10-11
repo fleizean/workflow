@@ -333,6 +333,9 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             lastPersistAt = lastTickAt;
             gated = false;
             gatedTicks = 0;
+            // Waking used to publish nothing at all, so the first sign of life was the next tick - and if the tick
+            // stream did not survive the sleep, there was no first sign of life.
+            emit();
         },
 
         persistNow,
