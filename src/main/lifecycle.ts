@@ -27,7 +27,7 @@ import {
     registerWindowBoundsStore, resetWindowPosition, shellControls, showRenderer
 } from './window';
 import type { HideNoticeStore, WindowBoundsStore } from './window';
-import type { DataDomain } from '@shared/types';
+import type { DataDomain, MainWindowIntent } from '@shared/types';
 
 export function registerLifecycle(): void {
     // WR-01: registered before any window exists, so every web contents gets the guard.
@@ -197,9 +197,43 @@ export function createHideNoticeStore(layer: DatabaseLayer, connection: StartedD
     };
 }
 
+/*
+ * PANEL-02: the panel's two ways out of itself. The panel goes first - it is about to lose focus to the window
+ * being raised, and closing it here rather than leaving it to the blur means nothing is drawn over the form the
+ * user is being sent to.
+ *
+ * The save request is pushed only once the window that has to receive it exists. A window hidden to the tray has a
+ * renderer already mounted and gets it immediately; a window that had to be created would miss an event sent before
+ * its first load, so that one waits for did-finish-load.
+ */
+export function showMainWindow(intent: MainWindowIntent): void {
+    closePanel();
+    const existed = mainWindows().length > 0;
+    surfaceMainWindow();
+    if (intent !== 'save') {
+        return;
+    }
+    if (existed) {
+        announceSaveRequest();
+        return;
+    }
+    mainWindows()[0]?.webContents.once('did-finish-load', () => { announceSaveRequest(); });
+}
+
+/** Best effort, like every other bus emit: the window is already up, and a failure here must not undo that. */
+function announceSaveRequest(): void {
+    try {
+        activeContainer().ports.bus.emit('shell:saveRequested', { requestedAt: Date.now() });
+    } catch (error) {
+        console.error('src/main/lifecycle.ts: the save request did not reach the window - ' + describeError(error));
+    }
+}
+
 /** The services the container holds, plus the window the titlebar drives. Resolved per call, never held. */
 function handlerContext(): HandlerContext {
-    return { ...activeContainer().services, shell: shellControls };
+    // showMain is composed here rather than put on shellControls: it needs surfaceMainWindow and the panel, and
+    // window.ts must not import this module to reach either.
+    return { ...activeContainer().services, shell: { ...shellControls, showMain: showMainWindow } };
 }
 
 /** SPA-07: main telling the renderer which domains a completed write moved, over the same bus the ticks use. */

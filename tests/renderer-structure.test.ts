@@ -339,7 +339,7 @@ describe('criterion 4: the executed data path is the mounted one', () => {
      * and the quit confirm then read a frozen snapshot - a persistFailing that flipped while the user was on
      * another screen left the confirm promising "Quitting keeps it".
      */
-    const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick', 'pomodoro:tick'];
+    const PUSHED_EVENTS = [CHANGED_EVENT, 'timer:tick', 'pomodoro:tick', 'shell:saveRequested'];
 
     const apiFiles = (): string[] => rendererSources().filter((file) => /^features\/[^/]+\/api$/.test(areaOf(file)));
 

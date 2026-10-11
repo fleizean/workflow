@@ -8,7 +8,7 @@
 
 import type { ReactElement } from 'react';
 import { HashRouter } from 'react-router-dom';
-import { DataSyncProvider, QueryProvider, SoundProvider, TimerProvider } from './providers';
+import { DataSyncProvider, QueryProvider, SaveRequestProvider, SoundProvider, TimerProvider } from './providers';
 import AppRoutes from './router';
 
 export default function App(): ReactElement {
@@ -16,11 +16,13 @@ export default function App(): ReactElement {
         <QueryProvider>
             <DataSyncProvider>
                 <TimerProvider>
-                    <SoundProvider>
-                        <HashRouter>
-                            <AppRoutes />
-                        </HashRouter>
-                    </SoundProvider>
+                    <SaveRequestProvider>
+                        <SoundProvider>
+                            <HashRouter>
+                                <AppRoutes />
+                            </HashRouter>
+                        </SoundProvider>
+                    </SaveRequestProvider>
                 </TimerProvider>
             </DataSyncProvider>
         </QueryProvider>

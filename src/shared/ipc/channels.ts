@@ -33,10 +33,13 @@ export const IPC_CHANNELS = [
     'stats:dayProgress',
     'window:hide',
     'window:claimHideNotice',
+    'window:showMain',
     'app:quit'
 ] as const;
 
-export const IPC_EVENT_CHANNELS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed'] as const;
+export const IPC_EVENT_CHANNELS = [
+    'app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed', 'shell:saveRequested'
+] as const;
 
 export type DeclaredIpcChannel = (typeof IPC_CHANNELS)[number];
 export type DeclaredIpcEventChannel = (typeof IPC_EVENT_CHANNELS)[number];

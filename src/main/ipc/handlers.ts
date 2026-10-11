@@ -2,7 +2,7 @@
 // service call then the answer. No branch lives here - a decision a handler would have to make belongs to the
 // service that owns it, and tests/ipc-handlers.test.ts fails on a handler body that grows one.
 
-import type { IpcHandlers } from '@shared/types';
+import type { IpcHandlers, MainWindowIntent } from '@shared/types';
 import type { CompaniesService } from '../services/companies.service';
 import type { PomodoroService } from '../services/pomodoro.service';
 import type { SessionsService } from '../services/sessions.service';
@@ -18,6 +18,8 @@ export interface ShellControls {
     hide(): void;
     /** True the first time and never again: whether this hide owes the user an explanation. */
     claimHideNotice(): { due: boolean };
+    /** PANEL-02: raises the main window, and with 'save' tells it that the save form is what it was raised for. */
+    showMain(intent: MainWindowIntent): void;
     quit(): void;
 }
 
@@ -73,6 +75,7 @@ export function createHandlers(context: HandlerContext): IpcHandlers {
 
         'window:hide': () => { shell.hide(); },
         'window:claimHideNotice': () => shell.claimHideNotice(),
+        'window:showMain': (input) => { shell.showMain(input.intent); },
         'app:quit': () => { shell.quit(); }
     };
 }

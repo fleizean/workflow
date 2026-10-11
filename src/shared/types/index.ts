@@ -37,5 +37,5 @@ export interface DayTotal {
 export type { LocalDate };
 export type {
     DataDomain, IpcApi, IpcBridge, IpcChannel, IpcError, IpcEventChannel, IpcEventPayload, IpcEventSubscriptions,
-    IpcHandlers, IpcInput, IpcOutput, IpcResult
+    IpcHandlers, IpcInput, IpcOutput, IpcResult, MainWindowIntent
 } from '@shared/ipc/contract';

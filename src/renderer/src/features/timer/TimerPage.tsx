@@ -70,6 +70,8 @@ export default function TimerPage(): ReactElement {
 
     const pushToast = useUiStore((state) => state.pushToast);
     const openDialog = useUiStore((state) => state.openDialog);
+    const saveRequestedAt = useUiStore((state) => state.saveRequestedAt);
+    const clearSaveRequest = useUiStore((state) => state.clearSaveRequest);
 
     const today = formatLocalDate(new Date());
     const [selectedDate, setSelectedDate] = useState<LocalDate>(today);
@@ -115,6 +117,22 @@ export default function TimerPage(): ReactElement {
      * unmount on a mode change - so the pending value survived invisibly and Discard named a number nobody could see.
      */
     useEffect(() => { setAdjustmentSeconds(0); }, [mode]);
+
+    /*
+     * PANEL-02: the tray panel's Stop, which cannot stop anything and raises this window instead.
+     *
+     * The date is put back to today with it. Main counts on today (IN-03), and a Yesterday left selected on this
+     * screen hours ago would otherwise write the running clock onto the wrong day - the panel has no date picker
+     * and cannot have meant that.
+     */
+    useEffect(() => {
+        if (saveRequestedAt === null) {
+            return;
+        }
+        clearSaveRequest();
+        setSelectedDate(today);
+        setDialog('save');
+    }, [saveRequestedAt, clearSaveRequest, today]);
 
     // Raised once per mount, when the flag first arrives. Not raised again if the user says "not now" - the banner
     // below carries the offer from then on, and the next launch asks again.

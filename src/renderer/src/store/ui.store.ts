@@ -36,6 +36,12 @@ export interface Dialog extends DialogRequest {
 
 interface UiState {
     readonly toasts: readonly Toast[];
+    /*
+     * PANEL-02: when the tray panel last asked for the save form, as the nonce main sent, or null when nothing is
+     * pending. Global rather than one screen's, because two surfaces answer it and neither owns the other -
+     * AppShell has to put Home on screen, and TimerPage is what owns the form.
+     */
+    readonly saveRequestedAt: number | null;
     /** A queue, so a second request waits rather than replacing a dialog whose caller is still awaiting an answer. */
     readonly dialogs: readonly Dialog[];
     /*
@@ -51,6 +57,8 @@ interface UiState {
     readonly openDialog: (request: DialogRequest) => Promise<boolean>;
     readonly closeDialog: (id: number, confirmed: boolean) => void;
     readonly setModalsOpen: (count: number) => void;
+    readonly requestSaveForm: (requestedAt: number) => void;
+    readonly clearSaveRequest: () => void;
 }
 
 let nextId = 0;
@@ -63,6 +71,7 @@ export const useUiStore = create<UiState>((set) => ({
     toasts: [],
     dialogs: [],
     modalsOpen: 0,
+    saveRequestedAt: null,
 
     pushToast: (tone, message) => {
         nextId += 1;
@@ -94,5 +103,17 @@ export const useUiStore = create<UiState>((set) => ({
 
     setModalsOpen: (count) => {
         set({ modalsOpen: count });
+    },
+
+    requestSaveForm: (requestedAt) => {
+        set({ saveRequestedAt: requestedAt });
+    },
+    clearSaveRequest: () => {
+        set({ saveRequestedAt: null });
     }
 }));
+
+/** What a subscription outside React writes with: app/providers/SaveRequestProvider.tsx, once per event. */
+export const writeSaveRequest = (requestedAt: number): void => {
+    useUiStore.getState().requestSaveForm(requestedAt);
+};

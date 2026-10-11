@@ -113,6 +113,7 @@ function spyingServices(): Spy {
         shell: {
             hide: answer('shell.hide', undefined),
             claimHideNotice: answer('shell.claimHideNotice', { due: true }),
+            showMain: answer('shell.showMain', undefined),
             quit: answer('shell.quit', undefined)
         }
     };
@@ -174,6 +175,7 @@ const WELL_FORMED: Readonly<Record<IpcChannel, { input?: unknown; reaches: strin
     'stats:dayProgress': { input: { date: DAY }, reaches: 'stats.dayProgress' },
     'window:hide': { reaches: 'shell.hide' },
     'window:claimHideNotice': { reaches: 'shell.claimHideNotice' },
+    'window:showMain': { input: { intent: 'save' }, reaches: 'shell.showMain' },
     'app:quit': { reaches: 'shell.quit' }
 };
 

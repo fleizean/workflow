@@ -11,6 +11,15 @@ import type { IpcErrorCode } from '@shared/constants/ipc-errors';
 
 type ChannelName = `${string}:${string}`;
 
+/*
+ * PANEL-02: what the panel is asking the main window for. Two values rather than two channels, because they differ
+ * only in whether the save form is opened on arrival - and a second channel would be a second thing to keep in step
+ * with closePanel.
+ */
+export const MAIN_WINDOW_INTENTS = ['open', 'save'] as const;
+export type MainWindowIntent = (typeof MAIN_WINDOW_INTENTS)[number];
+const MainWindowIntentSchema = z.enum(MAIN_WINDOW_INTENTS);
+
 interface ChannelSpec {
     readonly input: z.ZodType;
     readonly output: z.ZodType;
@@ -121,6 +130,14 @@ export const ipcContract = {
      * notice raised after it is behind a window that is no longer there.
      */
     'window:claimHideNotice': { input: z.void(), output: z.strictObject({ due: z.boolean() }) },
+    /*
+     * PANEL-02: the tray panel's two ways out of itself. 'open' is its footer; 'save' is its Stop, which cannot
+     * stop anything - timer:stopAndSave needs a company and a note, and a note-required company refuses an empty
+     * one, so the panel raises the window with the save form instead of asking for a save it cannot complete.
+     * Phase 5 made that one atomic call because two calls duplicate or lose the session (WR-06), and nothing here
+     * may become a second way to end a session.
+     */
+    'window:showMain': { input: z.strictObject({ intent: MainWindowIntentSchema }), output: z.void() },
     /** Ends the process. The renderer asks only after its own confirm; main marks the quit so nothing re-hides. */
     'app:quit': { input: z.void(), output: z.void() }
 } as const satisfies ContractMap;
@@ -192,6 +209,7 @@ export const ipcWrites = {
     // The window and the process; nothing the renderer caches depends on either.
     'window:hide': [],
     'window:claimHideNotice': [],
+    'window:showMain': [],
     'app:quit': []
 } as const satisfies Readonly<Record<IpcChannel, readonly DataDomain[]>>;
 
@@ -207,7 +225,13 @@ export const ipcEvents = {
      * SPA-07: main saying what it changed, so the views that show it refresh. It carries domains and never rows, so
      * an event cannot become a second, quieter way for data to enter the cache.
      */
-    'data:changed': z.strictObject({ domains: z.array(DataDomainSchema).min(1) })
+    'data:changed': z.strictObject({ domains: z.array(DataDomainSchema).min(1) }),
+    /*
+     * PANEL-02: the main window being told that the save form is what it was raised for. The timestamp is a nonce
+     * and nothing measures with it - two requests in a row have to be two distinct values, or the second would look
+     * to the renderer like the one it has already answered.
+     */
+    'shell:saveRequested': z.strictObject({ requestedAt: z.int().nonnegative() })
 } as const satisfies Readonly<Record<ChannelName, z.ZodType>>;
 export type IpcEventChannel = keyof typeof ipcEvents;
 export type EventChannelsMatchTheContract =

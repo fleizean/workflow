@@ -14,11 +14,14 @@
  * the bar was narrower than the thing it belongs to (SPA-02).
  */
 
+import { useEffect } from 'react';
 import type { ReactElement } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import AlertDialog from '@renderer/components/ui/AlertDialog';
 import ToastStack from '@renderer/components/ui/ToastStack';
 import { TitleBar } from '@renderer/features/shell';
+import { ROUTE_PATHS } from '@renderer/lib/routes';
+import { useUiStore } from '@renderer/store/ui.store';
 import BottomNav from './BottomNav';
 
 const SHELL_CLASS =
@@ -28,6 +31,20 @@ const SHELL_CLASS =
 const CONTENT_CLASS = 'flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 
 export default function AppShell(): ReactElement {
+    /*
+     * PANEL-02: the clock, and the form that saves it, live on Home - and the window the panel raises is on
+     * whatever route it was left on. The shell is the one thing mounted on all four, so it is what puts Home on
+     * screen; TimerPage consumes the request and opens the form.
+     */
+    const saveRequestedAt = useUiStore((state) => state.saveRequestedAt);
+    const navigate = useNavigate();
+    useEffect(() => {
+        if (saveRequestedAt !== null) {
+            // react-router 7 returns a promise here; there is nothing to wait for and nothing to recover from.
+            void navigate(ROUTE_PATHS.home);
+        }
+    }, [saveRequestedAt, navigate]);
+
     return (
         <div id="app-shell" className={SHELL_CLASS}>
             <TitleBar />

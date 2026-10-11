@@ -133,7 +133,9 @@ export async function runSmoke(layer: SmokeDatabase): Promise<SmokeOutcome> {
         container = built;
         setActiveContainer(container);
         registerIpcHandlers({
-            context: () => ({ ...built.services, shell: shellControls }),
+            // PANEL-02: the smoke never raises a window, so showMain is a no-op rather than a second wiring to keep
+            // in step with lifecycle.ts's.
+            context: () => ({ ...built.services, shell: { ...shellControls, showMain: () => undefined } }),
             log: (line) => lines.push('SMOKE_IPC_LOG=' + line)
         });
         if (win === undefined) {

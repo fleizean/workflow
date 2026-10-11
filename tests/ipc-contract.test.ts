@@ -24,7 +24,7 @@ const CHANNELS = [
     'timer:reset', 'timer:setMode', 'timer:stopAndSave', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause',
     'pomodoro:abort',
     'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress',
-    'window:hide', 'window:claimHideNotice', 'app:quit'
+    'window:hide', 'window:claimHideNotice', 'window:showMain', 'app:quit'
 ];
 const VOID_INPUT_CHANNELS = [
     'app:quit', 'companies:list', 'pomodoro:abort', 'pomodoro:counts', 'pomodoro:getSnapshot', 'pomodoro:pause', 'pomodoro:skipBreak',
@@ -33,7 +33,7 @@ const VOID_INPUT_CHANNELS = [
 ];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
-const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed'];
+const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed', 'shell:saveRequested'];
 const EXPORTED_SCHEMAS = [
     'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema',
     'PomodoroCountsSchema', 'PomodoroIntervalSchema', 'PomodoroSessionSchema', 'PomodoroSnapshotSchema',
@@ -540,6 +540,7 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'stats:dayProgress': reject,
         'window:hide': reject,
         'window:claimHideNotice': reject,
+        'window:showMain': reject,
         'app:quit': reject
     };
     void wrongOutput;
