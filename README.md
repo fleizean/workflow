@@ -31,7 +31,10 @@ no sync service and no server: the whole history is one SQLite file in your user
 - **Pomodoro** — work and break intervals with your own durations, a long break every *n* cycles,
   auto-start options, a sound and a system notification. It keeps counting while the window is
   hidden in the tray, and a completed pomodoro that has no note asks you what it was for.
-- **Tray** — close to the tray and keep counting; one icon, one instance, whatever launches it.
+- **Tray** — close to the tray and keep counting; one icon, one instance, whatever launches it. Click
+  the icon for a small panel beside it: the elapsed time with start and pause, how today and this
+  week stand against your target, and your streak. Saving a session needs a company and a note, so
+  the panel's Save opens the main window with the form rather than guessing.
 
 **Offline by design.** Fonts, icons and sounds are inside the application bundle and a content
 security policy forbids remote loads, so every screen renders with the network switched off. The one
