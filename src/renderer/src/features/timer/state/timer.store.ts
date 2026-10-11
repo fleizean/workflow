@@ -28,3 +28,10 @@ export const setTimerSnapshot = (snapshot: TimerSnapshot): void => {
 
 /** Read once, at the moment of asking - never subscribed to, so the titlebar does not re-render on every tick. */
 export const readTimerSnapshot = (): TimerSnapshot | null => useTimerStore.getState().snapshot;
+
+/**
+ * Subscribed: the read for a surface that is MEANT to redraw on every tick. Home holds the store directly because
+ * it is inside this feature; the tray panel is not, and handing it the store would hand it a lifetime this feature
+ * does not promise (WR-07) - which is how the shell came to read a snapshot only Home kept current.
+ */
+export const useLiveTimerSnapshot = (): TimerSnapshot | null => useTimerStore((state) => state.snapshot);

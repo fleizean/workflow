@@ -25,6 +25,22 @@ export function formatDurationShort(totalSeconds: number): string {
     return String(hours).padStart(TWO_DIGITS, PAD) + 'h ' + String(minutes).padStart(TWO_DIGITS, PAD) + 'm';
 }
 
+/**
+ * PANEL-03: `3h 12m`, `8h`, `12m`. The unpadded sibling of formatDurationShort, which pads both halves because
+ * that is what v1.2.1 drew (`08h 30m`) and what Work History still has to match. A flag on that one would have put
+ * a parity-pinned formatter in the business of answering two questions, so this is a second function and says so.
+ * A whole number of hours drops the minutes, because `8h 00m` reads as a measurement rather than as a target.
+ */
+export function formatHoursMinutes(totalSeconds: number): string {
+    const safe = Number.isFinite(totalSeconds) && totalSeconds > 0 ? Math.floor(totalSeconds) : 0;
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    if (hours === 0) {
+        return String(minutes) + 'm';
+    }
+    return minutes === 0 ? String(hours) + 'h' : String(hours) + 'h ' + String(minutes) + 'm';
+}
+
 export function formatDayBadge(date: LocalDate): DayBadge {
     return {
         weekday: WEEKDAY_NAMES[isoWeekday(date) - 1] ?? '',

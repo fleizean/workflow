@@ -9,6 +9,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AppShell from '@renderer/components/layout/AppShell';
 import { CompaniesPage } from '@renderer/features/companies';
 import { HistoryPage } from '@renderer/features/history';
+import { PanelPage } from '@renderer/features/panel';
 import { SettingsPage } from '@renderer/features/settings';
 import { TimerPage } from '@renderer/features/timer';
 import { ROUTE_PATHS } from '@renderer/lib/routes';
@@ -16,6 +17,12 @@ import { ROUTE_PATHS } from '@renderer/lib/routes';
 export default function AppRoutes(): ReactElement {
     return (
         <Routes>
+            {/*
+              * PANEL-05: outside AppShell, deliberately. The panel is its own window - a titlebar, a bottom
+              * navigation and a 40rem column inside a 320px panel would each be wrong, and the shell's h-screen
+              * would fight the panel's. Declared before the shell so its catch-all cannot swallow this route.
+              */}
+            <Route path={ROUTE_PATHS.panel} element={<PanelPage />} />
             <Route element={<AppShell />}>
                 <Route index element={<TimerPage />} />
                 <Route path={ROUTE_PATHS.companies} element={<CompaniesPage />} />
