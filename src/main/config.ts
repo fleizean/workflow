@@ -130,3 +130,29 @@ export function parseMainConfig(env: Readonly<Record<string, string | undefined>
 }
 
 export const mainConfig: MainConfig = parseMainConfig(process.env, process.argv);
+
+/*
+ * PANEL-01: the tray panel's geometry. Narrow because it holds five rows and no screen; tall enough that nothing in
+ * it scrolls, so the panel never has a scrollbar of its own. Fixed - the window is not resizable, so these are the
+ * only numbers it ever has.
+ */
+export const PANEL_WINDOW = Object.freeze({
+    width: 320,
+    height: 388,
+    backgroundColor: '#101c22',
+    title: 'Workflow'
+});
+
+/** Between the tray icon and the nearest panel edge. */
+export const PANEL_GAP = 8;
+
+/*
+ * PANEL-01: a tray click that lands this soon after the panel closed itself on blur is the same click. Windows
+ * delivers the blur before the click, so without this every click on an open panel would close it and reopen it.
+ */
+export const PANEL_REOPEN_GUARD_MS = 300;
+
+/** The route the panel window loads. One document, one route table: the panel is a route, not a second page. */
+export const PANEL_ROUTE_HASH = '#/panel';
+/** Text only the panel route renders, which the smoke launch waits for (pinned by tests/main-config.test.ts). */
+export const PANEL_MARKER_TEXT = 'This week';
