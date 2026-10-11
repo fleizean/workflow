@@ -21,7 +21,7 @@ import { PANEL_GAP, PANEL_REOPEN_GUARD_MS, PANEL_ROUTE_HASH, PANEL_WINDOW } from
 import { describeError } from './errors';
 import { anchorPanel, decidePanelBlur, decidePanelClick } from './panel-anchor';
 import type { PanelClick } from './panel-anchor';
-import { loadRendererRoute, showRendererRoute } from './window';
+import { loadRendererRoute, reviveOnRendererLoss, showRendererRoute } from './window';
 import type { WindowBounds } from './window-bounds';
 
 let panel: BrowserWindow | undefined;
@@ -105,6 +105,11 @@ export function openPanel(options: PanelOptions): BrowserWindow | undefined {
     });
     panel = win;
     panelShown = false;
+    /*
+     * PANEL-04 doubles the surface of the renderer-loss defect: the panel draws the same tick stream through the
+     * same bus, so a dead panel renderer is a second window showing a number that will never move again.
+     */
+    reviveOnRendererLoss(win, 'panel', options.log);
 
     win.on('blur', () => {
         if (decidePanelBlur({ shown: panelShown }) === 'close') {

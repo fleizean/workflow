@@ -78,6 +78,14 @@ export const MAIN_WINDOW = Object.freeze({
  */
 export const APP_USER_MODEL_ID = 'com.workflow.timer';
 
+/*
+ * How long an unresponsive renderer is given to answer before its window is reloaded. A renderer that is merely
+ * busy raises 'unresponsive' and then 'responsive' within a moment, and reloading that one would throw away what
+ * the user had typed; a renderer that never answers again is the macOS lid-close freeze, where the window keeps its
+ * last painted frame and every click lands nowhere.
+ */
+export const UNRESPONSIVE_RELOAD_DELAY_MS = 10_000;
+
 // IPC-05: a resize fires many times a second, so the bounds are written this long after the last one.
 export const WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
 // Windows draws a full-size PNG in the notification area as a smear; v1.2.1 resized to 16 too (main.js:104).

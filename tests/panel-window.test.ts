@@ -34,6 +34,9 @@ interface Fake {
     loaded: { file: string; hash?: string } | null;
     listeners: Map<string, (() => void)[]>;
     once: Map<string, () => void>;
+    /** The renderer-loss guard's two halves: what it subscribed to, and whether it reloaded. */
+    contentsListeners: Map<string, ((event: unknown, details: { reason: string }) => void)[]>;
+    reloads: number;
 }
 
 const state = {
@@ -48,8 +51,15 @@ vi.mock('electron', () => {
         readonly fake: Fake;
         readonly webContents = {
             isDestroyed: (): boolean => this.fake.destroyed,
+            isCrashed: (): boolean => false,
             send: (): void => undefined,
-            setAudioMuted: (): void => undefined
+            setAudioMuted: (): void => undefined,
+            reload: (): void => { this.fake.reloads += 1; },
+            on: (event: string, listener: (e: unknown, details: { reason: string }) => void): void => {
+                const list = this.fake.contentsListeners.get(event) ?? [];
+                list.push(listener);
+                this.fake.contentsListeners.set(event, list);
+            }
         };
 
         constructor(options: Options) {
@@ -61,7 +71,9 @@ vi.mock('electron', () => {
                 destroyed: false,
                 loaded: null,
                 listeners: new Map(),
-                once: new Map()
+                once: new Map(),
+                contentsListeners: new Map(),
+                reloads: 0
             };
             state.created.push(this.fake);
         }
@@ -252,6 +264,41 @@ describe('PANEL-04: the panel ends on blur, and nothing of it survives', () => {
         fire(fake as Fake, 'blur');
         bus.emit('data:changed', { domains: ['stats'] });
         expect(sent, 'the closed panel was still being sent events').toEqual(['data:changed']);
+    });
+});
+
+/*
+ * The macOS lid-close freeze reaches the panel too: it draws the same tick stream through the same bus, so a dead
+ * panel renderer is a second window whose figures will never move again. Measured in Electron 44.2.0, a dead render
+ * process leaves the window undestroyed and send() silent, so nothing short of this handler notices.
+ */
+describe('the panel comes back when its renderer is lost', () => {
+    const crash = (fake: Fake, reason = 'crashed'): void => {
+        for (const listener of fake.contentsListeners.get('render-process-gone') ?? []) {
+            listener({}, { reason });
+        }
+    };
+
+    it('subscribes to render-process-gone at all, which nothing in src/ used to', () => {
+        open();
+        expect([...(last()?.contentsListeners.keys() ?? [])]).toContain('render-process-gone');
+    });
+
+    it('reloads the panel and says why', () => {
+        open();
+        const fake = last() as Fake;
+        crash(fake);
+        expect(fake.reloads, 'a dead panel renderer was left on screen').toBe(1);
+        expect(state.logs.join(' ')).toContain('panel: the renderer process is gone (crashed)');
+    });
+
+    it('does not reload a panel the blur has already destroyed', () => {
+        open();
+        const fake = last() as Fake;
+        fake.once.get('ready-to-show')?.();
+        fire(fake, 'blur');
+        crash(fake);
+        expect(fake.reloads, 'a destroyed panel was reloaded back onto the screen').toBe(0);
     });
 });
 

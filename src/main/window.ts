@@ -4,7 +4,7 @@
 import { app, BrowserWindow, screen, type WebContents } from 'electron';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MAIN_WINDOW, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './config';
+import { MAIN_WINDOW, UNRESPONSIVE_RELOAD_DELAY_MS, WINDOW_BOUNDS_SAVE_DEBOUNCE_MS, mainConfig } from './config';
 import { describeError } from './errors';
 import { decideWindowClose, isQuitting, markQuitting } from './quit';
 import { hasAppTray } from './tray';
@@ -23,8 +23,74 @@ export function showRendererRoute(win: BrowserWindow, hash: string | undefined):
         if (isSupersededNavigation(error)) {
             return;
         }
-        console.error('src/main/window.ts: renderer failed to load - ' + describeError(error));
+        report('src/main/window.ts: renderer failed to load - ' + describeError(error));
     });
+}
+
+/*
+ * Where this module reports. console.error until launchApplication hands it the file log: a packaged app launched
+ * from Finder or Explorer has no stdout anybody can read, and the renderer-loss lines below are exactly the ones
+ * that would have answered the macOS freeze in one step.
+ */
+let report: (line: string) => void = (line) => { console.error(line); };
+
+export function registerWindowLog(log: (line: string) => void): void {
+    report = log;
+}
+
+/*
+ * The necessary cause of the macOS lid-close freeze, and the only handler for it. Measured in real Electron 44.2.0:
+ * when the render process dies, webContents.isCrashed() is true, isDestroyed() is FALSE and send() does NOT throw -
+ * so main goes on pushing timer:tick and data:changed into a void, the window keeps its last painted frame, and
+ * every click lands nowhere. There was no render-process-gone or unresponsive handler anywhere in src/.
+ *
+ * reload() was measured to recover it completely: a new OS pid, the page executing again, and the renderer's
+ * opening timer:getSnapshot re-read, which resyncs the store from main's own state.
+ */
+export function reviveOnRendererLoss(win: BrowserWindow, label: string, log: (line: string) => void): void {
+    let pending: NodeJS.Timeout | undefined;
+
+    const cancel = (): void => {
+        if (pending !== undefined) {
+            clearTimeout(pending);
+            pending = undefined;
+        }
+    };
+
+    const reload = (what: string): void => {
+        cancel();
+        if (win.isDestroyed()) {
+            return;
+        }
+        log(label + ': the renderer ' + what + ' - reloading it, because main cannot tell a dead renderer from a ' +
+            'live one and the clock on screen would never move again');
+        try {
+            win.webContents.reload();
+        } catch (error) {
+            log(label + ': the renderer could not be reloaded - ' + describeError(error));
+        }
+    };
+
+    win.webContents.on('render-process-gone', (_event, details) => {
+        reload('process is gone (' + details.reason + ')');
+    });
+
+    win.on('unresponsive', () => {
+        log(label + ': the renderer stopped answering; it has ' + String(UNRESPONSIVE_RELOAD_DELAY_MS) +
+            ' ms to come back before it is reloaded');
+        cancel();
+        pending = setTimeout(() => { reload('never came back from being unresponsive'); },
+            UNRESPONSIVE_RELOAD_DELAY_MS);
+        pending.unref();
+    });
+
+    win.on('responsive', () => {
+        cancel();
+        log(label + ': the renderer is answering again');
+    });
+
+    // A window that goes away takes its pending reload with it; nothing here may outlive the thing it was about.
+    win.on('closed', cancel);
 }
 
 /** Electron rejects loadURL/loadFile with code ERR_ABORTED when a newer navigation replaces it. */
@@ -89,7 +155,7 @@ function openingBounds(defaultSize: { width: number; height: number }): ReturnTy
         saved = boundsStore?.read() ?? null;
     } catch (error) {
         // A bounds read is never worth failing a launch for; the default position is always available.
-        console.error('src/main/window.ts: the saved window bounds could not be read - ' + describeError(error));
+        report('src/main/window.ts: the saved window bounds could not be read - ' + describeError(error));
     }
     return chooseWindowBounds(saved, screen.getAllDisplays(), defaultSize, MINIMUM);
 }
@@ -106,7 +172,7 @@ function persistBoundsOn(win: BrowserWindow): void {
         try {
             boundsStore?.write(win.getBounds());
         } catch (error) {
-            console.error('src/main/window.ts: the window bounds could not be saved - ' + describeError(error));
+            report('src/main/window.ts: the window bounds could not be saved - ' + describeError(error));
         }
     };
 
@@ -157,6 +223,8 @@ export function createMainWindow(options: { show: boolean }): BrowserWindow {
     created.push(win);
     everCreated = true;
     persistBoundsOn(win);
+    // The sink is forwarded rather than captured: registerWindowLog may arrive after this window exists.
+    reviveOnRendererLoss(win, 'window', (line) => { report(line); });
 
     /*
      * Criterion 8: the close button hides to the tray, as v1.2.1 did - the timer is in main and keeps counting. Once
@@ -206,7 +274,7 @@ export function resetWindowPosition(target?: BrowserWindow): void {
         boundsStore?.write(win.getBounds());
     } catch (error) {
         // The move is the point; failing to record it must not undo it.
-        console.error('src/main/window.ts: the reset window bounds could not be saved - ' + describeError(error));
+        report('src/main/window.ts: the reset window bounds could not be saved - ' + describeError(error));
     }
 }
 
@@ -227,7 +295,7 @@ export const shellControls = {
         try {
             return { due: hideNoticeStore?.claim() ?? false };
         } catch (error) {
-            console.error('src/main/window.ts: the hide notice could not be recorded - ' + describeError(error));
+            report('src/main/window.ts: the hide notice could not be recorded - ' + describeError(error));
             return { due: false };
         }
     },
