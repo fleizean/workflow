@@ -238,6 +238,13 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     return {
         snapshot,
 
+        /*
+         * The emit is OUTSIDE the guard on purpose, in both of these. A press is a user asking what the truth is,
+         * and answering nothing is not an answer: once a renderer's belief and this status diverge, every press used
+         * to be a silent no-op, so "I pressed stop and start and nothing happened" was the whole report. Nothing
+         * about the accumulation moves - the state change stays inside the guard, and a second start neither
+         * re-arms the repeat nor rebases lastTickAt.
+         */
         start() {
             if (status !== 'running') {
                 const now = clock.monotonicNow();
@@ -250,8 +257,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
                 gatedTicks = 0;
                 startRepeat();
                 persistNow();
-                emit();
             }
+            emit();
             return snapshot();
         },
 
@@ -262,8 +269,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
                 status = 'paused';
                 stopRepeat();
                 persistNow();
-                emit();
             }
+            emit();
             return snapshot();
         },
 

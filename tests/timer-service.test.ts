@@ -744,19 +744,32 @@ describe('the tick the renderer mirrors', () => {
         expect(h.emitted.length - afterStart).toBe(7);
     });
 
-    it('does nothing at all when start or pause is called twice', () => {
+    /*
+     * A press that changes nothing still has to be answered. Both of these used to return the same snapshot in
+     * silence, which is only safe while main-to-renderer events are arriving: with the tick stream lost, every
+     * press on a diverged belief was a no-op the renderer never heard about, and the first of them silently paused
+     * a running clock. The state change is still guarded - what is published is not.
+     */
+    it('answers a second start and a second pause without touching the clock', () => {
         const h = harness();
         h.service.start();
         const emits = h.emitted.length;
+        h.drive(3);
+
         h.service.start();
-        expect(h.emitted.length, 'a second start re-emitted or re-scheduled').toBe(emits);
-        expect(h.counters.scheduled).toBe(1);
+        expect(h.emitted.length, 'a second start said nothing, so a diverged renderer stays diverged')
+            .toBe(emits + 4);
+        expect(h.emitted[h.emitted.length - 1], 'the answer was not the state main holds')
+            .toMatchObject({ payload: { status: 'running', elapsedSeconds: 3 } });
+        expect(h.counters.scheduled, 'a second start re-armed the repeat').toBe(1);
+        expect(h.elapsed(), 'a second start moved the accumulation').toBe(3);
 
         h.service.pause();
         const paused = h.emitted.length;
         h.service.pause();
-        expect(h.emitted.length).toBe(paused);
-        expect(h.counters.cancelled).toBe(1);
+        expect(h.emitted.length, 'a second pause said nothing').toBe(paused + 1);
+        expect(h.counters.cancelled, 'a second pause cancelled a repeat that was already gone').toBe(1);
+        expect(h.elapsed(), 'a second pause moved the accumulation').toBe(3);
     });
 });
 
