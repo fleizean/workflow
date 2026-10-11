@@ -79,13 +79,19 @@ jobs:
       - name: Commit it, or say there was nothing to commit
         run: |
           set -euo pipefail
-          if git diff --quiet -- docs/version.json; then
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # Staged BEFORE the comparison. `git diff` reports no difference for a file git does not
+          # track, so the first run - the only one that matters, because the file does not exist yet -
+          # said UNCHANGED and exited 0 without committing. The file stayed untracked, so every run
+          # after it said the same. Two releases reported this job green while publishing nothing, and
+          # the tray never told anyone there was an update. --cached compares against the index, where
+          # a new file is a difference.
+          git add docs/version.json
+          if git diff --cached --quiet -- docs/version.json; then
             echo "VERSION_MANIFEST_UNCHANGED $(cat docs/version.json)"
             exit 0
           fi
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add docs/version.json
           git commit -m "chore(release): publish version manifest for ${{ steps.latest.outputs.tag }}"
           git push
           echo "VERSION_MANIFEST_PUBLISHED $(cat docs/version.json)"
