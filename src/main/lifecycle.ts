@@ -17,8 +17,9 @@ import { describeError } from './errors';
 import { registerIpcHandlers } from './ipc';
 import type { HandlerContext } from './ipc';
 import { readLegacyStorage } from './legacy-storage';
+import { clickTray, closePanel } from './panel';
 import { markQuitting } from './quit';
-import { announceTrayUpdate, createAppTray, destroyAppTray } from './tray';
+import { announceTrayUpdate, createAppTray, destroyAppTray, trayIconBounds } from './tray';
 import type { TrayActions } from './tray';
 import type { TimerService } from './services/timer.service';
 import {
@@ -66,6 +67,8 @@ export function registerLifecycle(): void {
 
     // D-32: app.exit skips this, so every exit path inside startDatabase closes the database for itself.
     app.on('will-quit', () => {
+        // PANEL-01: the panel must never be a window the quit has to wait for, or get past.
+        closePanel();
         // REPO-06, first: cancelling is synchronous and nothing here waits on a request. A check in flight lands on
         // a stopped checker and says nothing, which is what "never delays quit" means in practice.
         stopUpdateChecks();
@@ -237,8 +240,11 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
                 openMainWindow();
                 const trayActions: TrayActions = {
                     show: surfaceMainWindow,
-                    isVisible: () => mainWindows()[0]?.isVisible() ?? false,
-                    hide: () => { mainWindows()[0]?.hide(); },
+                    // PANEL-01: the icon's own rectangle is asked for at the click, not captured now - a display
+                    // change or a taskbar the user moved would otherwise anchor the panel to where the icon was.
+                    togglePanel: () => {
+                        clickTray(() => trayIconBounds(), (line) => { console.log(line); });
+                    },
                     resetPosition: resetWindowPosition,
                     // WR-01 bans in-app navigation; this hands the address to the OS browser instead, and the
                     // address is a constant, so nothing a response body says can choose where it goes.

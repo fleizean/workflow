@@ -1,6 +1,7 @@
 // RendererBusPort over the main windows' webContents. Services hold the port, never a BrowserWindow (ARCH-01).
 
 import { describeError } from '../errors';
+import { panelWindows } from '../panel';
 import type { RendererBusPort } from '../ports';
 import { mainWindows } from '../window';
 
@@ -16,9 +17,16 @@ export interface RendererTarget {
  * Delivers to every live main window and drops the event when there is none - the port's contract, and what the
  * tray-hidden app needs: an event nobody can receive is not an error the service that raised it has to handle.
  */
+/*
+ * PANEL-04: every window that renders app state, which is the main window and - while it is open - the tray panel.
+ * The panel draws the same tick, so without it here the panel's figures would be whatever the opening snapshot
+ * said and would never move again.
+ */
+const rendererWindows = (): readonly RendererTarget[] => [...mainWindows(), ...panelWindows()];
+
 export function createElectronRendererBus(
     log: (line: string) => void,
-    targets: () => readonly RendererTarget[] = mainWindows
+    targets: () => readonly RendererTarget[] = rendererWindows
 ): RendererBusPort {
     return {
         emit(channel, payload) {

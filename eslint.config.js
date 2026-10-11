@@ -111,6 +111,9 @@ const MAIN_ELECTRON_PATTERNS = [{ group: ['electron/*'], message: MAIN_ELECTRON_
 // BUILD-06's packaged prover, which drives the real app rather than being part of it.
 const MAIN_ELECTRON_ALLOWED = [
     'src/main/index.ts', 'src/main/window.ts', 'src/main/lifecycle.ts', 'src/main/tray.ts',
+    // PANEL-01: a second window module, in the same class as window.ts. Its arithmetic is elsewhere and stays
+    // Electron-free (src/main/panel-anchor.ts), which is what keeps the exemption to window construction.
+    'src/main/panel.ts',
     'src/main/ipc/**', 'src/main/adapters/**',
     'src/main/userdata-path.ts', 'src/main/legacy-storage.ts', 'src/main/smoke.ts'
 ];

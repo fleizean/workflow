@@ -14,7 +14,12 @@ import type { WindowBounds } from './window-bounds';
 // A failed load is logged, never fatal. ERR_ABORTED (the dev server's first-run reload superseding the load) is not
 // even logged; the smoke launch calls loadRenderer directly, where any failed load is a failure.
 export function showRenderer(win: BrowserWindow): void {
-    loadRenderer(win).catch((error: unknown) => {
+    showRendererRoute(win, undefined);
+}
+
+/** The same, at one route: the tray panel is a route in the one document, not a second page (PANEL-05). */
+export function showRendererRoute(win: BrowserWindow, hash: string | undefined): void {
+    loadRendererRoute(win, hash).catch((error: unknown) => {
         if (isSupersededNavigation(error)) {
             return;
         }
@@ -240,11 +245,23 @@ export const shellControls = {
 
 /** The dev server when unpackaged, otherwise the built index.html beside __dirname (inside app.asar, never cwd-relative). */
 export function loadRenderer(win: BrowserWindow): Promise<void> {
+    return loadRendererRoute(win, undefined);
+}
+
+/**
+ * The same document at a named hash route. The path is still exactly index.html, which is what keeps isAppUrl's
+ * equality check - and WR-01 with it - true of the panel as well as of the main window.
+ */
+export function loadRendererRoute(win: BrowserWindow, hash: string | undefined): Promise<void> {
     const devServerUrl = rendererDevServerUrl();
     if (devServerUrl !== undefined) {
-        return win.loadURL(devServerUrl);
+        return win.loadURL(devServerUrl + (hash ?? ''));
     }
-    return win.loadFile(rendererIndexPath());
+    if (hash === undefined) {
+        return win.loadFile(rendererIndexPath());
+    }
+    // Electron formats this through url.format, which prepends the '#' itself.
+    return win.loadFile(rendererIndexPath(), { hash: hash.replace(/^#/, '') });
 }
 
 function rendererDevServerUrl(): string | undefined {

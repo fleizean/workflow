@@ -24,7 +24,9 @@ const state = {
     listeners: new Map<string, () => void>(),
     iconPath: '',
     resized: null as { width: number; height: number } | null,
-    imageEmpty: false
+    imageEmpty: false,
+    // PANEL-01: what Windows reports for a 16x16 icon on a bottom taskbar.
+    iconBounds: { x: 1792, y: 1048, width: 16, height: 16 }
 };
 
 vi.mock('electron', () => {
@@ -34,6 +36,7 @@ vi.mock('electron', () => {
             state.trays += 1;
         }
         setToolTip(text: string): void { state.tooltip = text; }
+        getBounds(): { x: number; y: number; width: number; height: number } { return state.iconBounds; }
         setContextMenu(menu: MenuItem[]): void { state.menu = menu; }
         on(event: string, listener: () => void): void { state.listeners.set(event, listener); }
         destroy(): void { state.destroyed += 1; }
@@ -58,7 +61,7 @@ vi.mock('electron', () => {
 });
 
 const {
-    RESET_POSITION_LABEL, announceTrayUpdate, appTrayMenu, createAppTray, destroyAppTray, hasAppTray
+    RESET_POSITION_LABEL, announceTrayUpdate, appTrayMenu, createAppTray, destroyAppTray, hasAppTray, trayIconBounds
 } = await import('../src/main/tray');
 const { decideWindowClose, isQuitting, markQuitting, resetQuittingForTests } = await import('../src/main/quit');
 const { TRAY_ICON_SIZE, TRAY_TOOLTIP } = await import('../src/main/config');
@@ -74,20 +77,22 @@ interface Window {
     hidden: number;
     reset: number;
     releases: number;
+    /** PANEL-01: how many times the click asked for the panel. The tray never builds one itself. */
+    panelToggles: number;
 }
 
 function actionsFor(win: Window) {
     return {
         show: () => { win.visible = true; win.shown += 1; },
-        hide: () => { win.visible = false; win.hidden += 1; },
-        isVisible: () => win.visible,
+        togglePanel: () => { win.panelToggles += 1; },
         resetPosition: () => { win.reset += 1; },
         openReleases: () => { win.releases += 1; }
     };
 }
 
 /** Every case that does not care about the window's state starts from the same one. */
-const freshWindow = (visible: boolean): Window => ({ visible, shown: 0, hidden: 0, reset: 0, releases: 0 });
+const freshWindow = (visible: boolean): Window =>
+    ({ visible, shown: 0, hidden: 0, reset: 0, releases: 0, panelToggles: 0 });
 
 /** Not the real version: the menu must read whatever it is handed, not a constant this test could also read. */
 const TEST_VERSION = '9.8.7';
@@ -140,17 +145,35 @@ describe('criterion 8: the tray', () => {
             .toBe('close');
     });
 
-    it('toggles the window on a click, as v1.2.1 did', () => {
-        const win: Window = freshWindow(true);
+    /*
+     * PANEL-01, and a deliberate change from v1.2.1. The click toggled the window (main.js:130-139) and now asks
+     * for the panel; showing the window moved to the panel's footer and to the Show item, and hiding it stayed on
+     * the titlebar where the owner put it on 2026-09-13. The tray does not know what a panel is - it asks.
+     */
+    it('asks for the panel on a click, and surfaces no window of its own', () => {
+        const win: Window = freshWindow(false);
         createAppTray(actionsFor(win), TEST_VERSION, () => undefined);
         const click = state.listeners.get('click');
         expect(click, 'the tray no longer answers a click').toBeDefined();
 
         click?.();
-        expect(win.visible).toBe(false);
         click?.();
-        expect(win.visible).toBe(true);
-        expect([win.shown, win.hidden]).toEqual([1, 1]);
+        expect(win.panelToggles, 'the click no longer reaches the panel').toBe(2);
+        expect([win.shown, win.visible], 'the click still moves the main window instead of opening the panel')
+            .toEqual([0, false]);
+    });
+
+    /*
+     * The panel is anchored to the icon, so the icon has to be able to say where it is. Electron documents
+     * getBounds as macOS and Windows only; a platform that refuses the question reports no icon rather than
+     * failing the click.
+     */
+    it('reports the icon rectangle the panel anchors to, and null when there is no tray', () => {
+        expect(trayIconBounds(), 'an icon rectangle was reported before any tray existed').toBeNull();
+        createAppTray(actionsFor(freshWindow(true)), TEST_VERSION, () => undefined);
+        expect(trayIconBounds()).toEqual(state.iconBounds);
+        destroyAppTray();
+        expect(trayIconBounds()).toBeNull();
     });
 
     it('brings the window back from Show', () => {

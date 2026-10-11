@@ -6,12 +6,16 @@ import trayIconPath from '../assets/icon.png?asset';
 import { TRAY_ICON_SIZE, TRAY_TOOLTIP } from './config';
 import { describeError } from './errors';
 import { markQuitting } from './quit';
+import type { WindowBounds } from './window-bounds';
 
 export interface TrayActions {
     show(): void;
-    /** Whether the window is on screen right now, so a click can toggle it as v1.2.1's did. */
-    isVisible(): boolean;
-    hide(): void;
+    /**
+     * PANEL-01: what a click on the icon does. v1.2.1 toggled the window (main.js:130-139) and so did this tray
+     * until Phase 12; the click opens the panel now, and the window is reached from the panel's footer or from the
+     * Show item below. The owner asked for the panel on the click, so the toggle is replaced, not doubled up.
+     */
+    togglePanel(): void;
     /** Phase 10 criterion 5: put a window nobody can reach back in the middle of the primary display. */
     resetPosition(): void;
     /** REPO-06: reached only from an item that exists only when a newer version was actually found. */
@@ -112,13 +116,10 @@ export function createAppTray(actions: TrayActions, version: string, log: (line:
     tray.setToolTip(TRAY_TOOLTIP);
     rebuildMenu(actions);
 
-    // v1.2.1 toggled on a click (main.js:130-139), and that is the behaviour being kept.
+    // PANEL-01: the click opens the panel anchored to this icon. The tray never builds the panel itself - it asks,
+    // and src/main/panel.ts owns the window, so nothing here can become a second place windows are made.
     tray.on('click', () => {
-        if (actions.isVisible()) {
-            actions.hide();
-        } else {
-            actions.show();
-        }
+        actions.togglePanel();
     });
 
     return tray;
@@ -135,4 +136,22 @@ export function destroyAppTray(): void {
 
 export function hasAppTray(): boolean {
     return tray !== undefined;
+}
+
+/**
+ * PANEL-01: the icon's rectangle on screen, which is what the panel anchors to. Electron documents getBounds as
+ * macOS and Windows only and Linux answers zeroes; null and a zeroed rectangle mean the same thing to
+ * panel-anchor.ts, so neither has to be special-cased by the caller.
+ */
+export function trayIconBounds(): WindowBounds | null {
+    if (tray === undefined) {
+        return null;
+    }
+    try {
+        return tray.getBounds();
+    } catch (error) {
+        // A platform that refuses the question is a platform that reports no icon, not a failed click.
+        console.error('src/main/tray.ts: the tray icon bounds could not be read - ' + describeError(error));
+        return null;
+    }
 }
