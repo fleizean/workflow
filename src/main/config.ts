@@ -79,6 +79,14 @@ export const MAIN_WINDOW = Object.freeze({
 export const APP_USER_MODEL_ID = 'com.workflow.timer';
 
 /*
+ * The diagnostics file, in userData beside the database. Trimmed from the front at this size, so it is bounded and
+ * what survives is always the most recent: a packaged app has no readable stdout, and every log line the main
+ * process writes used to go nowhere retrievable.
+ */
+export const LOG_FILE_NAME = 'workflow.log';
+export const LOG_MAX_BYTES = 512 * 1024;
+
+/*
  * How long an unresponsive renderer is given to answer before its window is reloaded. A renderer that is merely
  * busy raises 'unresponsive' and then 'responsive' within a moment, and reloading that one would throw away what
  * the user had typed; a renderer that never answers again is the macOS lid-close freeze, where the window keeps its

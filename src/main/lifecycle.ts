@@ -17,6 +17,7 @@ import { describeError } from './errors';
 import { registerIpcHandlers } from './ipc';
 import type { HandlerContext } from './ipc';
 import { readLegacyStorage } from './legacy-storage';
+import { createFileLog } from './log';
 import { clickTray, closePanel } from './panel';
 import { markQuitting } from './quit';
 import { announceTrayUpdate, createAppTray, destroyAppTray, trayIconBounds } from './tray';
@@ -24,7 +25,7 @@ import type { TrayActions } from './tray';
 import type { TimerService } from './services/timer.service';
 import {
     createMainWindow, hardenWebContents, hasCreatedMainWindow, mainWindows, registerHideNoticeStore,
-    registerWindowBoundsStore, resetWindowPosition, shellControls, showRenderer
+    registerWindowBoundsStore, registerWindowLog, resetWindowPosition, shellControls, showRenderer
 } from './window';
 import type { HideNoticeStore, WindowBoundsStore } from './window';
 import type { DataDomain, MainWindowIntent } from '@shared/types';
@@ -78,6 +79,17 @@ export function registerLifecycle(): void {
     });
 }
 
+/*
+ * The one sink the main process reports through. stdout until the launch can name userData, and a bounded file
+ * under it from then on: the clamp's own line is the measurement the macOS freeze investigation needed and could
+ * not retrieve from a packaged app.
+ */
+let appLog: (line: string) => void = (line) => { console.log(line); };
+
+export function mainLog(line: string): void {
+    appLog(line);
+}
+
 let updateChecker: UpdateChecker | undefined;
 
 /**
@@ -124,7 +136,7 @@ export function closeDatabaseNow(): void {
     // The timer flushes first: a write after the close would lose the last seconds counted to a driver error.
     const flushFailure = disposeActiveContainer();
     if (flushFailure !== null) {
-        console.error('src/main/lifecycle.ts: the elapsed time did not flush at quit - ' + flushFailure);
+        mainLog('src/main/lifecycle.ts: the elapsed time did not flush at quit - ' + flushFailure);
     }
     // Before the close, so nothing can be handed a repository over a connection on its way out.
     clearActiveContainer();
@@ -135,7 +147,7 @@ export function closeDatabaseNow(): void {
     try {
         close();
     } catch (error) {
-        console.error('src/main/lifecycle.ts: the database did not close at quit - ' + describeError(error));
+        mainLog('src/main/lifecycle.ts: the database did not close at quit - ' + describeError(error));
     }
 }
 
@@ -225,7 +237,7 @@ function announceSaveRequest(): void {
     try {
         activeContainer().ports.bus.emit('shell:saveRequested', { requestedAt: Date.now() });
     } catch (error) {
-        console.error('src/main/lifecycle.ts: the save request did not reach the window - ' + describeError(error));
+        mainLog('src/main/lifecycle.ts: the save request did not reach the window - ' + describeError(error));
     }
 }
 
@@ -248,7 +260,10 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
      * paint must find the channel answered. An unregistered channel rejects the invoke with Electron's own words,
      * while an unbuilt container is an IpcResult the renderer can render.
      */
-    registerIpcHandlers({ context: handlerContext, announce: announceChange, log: (line) => { console.log(line); } });
+    appLog = createFileLog({ dir: app.getPath('userData'), mirror: (line) => { console.log(line); } });
+    registerWindowLog(mainLog);
+
+    registerIpcHandlers({ context: handlerContext, announce: announceChange, log: mainLog });
 
     const appData = app.getPath('appData');
     const started = await startDatabase(
@@ -264,7 +279,7 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
         {
             report: (_kind, title, body) => { dialog.showErrorBox(title, body); },
             exit: (code) => { app.exit(code); },
-            log: (line) => { console.log(line); },
+            log: mainLog,
             readLegacyStorage: () => readLegacyStorage(),
             openMainWindow: (connection) => {
                 // The store is registered first: the window reads its saved bounds as it is constructed, and a
@@ -277,15 +292,15 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
                     // PANEL-01: the icon's own rectangle is asked for at the click, not captured now - a display
                     // change or a taskbar the user moved would otherwise anchor the panel to where the icon was.
                     togglePanel: () => {
-                        clickTray(() => trayIconBounds(), (line) => { console.log(line); });
+                        clickTray(() => trayIconBounds(), mainLog);
                     },
                     resetPosition: resetWindowPosition,
                     // WR-01 bans in-app navigation; this hands the address to the OS browser instead, and the
                     // address is a constant, so nothing a response body says can choose where it goes.
                     openReleases: () => { void shell.openExternal(UPDATE_RELEASES_URL); }
                 };
-                createAppTray(trayActions, app.getVersion(), (line) => { console.log(line); });
-                startUpdateChecks(trayActions, (line) => { console.log(line); });
+                createAppTray(trayActions, app.getVersion(), mainLog);
+                startUpdateChecks(trayActions, mainLog);
             }
         }
     );
@@ -297,7 +312,7 @@ export async function launchApplication(database: DatabaseLayer): Promise<void> 
         const container = createContainer({
             layer: database,
             connection: started.db,
-            log: (line) => { console.log(line); }
+            log: mainLog
         });
         setActiveContainer(container);
         registerPowerMonitor(container.services.timer);

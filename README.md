@@ -83,6 +83,11 @@ Everything lives in one SQLite database in your user data folder:
 | Windows | `%APPDATA%\workflow-timer\` |
 | macOS | `~/Library/Application Support/workflow-timer/` |
 
+Beside the database in that same folder is `workflow.log`, a plain text file Workflow writes its own
+diagnostics to — what it did at startup, and anything that went wrong since. It is capped at half a
+megabyte, holds no session names or notes, and is the single most useful thing to attach to a bug
+report.
+
 Up to and including v1.2.1 the file in there was named `krono.db`. Workflow 2 can rename it to
 `workflow.db` — look in the folder above to see which one your copy has. If it is still `krono.db`,
 the rename has not happened on your machine and the rest of this section is about a day that has not
