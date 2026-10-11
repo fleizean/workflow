@@ -50,6 +50,55 @@ const dial = (over: Partial<Parameters<typeof describeWorkDial>[0]>): ReturnType
         ...over
     });
 
+/*
+ * A button that is disabled has to look it. The primary toggle carried no disabled: variant at all while the other
+ * two did, so while busy was true the one control that starts and stops the clock was inert and completely
+ * normal-looking - which is why the macOS freeze report could not say which branch it was.
+ */
+describe('every control that can be disabled says so', () => {
+    const CONTROLS = 'src/renderer/src/features/timer/components/TimerControls.tsx';
+
+    /** The class constant each <button disabled={...}> is given, by name. */
+    const disableableClasses = (file: string): string[] => {
+        const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, scriptKindFor(file));
+        const found: string[] = [];
+        const walk = (node: ts.Node): void => {
+            if (ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) {
+                const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+                const named = (name: string): ts.JsxAttribute | undefined =>
+                    attributes.find((attribute) => attribute.name.getText(source) === name);
+                const className = named('className')?.initializer;
+                if (named('disabled') !== undefined && className !== undefined &&
+                    ts.isJsxExpression(className) && className.expression !== undefined &&
+                    ts.isIdentifier(className.expression)) {
+                    found.push(className.expression.text);
+                }
+            }
+            ts.forEachChild(node, walk);
+        };
+        walk(source);
+        return found;
+    };
+
+    const declarationOf = (source: string, name: string): string => {
+        const start = source.indexOf('const ' + name + ' =');
+        expect(start, name + ' is not a const this check can read').toBeGreaterThanOrEqual(0);
+        return source.slice(start, source.indexOf(';', start));
+    };
+
+    it('finds all three disableable buttons, so the check below is not vacuous', () => {
+        expect(disableableClasses(CONTROLS)).toHaveLength(3);
+    });
+
+    it('gives each of them a disabled: variant to render', () => {
+        const source = read(CONTROLS);
+        for (const name of disableableClasses(CONTROLS)) {
+            expect(declarationOf(source, name), name + ' carries no disabled: variant, so a dead button looks alive')
+                .toContain('disabled:opacity-40');
+        }
+    });
+});
+
 describe('savableSeconds: what a save is allowed to write', () => {
     it('writes what was counted when nothing was adjusted', () => {
         expect(savableSeconds(3725, 0)).toBe(3725);

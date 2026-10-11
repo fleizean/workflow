@@ -9,8 +9,14 @@ import type { ReactElement } from 'react';
 const SECONDARY_CLASS = 'flex flex-col items-center justify-center w-16 h-16 rounded-2xl bg-slate-200 ' +
     'dark:bg-surface-dark text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-[#233c48] ' +
     'transition-all active:scale-95 group disabled:opacity-40 disabled:hover:scale-100';
+/*
+ * The disabled: variants are not decoration. This is the one button that starts and stops the clock, it is
+ * disabled while a press is in flight, and without them it was pixel-identical to a live one - so "I pressed it and
+ * nothing happened" could not be told from "the button was dead", by the owner or by the investigation.
+ */
 const PRIMARY_CLASS = 'flex items-center justify-center w-24 h-24 rounded-full bg-primary text-white ' +
-    'transition-all active:scale-95 active:shadow-inner relative overflow-hidden group';
+    'transition-all active:scale-95 active:shadow-inner relative overflow-hidden group ' +
+    'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100';
 const PRIMARY_WASH = 'absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 ' +
     'transition-transform duration-300 ease-out rounded-full';
 const PRIMARY_GLYPH = "material-symbols-outlined text-5xl relative z-10 [font-variation-settings:'FILL'_1]";
