@@ -16,6 +16,8 @@ export const queryKeys = {
     weekTotals: ['stats', 'weekTotals'] as const,
     // TIMER-09. Keyed under 'stats' for the same reason: a saved session can carry the day and move the streak.
     streak: ['stats', 'streak'] as const,
+    // PANEL-03. The day main's clock calls today, not a date the renderer computed - so the key is static.
+    todayProgress: ['stats', 'todayProgress'] as const,
     // POMO-08/POMO-09. The cycle is its own domain, and settings:update announces that domain too (WR-04), so a
     // duration changed on Settings refreshes what the running interval is measured against.
     pomodoroSnapshot: ['pomodoro', 'snapshot'] as const,

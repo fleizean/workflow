@@ -173,6 +173,7 @@ const WELL_FORMED: Readonly<Record<IpcChannel, { input?: unknown; reaches: strin
     'stats:streak': { reaches: 'stats.streak' },
     'stats:weekTotals': { reaches: 'stats.weeks' },
     'stats:dayProgress': { input: { date: DAY }, reaches: 'stats.dayProgress' },
+    'stats:today': { reaches: 'stats.today' },
     'window:hide': { reaches: 'shell.hide' },
     'window:claimHideNotice': { reaches: 'shell.claimHideNotice' },
     'window:showMain': { input: { intent: 'save' }, reaches: 'shell.showMain' },

@@ -119,6 +119,13 @@ export const ipcContract = {
     'stats:weekTotals': { input: z.void(), output: WeekTotalsSchema },
     'stats:dayProgress': { input: z.strictObject({ date: LocalDateSchema }), output: DayProgressSchema },
     /*
+     * PANEL-03: the same answer for the day main's own clock calls today. stats.today() has existed since Phase 5
+     * and nothing could reach it; the tray panel needs it, and asking for "today" rather than computing a date in
+     * the renderer keeps one clock in the app - the day the timer counts on and the day the panel measures are the
+     * same day by construction (CR-01). It also keeps the cache key static, which a dated one could not be.
+     */
+    'stats:today': { input: z.void(), output: DayProgressSchema },
+    /*
      * Owner decision 2026-09-13: the two titlebar buttons no longer mean the same thing, so the channel says which
      * is being asked for. v1.2.1 sent both to one hide (legacy/renderer/titlebar.js), and `window:close` - which hid
      * rather than closed - is retired rather than quietly redefined. With no tray to hide to, hide minimises (IPC-05).
@@ -206,6 +213,7 @@ export const ipcWrites = {
     'stats:streak': [],
     'stats:weekTotals': [],
     'stats:dayProgress': [],
+    'stats:today': [],
     // The window and the process; nothing the renderer caches depends on either.
     'window:hide': [],
     'window:claimHideNotice': [],

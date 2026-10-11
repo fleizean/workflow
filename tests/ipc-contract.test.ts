@@ -23,12 +23,13 @@ const CHANNELS = [
     'companies:delete', 'settings:get', 'settings:update', 'timer:getSnapshot', 'timer:start', 'timer:pause',
     'timer:reset', 'timer:setMode', 'timer:stopAndSave', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause',
     'pomodoro:abort',
-    'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress',
+    'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress', 'stats:today',
     'window:hide', 'window:claimHideNotice', 'window:showMain', 'app:quit'
 ];
 const VOID_INPUT_CHANNELS = [
     'app:quit', 'companies:list', 'pomodoro:abort', 'pomodoro:counts', 'pomodoro:getSnapshot', 'pomodoro:pause', 'pomodoro:skipBreak',
-    'pomodoro:start', 'sessions:list', 'settings:get', 'stats:streak', 'stats:weekTotals', 'timer:getSnapshot',
+    'pomodoro:start', 'sessions:list', 'settings:get', 'stats:streak', 'stats:today', 'stats:weekTotals',
+    'timer:getSnapshot',
     'timer:pause', 'timer:reset', 'timer:start', 'window:claimHideNotice', 'window:hide'
 ];
 // Main-to-renderer events. Slice C added the first one for the sound port; each later entry arrives with the
@@ -538,6 +539,7 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'stats:streak': reject,
         'stats:weekTotals': reject,
         'stats:dayProgress': reject,
+        'stats:today': reject,
         'window:hide': reject,
         'window:claimHideNotice': reject,
         'window:showMain': reject,

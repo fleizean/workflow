@@ -31,6 +31,7 @@ export const IPC_CHANNELS = [
     'stats:streak',
     'stats:weekTotals',
     'stats:dayProgress',
+    'stats:today',
     'window:hide',
     'window:claimHideNotice',
     'window:showMain',

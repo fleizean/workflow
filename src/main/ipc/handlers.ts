@@ -72,6 +72,7 @@ export function createHandlers(context: HandlerContext): IpcHandlers {
         'stats:streak': () => stats.streak(),
         'stats:weekTotals': () => stats.weeks(),
         'stats:dayProgress': (input) => stats.dayProgress(input.date),
+        'stats:today': () => stats.today(),
 
         'window:hide': () => { shell.hide(); },
         'window:claimHideNotice': () => shell.claimHideNotice(),
