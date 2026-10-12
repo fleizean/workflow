@@ -28,8 +28,11 @@ import { timerSnapshotQuery } from '@renderer/features/timer/api/useTimerSnapsho
 import { adjustPendingSaveMutation } from '@renderer/features/timer/api/useTimerCommands';
 import { readTimerSnapshot, setTimerSnapshot } from '@renderer/features/timer/state/timer.store';
 import { describeWorkDial } from '@renderer/features/timer/timer-view';
+import { countedTowardToday, describePanelTimer, describeProgress } from '@renderer/features/panel/panel-view';
 import { API_BRIDGE_KEY } from '@shared/constants/bridge';
 import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
+import { adjustmentLabel } from '@shared/utils/session-duration';
+import { formatElapsed } from '@renderer/lib/duration';
 import { ipcWrites } from '@shared/ipc/contract';
 import type { IpcChannel, IpcHandlers, IpcResult, TimerSnapshot } from '@shared/types';
 import { findAll, read, scriptKindFor } from './helpers/ts-imports';
@@ -349,5 +352,97 @@ describe('what clears the correction', () => {
         expect(h.main.snapshot().pendingAdjustmentSeconds, 'a day boundary discarded a correction silently')
             .toBe(HALF_HOUR);
         expect(h.main.snapshot().elapsedSeconds).toBe(15);
+    });
+});
+
+/*
+ * The disagreement the owner reported. They pressed Adjust, added a minute, and the dial read REMAINING 07:58:50
+ * against an eight-hour target - seventy seconds accounted for - while the tray panel open beside it read
+ * 00:00:10. Two surfaces, one timer, two numbers.
+ *
+ * These are not two assertions about two numbers that happen to match: the point is that both surfaces read the
+ * same two snapshot fields through the same savableSeconds, so there is nothing left for them to drift on.
+ */
+describe('the two surfaces show one timer', () => {
+    /** The owner's exact case: ten seconds counted, one minute added, nothing on disk for the day. */
+    const OWNERS_CASE: TimerSnapshot = {
+        status: 'paused',
+        mode: 'work',
+        elapsedSeconds: 10,
+        restoredFromPreviousLaunch: false,
+        persistFailing: false,
+        pendingAdjustmentSeconds: 60
+    };
+
+    it('reads 00:01:10 on the panel, which is the 70 seconds the dial accounts for', () => {
+        const dial = dialOf(OWNERS_CASE);
+        const panel = describePanelTimer(OWNERS_CASE);
+
+        expect(dial.savableSeconds, 'the dial accounts for the counted seconds plus the correction').toBe(70);
+        expect(dial.digits, 'REMAINING 07:58:50 of an eight-hour target').toEqual(['07', '58', '50']);
+        expect(panel.elapsed, 'the panel showed 00:00:10 beside a dial that had accounted for 70').toBe('00:01:10');
+    });
+
+    it('carries Home\'s own note under it, word for word', () => {
+        expect(describePanelTimer(OWNERS_CASE).adjustment).toBe('+1 min when you save');
+        expect(adjustmentLabel(OWNERS_CASE.pendingAdjustmentSeconds),
+            'the panel spells the correction its own way').toBe(describePanelTimer(OWNERS_CASE).adjustment);
+    });
+
+    it('agrees with the dial at every correction, positive, negative and absent', () => {
+        for (const pendingAdjustmentSeconds of [0, 60, 1800, -1800, -3600, 7200]) {
+            const snapshot: TimerSnapshot = { ...OWNERS_CASE, elapsedSeconds: 3600, pendingAdjustmentSeconds };
+            expect(
+                describePanelTimer(snapshot).elapsed,
+                'the panel and the dial disagree at ' + String(pendingAdjustmentSeconds) + 's'
+            ).toBe(formatElapsed(dialOf(snapshot).savableSeconds));
+        }
+    });
+
+    it("measures the day with the same total the dial's ring does", () => {
+        const snapshot: TimerSnapshot = { ...OWNERS_CASE, elapsedSeconds: 3600, pendingAdjustmentSeconds: 1800 };
+        const dial = dialOf(snapshot);
+        const bar = describeProgress(countedTowardToday(snapshot), EIGHT_HOURS);
+
+        expect(countedTowardToday(snapshot)).toBe(dial.savableSeconds);
+        // 5400 of 28800 is 18%; the ring draws the same fraction, so the two surfaces claim the same day.
+        expect(bar.percentLabel).toBe('18%');
+        expect(bar.barPercent).toBeCloseTo((dial.savableSeconds / EIGHT_HOURS) * 100, 10);
+    });
+
+    it('offers Save exactly when Home does', () => {
+        // Nothing counted and a correction of nothing: neither surface offers to write a zero-second session.
+        const empty: TimerSnapshot = { ...OWNERS_CASE, elapsedSeconds: 0, pendingAdjustmentSeconds: 0 };
+        expect(describePanelTimer(empty).canSave).toBe(false);
+        expect(dialOf(empty).savableSeconds > 0).toBe(false);
+
+        // A minute added with nothing counted is a minute a save would write, on both surfaces.
+        const added: TimerSnapshot = { ...OWNERS_CASE, elapsedSeconds: 0, pendingAdjustmentSeconds: 60 };
+        expect(describePanelTimer(added).canSave).toBe(true);
+        expect(dialOf(added).savableSeconds > 0).toBe(true);
+    });
+
+    /*
+     * WR-10's other half, kept: in pomodoro mode each completed interval is already a session row, so the panel
+     * adds nothing to the day - and main clears the correction on a mode change anyway, so a non-zero one here is
+     * a state the app cannot reach. The guard stays because the panel must not depend on that to be honest.
+     */
+    it('adds nothing in pomodoro mode, correction or no correction', () => {
+        const cycle: TimerSnapshot = { ...OWNERS_CASE, mode: 'pomodoro', elapsedSeconds: 900 };
+        expect(countedTowardToday(cycle)).toBe(0);
+        expect(describePanelTimer(cycle).adjustment).toBeNull();
+    });
+
+    it('still shows the save figure the panel raises the main window for', async () => {
+        const h = loop();
+        h.main.start();
+        h.drive(10);
+        await h.adjust(60);
+
+        // The panel draws whatever the tick delivered - the same snapshot Home has at that moment.
+        const live = h.screen() as TimerSnapshot;
+        expect(describePanelTimer(live).elapsed).toBe(formatElapsed(dialOf(live).savableSeconds));
+        // PANEL-02 unchanged: its Save writes nothing, it raises the main window with the form.
+        expect(read('src/renderer/src/features/panel/PanelPage.tsx')).toContain("showMain.mutate('save')");
     });
 });

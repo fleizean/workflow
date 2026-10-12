@@ -6,6 +6,7 @@
  * No clock is read here. Every second comes from the snapshot main pushed or from a row the database holds (X1).
  */
 
+import { adjustmentLabel, savableSeconds } from '@shared/utils/session-duration';
 import { formatElapsed } from '@renderer/lib/duration';
 import { formatHoursMinutes } from '@renderer/lib/format';
 import type { TimerSnapshot } from '@shared/types';
@@ -58,7 +59,7 @@ export function describeProgress(doneSeconds: number, targetSeconds: number): Pa
 }
 
 export interface PanelTimerView {
-    /** HH:MM:SS, the same reading Home's dial carries. */
+    /** HH:MM:SS of what a save would write - the same figure, from the same function, as Home's dial. */
     readonly elapsed: string;
     readonly status: 'Running' | 'Paused' | 'Not running';
     readonly running: boolean;
@@ -66,6 +67,8 @@ export interface PanelTimerView {
     readonly canToggle: boolean;
     /** Whether there is counted time a save could write. */
     readonly canSave: boolean;
+    /** Home's own words for a pending correction, so one timer reads as one number. Null when there is none. */
+    readonly adjustment: string | null;
     /** One line saying why the controls are limited, or what the clock is holding. Null when there is nothing to say. */
     readonly note: string | null;
     /** Whether that note is a warning rather than information. */
@@ -79,9 +82,16 @@ export interface PanelTimerView {
  * Pomodoro mode disables both: starting the work timer pauses the cycle (container.ts `exclusive`, WR-02), and a
  * 320px panel that silently abandons the interval the user is in the middle of would be the worst kind of
  * convenience. The panel says where the cycle is instead, and the footer is how the user gets to it.
+ *
+ * The READING is what a save would write, correction included, because the owner reported the alternative as a
+ * bug and was right: the dial said 07:58:50 of an eight-hour target while the panel beside it said 00:00:10.
+ * Both now come off the same two snapshot fields through the same savableSeconds, so they cannot drift again.
+ * The STATUS stays about the clock - a correction is not a second of running time.
  */
 export function describePanelTimer(snapshot: TimerSnapshot | null): PanelTimerView {
     const elapsedSeconds = snapshot?.elapsedSeconds ?? 0;
+    const adjustment = snapshot?.pendingAdjustmentSeconds ?? 0;
+    const savable = savableSeconds(elapsedSeconds, adjustment);
     const running = snapshot?.status === 'running';
     const pomodoro = snapshot?.mode === 'pomodoro';
     const failing = snapshot?.persistFailing === true;
@@ -92,11 +102,13 @@ export function describePanelTimer(snapshot: TimerSnapshot | null): PanelTimerVi
             : restored ? 'Counted before Workflow last closed' : null;
 
     return {
-        elapsed: formatElapsed(elapsedSeconds),
+        elapsed: formatElapsed(savable),
         status: running ? 'Running' : elapsedSeconds > 0 ? 'Paused' : 'Not running',
         running,
         canToggle: !pomodoro,
-        canSave: !pomodoro && elapsedSeconds > 0,
+        // Home gates its Save on dial.savableSeconds, so this gates on the same thing.
+        canSave: !pomodoro && savable > 0,
+        adjustment: pomodoro ? null : adjustmentLabel(adjustment),
         note,
         warning: failing
     };
@@ -108,12 +120,13 @@ export function describePanelTimer(snapshot: TimerSnapshot | null): PanelTimerVi
  * Zero in pomodoro mode, which is WR-10: each completed interval is already its own session row, so adding the main
  * clock's accumulation would count the same wall clock twice. Under-counting makes the bar lag; over-counting makes
  * it claim a day that was not worked.
+ *
+ * The pending correction is in it, because Home's dial puts it in the same sum: these bars and that ring measure
+ * the same day, and one of them leaving the correction out is the disagreement again one surface further down.
  */
 export function countedTowardToday(snapshot: TimerSnapshot | null): number {
     if (snapshot === null || snapshot.mode !== 'work') {
         return 0;
     }
-    return Number.isFinite(snapshot.elapsedSeconds) && snapshot.elapsedSeconds > 0
-        ? Math.floor(snapshot.elapsedSeconds)
-        : 0;
+    return savableSeconds(snapshot.elapsedSeconds, snapshot.pendingAdjustmentSeconds);
 }

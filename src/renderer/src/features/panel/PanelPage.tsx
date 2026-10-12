@@ -62,6 +62,7 @@ export default function PanelPage(): ReactElement {
                 running={timer.running}
                 canToggle={timer.canToggle}
                 canSave={timer.canSave}
+                adjustment={timer.adjustment}
                 note={timer.note}
                 warning={timer.warning}
                 busy={start.isPending || pause.isPending}

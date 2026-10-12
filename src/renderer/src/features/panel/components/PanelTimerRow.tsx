@@ -12,6 +12,8 @@ const ROW = 'flex flex-col items-center gap-2 px-4 pt-4';
 const ELAPSED = 'text-4xl font-bold leading-none tracking-tight tabular-nums';
 const STATUS = 'text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400';
 const NOTE = 'text-center text-[11px] leading-snug text-slate-500 dark:text-slate-400';
+// The amber Home uses for the same line under its dial.
+const ADJUSTED = 'text-center text-[11px] font-semibold leading-snug text-amber-400';
 const NOTE_WARNING = 'text-center text-[11px] leading-snug font-semibold text-red-500 dark:text-red-400';
 const CONTROLS = 'flex items-center justify-center gap-3 pt-1';
 const PRIMARY = 'flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white ' +
@@ -28,6 +30,7 @@ interface PanelTimerRowProps {
     readonly running: boolean;
     readonly canToggle: boolean;
     readonly canSave: boolean;
+    readonly adjustment: string | null;
     readonly note: string | null;
     readonly warning: boolean;
     readonly busy: boolean;
@@ -40,6 +43,7 @@ export default function PanelTimerRow(props: PanelTimerRowProps): ReactElement {
         <div className={ROW}>
             <p className={ELAPSED}>{props.elapsed}</p>
             <p className={STATUS}>{props.status}</p>
+            {props.adjustment === null ? null : <p className={ADJUSTED}>{props.adjustment}</p>}
             {props.note === null ? null : (
                 <p className={props.warning ? NOTE_WARNING : NOTE}>{props.note}</p>
             )}

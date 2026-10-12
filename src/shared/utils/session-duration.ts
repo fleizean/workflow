@@ -22,3 +22,27 @@ export function savableSeconds(elapsedSeconds: number, adjustmentSeconds: number
 export function boundedAdjustment(elapsedSeconds: number, adjustmentSeconds: number): number {
     return savableSeconds(elapsedSeconds, adjustmentSeconds) - whole(elapsedSeconds);
 }
+
+const SECONDS_PER_HOUR = 3600;
+const SECONDS_PER_MINUTE = 60;
+
+/**
+ * `+30 min`, `-1h 05m`, or nothing at all when there is no pending correction.
+ *
+ * One spelling, because Home and the tray panel both draw this line and two spellings of it would be the
+ * disagreement the figure above it was just given one source to end.
+ */
+export function adjustmentLabel(adjustmentSeconds: number): string | null {
+    const seconds = whole(adjustmentSeconds);
+    if (seconds === 0) {
+        return null;
+    }
+    const sign = seconds > 0 ? '+' : '-';
+    const magnitude = Math.abs(seconds);
+    const hours = Math.floor(magnitude / SECONDS_PER_HOUR);
+    const minutes = Math.round((magnitude % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+    const size = hours > 0
+        ? String(hours) + 'h ' + String(minutes).padStart(2, '0') + 'm'
+        : String(minutes) + ' min';
+    return sign + size + ' when you save';
+}

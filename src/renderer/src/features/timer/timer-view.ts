@@ -9,13 +9,14 @@
  * come from the snapshot main pushed (X1).
  */
 
-import { savableSeconds } from '@shared/utils/session-duration';
+import { adjustmentLabel, savableSeconds } from '@shared/utils/session-duration';
 import { formatClockTime } from '@renderer/lib/format';
 import { formatElapsed } from '@renderer/lib/duration';
 import type { LocalDate, WorkSession } from '@shared/types';
 
-// One answer to what a save would write, shared with main, which bounds the correction the moment it is set.
-export { savableSeconds };
+// One answer to what a save would write and one spelling of the correction, shared with main and with the tray
+// panel. Re-exported so this module stays the Home screen's single surface.
+export { adjustmentLabel, savableSeconds };
 
 /**
  * The Logged card: one day's recorded total, from the session list every screen already holds. A whole day, never
@@ -37,8 +38,6 @@ export const RING_CIRCUMFERENCE = 283;
 
 const PERCENT = 100;
 const MS_PER_SECOND = 1000;
-const SECONDS_PER_HOUR = 3600;
-const SECONDS_PER_MINUTE = 60;
 
 /** v1.2.1 coloured the ring at these two thresholds (legacy/pages/index.html:925-932). */
 export type RingTone = 'normal' | 'near' | 'complete';
@@ -187,17 +186,3 @@ export function headerDateLabel(month: number, day: number): string {
     return (MONTHS[month - 1] ?? '') + ' ' + String(day);
 }
 
-/** `+30 min`, `-1h 05m`, or nothing at all when there is no pending correction. */
-export function adjustmentLabel(adjustmentSeconds: number): string | null {
-    if (adjustmentSeconds === 0) {
-        return null;
-    }
-    const sign = adjustmentSeconds > 0 ? '+' : '-';
-    const magnitude = Math.abs(adjustmentSeconds);
-    const hours = Math.floor(magnitude / SECONDS_PER_HOUR);
-    const minutes = Math.round((magnitude % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
-    const size = hours > 0
-        ? String(hours) + 'h ' + String(minutes).padStart(2, '0') + 'm'
-        : String(minutes) + ' min';
-    return sign + size + ' when you save';
-}
