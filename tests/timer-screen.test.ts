@@ -299,15 +299,18 @@ describe('WR-03: the reset confirm names what reset actually discards', () => {
         expect(confirm.confirmLabel).toBe('Discard');
     });
 
-    it('is what the screen asks with, and the correction does not outlive the mode it was made in', () => {
+    it('is what the screen asks with', () => {
         const page = read('src/renderer/src/features/timer/TimerPage.tsx');
         expect(page).toContain('describeResetConfirm(elapsedSeconds)');
         expect(page, 'the confirm named a number reset does not touch')
             .not.toContain('formatElapsed(dial.savableSeconds)');
-        // A correction made on the work dial is invisible in pomodoro mode, so it may not survive the toggle.
-        expect(page).toContain('setAdjustmentSeconds(0)');
-        expect(page).toContain('}, [mode]);');
     });
+
+    /*
+     * The other half of WR-03 - a correction made on the work dial is invisible in pomodoro mode, so it may not
+     * survive the toggle - moved to main with the correction itself. It is asserted in
+     * tests/pending-adjustment.test.ts, over the service that now owns the rule.
+     */
 });
 
 /*

@@ -294,7 +294,10 @@ describe('CORE-05 / B12: time the app was closed for is never added', () => {
         const db = await migratedDatabase('fresh');
         const h = harness({ store: databaseStore(db, () => Date.now()) });
         expect(h.service.snapshot())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
+            .toEqual({
+                status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false,
+                pendingAdjustmentSeconds: 0
+            });
     });
 });
 
@@ -414,7 +417,10 @@ describe('CORE-14 / CB-1: a mode change never resets accumulated time', () => {
         h.service.pause();
 
         expect(h.service.setMode('pomodoro'))
-            .toEqual({ status: 'paused', mode: 'pomodoro', elapsedSeconds: 30, restoredFromPreviousLaunch: false, persistFailing: false });
+            .toEqual({
+                status: 'paused', mode: 'pomodoro', elapsedSeconds: 30, restoredFromPreviousLaunch: false, persistFailing: false,
+                pendingAdjustmentSeconds: 0
+            });
         expect(h.service.setMode('work').elapsedSeconds, 'switching back discarded what was counted').toBe(30);
     });
 
@@ -450,7 +456,10 @@ describe('CORE-14 / CB-1: a mode change never resets accumulated time', () => {
         h.drive(30);
 
         expect(h.service.reset())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
+            .toEqual({
+                status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false,
+                pendingAdjustmentSeconds: 0
+            });
         expect(h.counters.cancelled, 'reset left the repeat running').toBe(1);
         expect(h.writes.at(-1)).toEqual({ accumulatedSeconds: 0, mode: 'work' });
     });

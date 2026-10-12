@@ -63,7 +63,8 @@ let client: QueryClient;
 let disposers: (() => void)[] = [];
 
 const IDLE: TimerSnapshot = {
-    status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false
+    status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false,
+    pendingAdjustmentSeconds: 0
 };
 
 function buildLoop(): Loop {

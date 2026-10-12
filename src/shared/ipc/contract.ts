@@ -1,9 +1,10 @@
 // The one IPC contract (D-16): every channel name, payload schema and both ends' types derive from ipcContract.
 import { z } from 'zod';
 import {
-    CompanySchema, DayProgressSchema, IdSchema, LocalDateSchema, PomodoroCountsSchema,
+    AdjustmentSecondsSchema, CompanySchema, DayProgressSchema, IdSchema, LocalDateSchema, PomodoroCountsSchema,
     PomodoroSnapshotSchema, SessionDurationSecondsSchema, SessionNameSchema, SessionNoteSchema, SettingsSchema,
-    SoundChoiceSchema, SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema, WeekTotalsSchema, WorkSessionSchema
+    SoundChoiceSchema, SoundIdSchema, StreakSchema, TimerModeSchema, TimerSnapshotSchema, WeekTotalsSchema,
+    WorkSessionSchema
 } from '@shared/schemas';
 import { IPC_CHANNELS, IPC_EVENT_CHANNELS } from '@shared/ipc/channels';
 import type { DeclaredIpcChannel, DeclaredIpcEventChannel } from '@shared/ipc/channels';
@@ -102,6 +103,17 @@ export const ipcContract = {
     'timer:pause': { input: z.void(), output: TimerSnapshotSchema },
     'timer:reset': { input: z.void(), output: TimerSnapshotSchema },
     'timer:setMode': { input: z.strictObject({ mode: TimerModeSchema }), output: TimerSnapshotSchema },
+    /*
+     * The pending correction to what the next save will write, moved by `seconds`. Phase 8 refused a
+     * `timer:adjust` channel because a channel that adds seconds to the authoritative counter is a channel that
+     * invents work; that reasoning stands, and this is not one - it moves a field of its own and accumulatedMs
+     * does not budge (timer.service.ts). A DELTA rather than a value, so six quick taps are six corrections:
+     * a value computed from the snapshot on screen loses whichever tap was still in flight.
+     */
+    'timer:adjustPendingSave': {
+        input: z.strictObject({ seconds: AdjustmentSecondsSchema }),
+        output: TimerSnapshotSchema
+    },
     /*
      * WR-06: stopping the timer to record work is one call, because two cannot be atomic. `sessions:create` then
      * `timer:reset` leaves the session on disk and the seconds still counted if the process dies between them, and
@@ -203,6 +215,7 @@ export const ipcWrites = {
     'timer:pause': ['timer'],
     'timer:reset': ['timer'],
     'timer:setMode': ['timer'],
+    'timer:adjustPendingSave': ['timer'],
     'timer:stopAndSave': ['timer', 'sessions', 'stats'],
     'pomodoro:getSnapshot': [],
     'pomodoro:start': ['pomodoro'],

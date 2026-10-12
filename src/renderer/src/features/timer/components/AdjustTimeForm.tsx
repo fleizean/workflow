@@ -8,16 +8,19 @@
  * it, deliberately: a channel that adds time to the clock is a channel that invents work.
  *
  * So the correction applies to the SESSION about to be written rather than to the clock. It is shown under the dial
- * while pending, folded into the Save dialog's duration - which is editable, so anything these six buttons cannot
- * reach still is - and discarded by Reset, by a save, and by leaving the screen. It never survives a quit, which
- * means it can only ever lose invented seconds.
+ * while pending, shown on the tray panel at the same moment, folded into the Save dialog's duration - which is
+ * editable, so anything these six buttons cannot reach still is - and discarded by Reset, by a save and by a mode
+ * change. Leaving the screen no longer discards it: main holds it, and a correction the user cannot see they lost
+ * is the one way this dialog could cost them real time. It still never survives a quit, which means it can only
+ * ever lose invented seconds.
  */
 
 import { useId, useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import Modal from '@renderer/components/ui/Modal';
 import { formatElapsed } from '@renderer/lib/duration';
-import { adjustmentLabel, savableSeconds } from '../timer-view';
+import { boundedAdjustment, savableSeconds } from '@shared/utils/session-duration';
+import { adjustmentLabel } from '../timer-view';
 
 const TITLE_BLOCK_CLASS = 'flex flex-col items-center justify-center text-center pb-2';
 const BADGE_CLASS = 'w-14 h-14 rounded-full bg-linear-to-tr/srgb from-blue-900/50 to-primary/20 flex ' +
@@ -57,23 +60,24 @@ const STEPS: readonly { readonly seconds: number; readonly label: string }[] = [
 interface AdjustTimeFormProps {
     readonly elapsedSeconds: number;
     readonly adjustmentSeconds: number;
-    readonly onChange: (adjustmentSeconds: number) => void;
+    /** The CHANGE to make, not the new value: main adds it to the correction it holds. */
+    readonly onAdjust: (deltaSeconds: number) => void;
     readonly onDismiss: () => void;
 }
 
 export default function AdjustTimeForm(props: AdjustTimeFormProps): ReactElement {
-    const { adjustmentSeconds, elapsedSeconds, onChange, onDismiss } = props;
+    const { adjustmentSeconds, elapsedSeconds, onAdjust, onDismiss } = props;
     const [minutes, setMinutes] = useState('');
     const titleId = useId();
     const manualId = useId();
 
     /*
-     * Bounded through savableSeconds, so the correction can never take the recorded duration below zero or past a
-     * day. v1.2.1 clamped its counter at zero and had no upper bound at all.
+     * A delta, bounded by what the result may be, so a typed 99999 is clamped here rather than refused at the wire.
+     * Main bounds it again against its own elapsed, which is the authority. v1.2.1 clamped its counter at zero and
+     * had no upper bound at all.
      */
     const step = (seconds: number): void => {
-        const next = savableSeconds(elapsedSeconds, adjustmentSeconds + seconds) - elapsedSeconds;
-        onChange(next);
+        onAdjust(boundedAdjustment(elapsedSeconds, adjustmentSeconds + seconds) - adjustmentSeconds);
     };
 
     const applyManual = (event: FormEvent<HTMLFormElement>): void => {

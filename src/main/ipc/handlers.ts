@@ -60,6 +60,7 @@ export function createHandlers(context: HandlerContext): IpcHandlers {
         'timer:pause': () => timer.pause(),
         'timer:reset': () => timer.reset(),
         'timer:setMode': (input) => timer.setMode(input.mode),
+        'timer:adjustPendingSave': (input) => timer.adjustPendingSave(input.seconds),
         'timer:stopAndSave': (input) => timer.stopAndSave(input),
 
         'pomodoro:getSnapshot': () => pomodoro.snapshot(),

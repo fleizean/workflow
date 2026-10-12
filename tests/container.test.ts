@@ -216,7 +216,10 @@ describe('the container hands out repositories over the connection startup opene
         expect(Object.keys(container.services).sort())
             .toEqual(['companies', 'goal', 'pomodoro', 'sessions', 'settings', 'stats', 'timer']);
         expect(container.services.timer.snapshot())
-            .toEqual({ status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false });
+            .toEqual({
+                status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false,
+                pendingAdjustmentSeconds: 0
+            });
 
         // The store writes through app-state.ts, not through a repository and not through raw SQL.
         container.services.timer.setMode('pomodoro');
@@ -1112,7 +1115,10 @@ describe('CORE-13: the goal is a fact about the local day, not about the timer',
         container.services.settings.update({ dailyTargetSeconds: savedToday + 3600, goalNotification: true });
 
         expect(container.services.timer.snapshot(), 'G3/G4: the carry-over is offered, paused')
-            .toEqual({ status: 'paused', mode: 'work', elapsedSeconds: 29000, restoredFromPreviousLaunch: true, persistFailing: false });
+            .toEqual({
+                status: 'paused', mode: 'work', elapsedSeconds: 29000, restoredFromPreviousLaunch: true, persistFailing: false,
+                pendingAdjustmentSeconds: 0
+            });
 
         container.services.timer.start();
         driver.tick(60);

@@ -6,9 +6,13 @@
  * goes out through `timer:stopAndSave` - the single transaction Phase 5 added because two invokes cannot be atomic
  * (WR-06).
  *
- * The selected date and the pending adjustment are this component's own state on purpose. v1.2.1 reloaded the page
- * on every navigation, so both reset on returning to Home; a feature store would leave a date picked yesterday
- * afternoon still selected tomorrow morning, and the timer would write today's work onto it.
+ * The selected date is this component's own state on purpose. v1.2.1 reloaded the page on every navigation, so it
+ * reset on returning to Home; a store would leave a date picked yesterday afternoon still selected tomorrow
+ * morning, and the timer would write today's work onto it.
+ *
+ * The pending adjustment was that too, and that was the defect: a correction is about the save, not about the
+ * screen, so a trip to Work History discarded it in silence and the next save wrote the unadjusted duration. It
+ * lives in main now, beside the clock it does not touch, and arrives on the snapshot (timer.service.ts).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,7 +27,9 @@ import type { LocalDate } from '@shared/types';
 import { useTimerSnapshot } from './api/useTimerSnapshot';
 import { useTimerSessions } from './api/useTimerSessions';
 import { useStreak } from './api/useStreak';
-import { usePauseTimer, useResetTimer, useStartTimer, useStopAndSave } from './api/useTimerCommands';
+import {
+    useAdjustPendingSave, usePauseTimer, useResetTimer, useStartTimer, useStopAndSave
+} from './api/useTimerCommands';
 import type { StopAndSaveValues } from './api/useTimerCommands';
 import { useTimerStore } from './state/timer.store';
 import { useAttributeSession } from './api/usePomodoro';
@@ -65,6 +71,7 @@ export default function TimerPage(): ReactElement {
     const pause = usePauseTimer();
     const reset = useResetTimer();
     const stopAndSave = useStopAndSave();
+    const adjustPendingSave = useAdjustPendingSave();
     const setMode = useSetTimerMode();
     const attribute = useAttributeSession();
 
@@ -75,7 +82,6 @@ export default function TimerPage(): ReactElement {
 
     const today = formatLocalDate(new Date());
     const [selectedDate, setSelectedDate] = useState<LocalDate>(today);
-    const [adjustmentSeconds, setAdjustmentSeconds] = useState(0);
     const [dialog, setDialog] = useState<OpenDialog>('none');
     /*
      * POMO-02/POMO-04. The prompt is offered, never forced: saying "not now" sets this and the queue waits until the
@@ -85,6 +91,8 @@ export default function TimerPage(): ReactElement {
     const [attributionDeferred, setAttributionDeferred] = useState(false);
 
     const elapsedSeconds = snapshot?.elapsedSeconds ?? 0;
+    // Main's, so it survives this route and matches what the tray panel is showing at the same moment.
+    const adjustmentSeconds = snapshot?.pendingAdjustmentSeconds ?? 0;
     const running = snapshot?.status === 'running';
     const mode = snapshot?.mode ?? 'work';
     const restored = snapshot?.restoredFromPreviousLaunch === true && elapsedSeconds > 0;
@@ -111,12 +119,6 @@ export default function TimerPage(): ReactElement {
         nowMs: Date.now(),
         countedOnSelectedDay: showingToday
     });
-
-    /*
-     * WR-03: a correction made on the work dial is not on screen in pomodoro mode, but this component does not
-     * unmount on a mode change - so the pending value survived invisibly and Discard named a number nobody could see.
-     */
-    useEffect(() => { setAdjustmentSeconds(0); }, [mode]);
 
     /*
      * PANEL-02: the tray panel's Stop, which cannot stop anything and raises this window instead.
@@ -195,20 +197,18 @@ export default function TimerPage(): ReactElement {
         // WR-03: the accumulator is what reset discards, and the pending correction has never touched it.
         void openDialog(describeResetConfirm(elapsedSeconds)).then((confirmed) => {
             if (confirmed) {
+                // The correction goes with it, in main: timer:reset clears both (timer.service.ts clearCounted).
                 reset.mutate(undefined, {
-                    onSuccess: () => {
-                        setAdjustmentSeconds(0);
-                        pushToast('success', 'Timer has been reset.');
-                    }
+                    onSuccess: () => { pushToast('success', 'Timer has been reset.'); }
                 });
             }
         });
     };
 
     const save = (values: StopAndSaveValues): void => {
+        // The correction is cleared in main, by the same transaction that wrote the row it was folded into.
         stopAndSave.mutate(values, {
             onSuccess: () => {
-                setAdjustmentSeconds(0);
                 setDialog('none');
                 pushToast('success', 'Session saved successfully');
             }
@@ -336,7 +336,7 @@ export default function TimerPage(): ReactElement {
                 <AdjustTimeForm
                     elapsedSeconds={elapsedSeconds}
                     adjustmentSeconds={adjustmentSeconds}
-                    onChange={setAdjustmentSeconds}
+                    onAdjust={(seconds) => { adjustPendingSave.mutate(seconds); }}
                     onDismiss={close}
                 />
             ) : null}

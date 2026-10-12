@@ -25,6 +25,13 @@ export const SessionNameSchema = z.string().min(1).max(MAX_SESSION_NAME_LENGTH)
     .refine((name) => name.trim() !== '', 'A session needs a name');
 export const SessionNoteSchema = z.string().max(MAX_SESSION_NOTE_LENGTH).nullable();
 
+/*
+ * The one SIGNED duration on the wire: a correction to what a save will write, not a span of time anybody
+ * counted. Bounded both ways by the most a session may be, which is the most there could ever be to correct.
+ */
+export const AdjustmentSecondsSchema = z.int()
+    .min(-MAX_SESSION_DURATION_SECONDS).max(MAX_SESSION_DURATION_SECONDS);
+
 export const WorkSessionSchema = z.strictObject({
     id: IdSchema,
     name: z.string(),
@@ -93,7 +100,13 @@ export const TimerSnapshotSchema = z.strictObject({
      * WR-04: the last attempt to write the counted seconds did not land. The clock keeps running, but a reboot now
      * costs everything since the first failure, so the user has to see that they should write the time down.
      */
-    persistFailing: z.boolean()
+    persistFailing: z.boolean(),
+    /*
+     * The correction waiting to be folded into the next save. It is NOT a counted second and the accumulator
+     * never moves by it; it rides the snapshot because two surfaces draw it - Home's dial and the tray panel,
+     * which are two documents and so cannot share a store (14-SUMMARY.md).
+     */
+    pendingAdjustmentSeconds: AdjustmentSecondsSchema
 });
 
 // The pomodoro cycle's vocabulary. The interval names are the state machine's, and completedToday is read from the

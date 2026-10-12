@@ -46,6 +46,7 @@ const tick = (fields: Partial<TimerSnapshot>): void => {
         elapsedSeconds: 0,
         restoredFromPreviousLaunch: false,
         persistFailing: false,
+        pendingAdjustmentSeconds: 0,
         ...fields
     };
     for (const listener of listeners) listener(payload);
@@ -56,7 +57,7 @@ afterEach(() => {
     delete (globalThis as unknown as Record<string, unknown>)[API_BRIDGE_KEY];
     setTimerSnapshot({
         status: 'idle', mode: 'work', elapsedSeconds: 0,
-        restoredFromPreviousLaunch: false, persistFailing: false
+        restoredFromPreviousLaunch: false, persistFailing: false, pendingAdjustmentSeconds: 0
     });
 });
 

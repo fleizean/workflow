@@ -31,7 +31,10 @@ const COMPANY = { id: 7, name: 'Contoso', noteRequired: false, createdAt: 178900
 const SESSION = {
     id: 3, name: 'Deep work', durationSeconds: 1800, date: DAY, companyId: 7, note: null, createdAt: 1789000000000
 };
-const TIMER = { status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false } as const;
+const TIMER = {
+    status: 'idle', mode: 'work', elapsedSeconds: 0, restoredFromPreviousLaunch: false, persistFailing: false,
+    pendingAdjustmentSeconds: 0
+} as const;
 const POMODORO = {
     interval: 'work', status: 'idle', elapsedSeconds: 0, targetSeconds: 1500, remainingSeconds: 1500,
     date: DAY, completedToday: 0, sessionsUntilLongBreak: 4, recordingFailed: false
@@ -86,6 +89,7 @@ function spyingServices(): Spy {
             pause: answer('timer.pause', TIMER),
             reset: answer('timer.reset', TIMER),
             setMode: answer('timer.setMode', TIMER),
+            adjustPendingSave: answer('timer.adjustPendingSave', TIMER),
             creditSaved: answer('timer.creditSaved', undefined),
             stopAndSave: answer('timer.stopAndSave', SESSION),
             suspend: answer('timer.suspend', undefined),
@@ -160,6 +164,7 @@ const WELL_FORMED: Readonly<Record<IpcChannel, { input?: unknown; reaches: strin
     'timer:pause': { reaches: 'timer.pause' },
     'timer:reset': { reaches: 'timer.reset' },
     'timer:setMode': { input: { mode: 'pomodoro' }, reaches: 'timer.setMode' },
+    'timer:adjustPendingSave': { input: { seconds: 1800 }, reaches: 'timer.adjustPendingSave' },
     'timer:stopAndSave': {
         input: { name: 'Sprint', durationSeconds: 1800, date: DAY, companyId: null, note: null },
         reaches: 'timer.stopAndSave'

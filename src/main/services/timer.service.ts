@@ -2,6 +2,7 @@
 // to roughly once a minute, so a renderer-owned tick undercounts exactly when the user is working (X1).
 
 import { localDayOf } from '../ports';
+import { boundedAdjustment } from '@shared/utils/session-duration';
 import type { LocalDate, TimerMode, TimerSnapshot, TimerStatus } from '@shared/types';
 import type { ClockPort, RendererBusPort, RepeatingTimer, SchedulerPort } from '../ports';
 
@@ -82,6 +83,11 @@ export interface TimerService {
     creditSaved(savedSeconds: number): void;
     /** Changes the mode and nothing else - not the status, and above all not the accumulated time (CORE-14, CB-1). */
     setMode(mode: TimerMode): TimerSnapshot;
+    /**
+     * Moves the pending correction by `seconds` and nothing else. The accumulator does not budge: this says what
+     * the next save will be WRITTEN with, never what was counted (see pendingAdjustmentSeconds below).
+     */
+    adjustPendingSave(seconds: number): TimerSnapshot;
     /** powerMonitor suspend, handed over by the lifecycle module: nothing is credited until resume (CORE-06). */
     suspend(): void;
     resume(): void;
@@ -118,6 +124,27 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     // WR-08: how much a late tick has cost this run, so the clamp's safety is measured rather than assumed.
     let clampedLossMs = 0;
 
+    /*
+     * What the next save will be WRITTEN with, as a correction to the counted seconds - never as counted seconds.
+     * accumulatedMs above does not move by it, ever: Phase 8 refused a channel that adds time to the clock because
+     * a channel that adds time to the clock is a channel that invents work, and nothing here weakens that.
+     *
+     * It is here rather than in the Home screen because the screen is the one place it cannot live. It was
+     * useState in a route component, so a trip to Work History discarded it silently and the next save wrote the
+     * unadjusted duration; and the tray panel is a second document, so a renderer store would be two numbers for
+     * one timer. Main is also the only side that survives the window reload 3d9ee78 added.
+     *
+     * WHAT CLEARS IT, decided rather than left to fall out:
+     *  - a save (creditSaved): the row was written with it, so keeping it would correct the remainder twice;
+     *  - a reset (clearCounted): the seconds it corrects are gone;
+     *  - a mode change: it is not on screen in pomodoro mode, and an invisible pending number is WR-03;
+     *  - a relaunch: it is never persisted, so a restored timer carries no stale correction. Nothing real is
+     *    lost by that - the correction describes seconds nobody counted.
+     * What does NOT clear it: midnight. The accumulation survives a day boundary and stays savable on the day it
+     * was worked (CR-01), and a correction made at 23:50 belongs to that same pending save.
+     */
+    let pendingAdjustmentSeconds = 0;
+
     // Which local day the seconds below were counted on. A launch restores the accumulation but not the day it was
     // worked on, so a carry-over starts as counted on no day and no day is credited with it (CR-01).
     let countedDay: LocalDate | null = null;
@@ -127,7 +154,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
     const elapsedSeconds = (): number => Math.floor(accumulatedMs / TICK_MS);
 
     const snapshot = (): TimerSnapshot => ({
-        status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch, persistFailing
+        status, mode, elapsedSeconds: elapsedSeconds(), restoredFromPreviousLaunch, persistFailing,
+        pendingAdjustmentSeconds
     });
 
     const counted = (): CountedDay => ({ day: countedDay, seconds: Math.floor(countedDayMs / TICK_MS) });
@@ -220,6 +248,7 @@ export function createTimerService(input: TimerServiceInput): TimerService {
         accumulatedMs = 0;
         countedDay = null;
         countedDayMs = 0;
+        pendingAdjustmentSeconds = 0;
         status = 'idle';
         restoredFromPreviousLaunch = false;
         gated = false;
@@ -291,6 +320,8 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             writtenSeconds = remaining;
             writtenMode = mode;
             persistFailing = false;
+            // The row carries the correction, so a remainder must not be corrected by it a second time.
+            pendingAdjustmentSeconds = 0;
             if (remaining === 0) {
                 clearCounted();
             } else {
@@ -310,9 +341,21 @@ export function createTimerService(input: TimerServiceInput): TimerService {
             if (next !== mode) {
                 // v1.2.1 called reset() here, which is the whole of CB-1. Nothing below touches accumulatedMs.
                 mode = next;
+                // WR-03: a correction made on the work dial is not drawn in pomodoro mode, and a pending number
+                // nobody can see is one Discard would name and the user could not account for.
+                pendingAdjustmentSeconds = 0;
                 persistNow();
                 emit();
             }
+            return snapshot();
+        },
+
+        adjustPendingSave(seconds) {
+            // Bounded against main's own elapsed, which is the authority: the correction can neither take the
+            // session below zero nor past a day, whatever the screen was showing when the tap was sent.
+            pendingAdjustmentSeconds = boundedAdjustment(elapsedSeconds(), pendingAdjustmentSeconds + seconds);
+            // Nothing is persisted: a correction is not counted time, so a launch must not restore one.
+            emit();
             return snapshot();
         },
 

@@ -50,6 +50,17 @@ export const resetTimerMutation = {
     onSuccess: adoptSnapshot
 };
 
+/*
+ * The Adjust dialog's six buttons and its minutes field, as a DELTA to the correction main holds beside the
+ * clock. The correction used to be useState in TimerPage, so a route change discarded it without a word and
+ * the next save wrote the unadjusted duration; main keeps it now, and the answering snapshot is what both Home
+ * and the tray panel draw.
+ */
+export const adjustPendingSaveMutation = {
+    mutationFn: (seconds: number): Promise<TimerSnapshot> => invoke('timer:adjustPendingSave', { seconds }),
+    onSuccess: adoptSnapshot
+};
+
 export function useStartTimer(): UseMutationResult<TimerSnapshot, Error, void> {
     return useMutation(startTimerMutation);
 }
@@ -61,6 +72,11 @@ export function usePauseTimer(): UseMutationResult<TimerSnapshot, Error, void> {
 /** The one path that discards counted time. Every caller of it asks first, and says how much (see TimerPage). */
 export function useResetTimer(): UseMutationResult<TimerSnapshot, Error, void> {
     return useMutation(resetTimerMutation);
+}
+
+/** Moves what the next save will be written with. It does not move the clock - nothing in the app can. */
+export function useAdjustPendingSave(): UseMutationResult<TimerSnapshot, Error, number> {
+    return useMutation(adjustPendingSaveMutation);
 }
 
 /** The insert and the discard, as main's one transaction. The session that comes back is the one written. */

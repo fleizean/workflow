@@ -25,7 +25,8 @@ const SOUND_PAYLOAD = { sound: 'goalReached', choice: 'classic' } as const;
 
 /** The stream the renderer's whole display depends on, and the one the macOS freeze lost. */
 const TICK_PAYLOAD = {
-    status: 'running', mode: 'work', elapsedSeconds: 10, restoredFromPreviousLaunch: false, persistFailing: false
+    status: 'running', mode: 'work', elapsedSeconds: 10, restoredFromPreviousLaunch: false, persistFailing: false,
+    pendingAdjustmentSeconds: 0
 } as const;
 
 interface TargetState {

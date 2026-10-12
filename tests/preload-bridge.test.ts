@@ -44,7 +44,10 @@ function fakeIpc(answer: unknown = { ok: true, data: null }): FakeIpc {
     };
 }
 
-const TICK = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false, persistFailing: false } as const;
+const TICK = {
+    status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false, persistFailing: false,
+    pendingAdjustmentSeconds: 0
+} as const;
 
 describe('IPC-01: the bridge is the contract', () => {
     it('exposes one method per channel, and the subscriptions under on', () => {

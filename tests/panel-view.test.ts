@@ -23,6 +23,7 @@ const snapshot = (fields: Partial<TimerSnapshot>): TimerSnapshot => ({
     elapsedSeconds: 0,
     restoredFromPreviousLaunch: false,
     persistFailing: false,
+    pendingAdjustmentSeconds: 0,
     ...fields
 });
 

@@ -21,7 +21,8 @@ const CHANNELS = [
     'sessions:list', 'sessions:listByDateRange', 'sessions:listByDateAndCompany', 'sessions:create', 'sessions:update',
     'sessions:delete', 'sessions:deleteAll', 'companies:list', 'companies:get', 'companies:create', 'companies:update',
     'companies:delete', 'settings:get', 'settings:update', 'timer:getSnapshot', 'timer:start', 'timer:pause',
-    'timer:reset', 'timer:setMode', 'timer:stopAndSave', 'pomodoro:getSnapshot', 'pomodoro:start', 'pomodoro:pause',
+    'timer:reset', 'timer:setMode', 'timer:adjustPendingSave', 'timer:stopAndSave', 'pomodoro:getSnapshot',
+    'pomodoro:start', 'pomodoro:pause',
     'pomodoro:abort',
     'pomodoro:skipBreak', 'pomodoro:counts', 'stats:streak', 'stats:weekTotals', 'stats:dayProgress', 'stats:today',
     'window:hide', 'window:claimHideNotice', 'window:showMain', 'app:quit'
@@ -36,7 +37,8 @@ const VOID_INPUT_CHANNELS = [
 // phase that designs the event, and adding one here is how that change is declared rather than discovered.
 const EVENTS = ['app:playSound', 'timer:tick', 'pomodoro:tick', 'data:changed', 'shell:saveRequested'];
 const EXPORTED_SCHEMAS = [
-    'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema', 'IdSchema', 'LocalDateSchema',
+    'AdjustmentSecondsSchema', 'CompanySchema', 'DayProgressSchema', 'DurationSecondsSchema', 'EpochMsSchema',
+    'IdSchema', 'LocalDateSchema',
     'PomodoroCountsSchema', 'PomodoroIntervalSchema', 'PomodoroSessionSchema', 'PomodoroSnapshotSchema',
     'PomodoroStatusSchema', 'SettingsSchema', 'SoundChoiceSchema', 'SoundIdSchema', 'StreakSchema', 'TimerModeSchema',
     'TimerSnapshotSchema', 'TimerStatusSchema', 'WeekTotalsSchema', 'WorkSessionSchema'
@@ -310,7 +312,10 @@ describe('D-16 / SHARED-05: the channel catalogue', () => {
 
     it('carries the timer snapshot with no start timestamp on it (CORE-07)', () => {
         const tick = ipcEvents['timer:tick'];
-        const snapshot = { status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false, persistFailing: false };
+        const snapshot = {
+            status: 'running', mode: 'work', elapsedSeconds: 61, restoredFromPreviousLaunch: false,
+            persistFailing: false, pendingAdjustmentSeconds: 0
+        };
         expect(tick.safeParse(snapshot).success).toBe(true);
         expect(tick.safeParse({ ...snapshot, startTime: 1757000000000 }).success,
             'CORE-07: a start timestamp reached the wire, which is how B12 and B13 were computed').toBe(false);
@@ -529,6 +534,7 @@ export function contractTypeProofs(api: IpcApi, handlers: IpcHandlers, day: Loca
         'timer:pause': reject,
         'timer:reset': reject,
         'timer:setMode': reject,
+        'timer:adjustPendingSave': reject,
         'timer:stopAndSave': reject,
         'pomodoro:getSnapshot': reject,
         'pomodoro:start': reject,
