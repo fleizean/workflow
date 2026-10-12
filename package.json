@@ -1,6 +1,6 @@
 {
     "name": "workflow-timer",
-    "version": "2.1.0",
+    "version": "2.1.1",
     "description": "Workflow - local-first work time tracking for Windows, macOS and Linux",
     "main": "./out/main/index.js",
     "scripts": {
