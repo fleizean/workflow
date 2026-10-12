@@ -9,10 +9,13 @@
  * come from the snapshot main pushed (X1).
  */
 
-import { MAX_SESSION_DURATION_SECONDS } from '@shared/constants/sessions';
+import { savableSeconds } from '@shared/utils/session-duration';
 import { formatClockTime } from '@renderer/lib/format';
 import { formatElapsed } from '@renderer/lib/duration';
 import type { LocalDate, WorkSession } from '@shared/types';
+
+// One answer to what a save would write, shared with main, which bounds the correction the moment it is set.
+export { savableSeconds };
 
 /**
  * The Logged card: one day's recorded total, from the session list every screen already holds. A whole day, never
@@ -75,17 +78,6 @@ export interface WorkDialInput {
      * counted seconds from yesterday's target. savableSeconds is unaffected; WR-06's congratulation rides this gate.
      */
     readonly countedOnSelectedDay: boolean;
-}
-
-/*
- * What a save is allowed to write, bounded at both ends by the contract's own bounds (WR-07): a negative correction
- * cannot take a session below zero, and the total cannot exceed a day - reachable in one honest way, a timer left
- * running across a weekend with the app open. The save form's duration field is editable precisely so that case has
- * an answer other than a refusal the user can do nothing about.
- */
-export function savableSeconds(elapsedSeconds: number, adjustmentSeconds: number): number {
-    const total = Math.floor(elapsedSeconds) + Math.floor(adjustmentSeconds);
-    return Math.min(Math.max(total, 0), MAX_SESSION_DURATION_SECONDS);
 }
 
 /** The three groups v1.2.1 wrote into its three `.tabular-nums` spans. */
